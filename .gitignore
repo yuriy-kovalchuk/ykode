@@ -1,5 +1,5 @@
-# the built binary
-/ykode
+# build output
+/bin/
 
 # test and profiling output
 coverage.out

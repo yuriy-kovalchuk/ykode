@@ -1,7 +1,7 @@
 # ykode — the commands this project runs, written down.
 
 GO ?= go
-BINARY := ykode
+BINARY := bin/ykode
 ARGS ?=
 
 .PHONY: all build vet test check cover fmt run clean
@@ -30,4 +30,4 @@ run: build
 	./$(BINARY) $(ARGS)
 
 clean:
-	rm -f $(BINARY) coverage.out
+	rm -rf bin coverage.out
