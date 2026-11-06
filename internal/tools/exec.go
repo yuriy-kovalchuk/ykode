@@ -16,21 +16,16 @@ import (
 const (
 	defaultExecTimeout = 60 * time.Second
 	maxExecTimeout     = 10 * time.Minute
-	// execOutputBytes bounds what the model sees; the whole log goes to a file
-	// so a cut-off build error is still reachable. Build and test failures live
-	// at the end of the output, so most of the budget is spent there.
+	// the head is short because build and test failures live at the end of the output
 	execHeadBytes = resultBudget / 4
 	execTailBytes = resultBudget - execHeadBytes
 	// spillPrefix names the temp directories that hold a cut command's full log.
 	spillPrefix = "ykode-exec-"
-	// waitDelay bounds the wait when a command exits but leaves its output
-	// pipes open (a daemonised grandchild), or refuses to die after a cancel.
+	// waitDelay bounds the wait when a command exits but leaves its output pipes open
 	waitDelay = 5 * time.Second
 )
 
-// commandEnv is the entire environment a shell command receives. Inheriting
-// ykode's environment would hand the model whatever token is kept there, so
-// only what builds, git and terminals genuinely need gets through.
+// commandEnv keeps the shell environment minimal so a token in ykode's env never reaches the model's commands.
 func commandEnv() []string {
 	env := make([]string, 0, 4)
 	for _, key := range []string{"PATH", "HOME", "TERM", "LANG"} {
@@ -41,8 +36,7 @@ func commandEnv() []string {
 	return env
 }
 
-// Exec runs a shell command in the project root. Note: it runs through sh, so
-// it is only confined by the working directory, not by the file sandbox.
+// Exec runs sh -c in the project root: confined by the working directory, not by the file sandbox.
 type Exec struct{ dir string }
 
 func NewExec(dir string) *Exec { return &Exec{dir: dir} }
@@ -92,8 +86,7 @@ func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	if err == nil {
 		return t.fit(result), nil
 	}
-	// A non-zero exit is a normal result: the model needs the command's own
-	// output to fix it, so report it in the text instead of losing it.
+	// a non-zero exit is a normal result: the model needs the command's own output to fix it
 	switch {
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 		result += fmt.Sprintf("\n[command killed after its %s timeout; pass a larger timeout if this is expected work]", timeout)
@@ -125,9 +118,7 @@ func execTimeout(seconds int) (time.Duration, bool) {
 	return time.Duration(seconds) * time.Second, false
 }
 
-// groupCommand runs a command in its own process group and kills the whole
-// group when the context ends: sh and rg exit, but their children (a build, a
-// dev server) would otherwise outlive the cancellation.
+// groupCommand runs the command in its own process group so cancelling kills children, not just sh.
 func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = waitDelay
@@ -136,8 +127,7 @@ func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// fit keeps the output the model sees inside the tool budget, keeping the head
-// and most of the tail, and spills the full log to a file it can read back.
+// fit keeps output inside the budget (head plus most of the tail) and spills the full log to a file.
 func (t Exec) fit(out string) string {
 	if len(out) <= resultBudget {
 		return out
@@ -157,12 +147,7 @@ func (t Exec) fit(out string) string {
 	return b.String()
 }
 
-// writeFullOutput stores a long command output under the project's temp dir and
-// returns its path. Nothing deletes it: the OS clears temp directories, and the
-// model may need the log after the turn that produced it.
-// PruneSpillLogs deletes command output logs older than maxAge from dir and
-// reports how many went. They are written one per oversized command and nothing
-// else cleans them up.
+// PruneSpillLogs deletes command output logs older than maxAge; nothing else cleans them.
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -188,6 +173,7 @@ func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	return removed, nil
 }
 
+// writeFullOutput stores an oversized output in a temp dir and returns its path.
 func writeFullOutput(out string) (string, error) {
 	dir, err := os.MkdirTemp("", spillPrefix)
 	if err != nil {

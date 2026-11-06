@@ -57,8 +57,7 @@ func Load(args []string) (Config, error) {
 	return cfg, nil
 }
 
-// normalize rejects nonsense settings and pins the root to an existing absolute
-// directory, so nothing downstream has to think about relative paths.
+// normalize rejects nonsense settings and pins the root to an existing absolute directory.
 func (c *Config) normalize() error {
 	if c.MaxTurns < 1 {
 		return fmt.Errorf("--max-turns must be at least 1, got %d", c.MaxTurns)

@@ -18,16 +18,12 @@ const (
 	skipDirName         = ".git"
 )
 
-// walkFiles walks the tree under start inside root, honouring every .gitignore
-// it descends through, and calls visit for each text file, with its contents.
-// Symlinked directories are not followed (the Root refuses symlinks that escape
-// anyway). visit may return stopWalk to finish early.
+// walkFiles walks start honouring .gitignore files, calling visit per text file with its contents.
 func walkFiles(ctx context.Context, root *os.Root, start string, visit func(path string, data []byte) error) error {
 	return walkTree(ctx, root, start, visit, true)
 }
 
-// walkNames is walkFiles without reading anything: listing names must see
-// binary and oversized files too, exactly as fd does.
+// walkNames is walkFiles without reading: listing sees binary and oversized files too, as fd does.
 func walkNames(ctx context.Context, root *os.Root, start string, visit func(path string, data []byte) error) error {
 	return walkTree(ctx, root, start, visit, false)
 }
@@ -48,8 +44,7 @@ func filepathCleanSlash(p string) string {
 	return strings.TrimSuffix(p, "/")
 }
 
-// joinSlash builds a Root-relative path; os.Root rejects "./" prefixes, which is
-// why the walk root is "." rather than "./".
+// joinSlash builds a Root-relative path; os.Root rejects "./" prefixes, so the walk root is ".".
 func joinSlash(dir, name string) string {
 	if dir == "." {
 		return name

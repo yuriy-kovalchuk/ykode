@@ -8,9 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// Renderer writes the model's streamed output: thinking goes to the log stream
-// in dim type, the answer to the output stream, and one timing line per turn.
-// Keeping thinking off stdout means `ykode … > answer.txt` stays clean.
+// Renderer streams thinking to the log and the answer to stdout, so redirecting stdout stays clean.
 type Renderer struct {
 	out      io.Writer
 	log      io.Writer

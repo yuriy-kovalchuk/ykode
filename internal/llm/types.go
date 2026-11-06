@@ -7,10 +7,7 @@ import (
 	"strings"
 )
 
-// Message is one chat-completion entry: system, user, assistant or tool.
-// Reasoning is the model's thinking. It is kept separate from Content and is
-// never sent back to the server, which would double the prompt for a model
-// that spends most of its output thinking.
+// Message is one chat entry; Reasoning is kept separate and never sent back, which would double the prompt.
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content"`
@@ -32,9 +29,7 @@ type FunctionCall struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-// ArgsJSON normalises Arguments to raw JSON object bytes. The OpenAI wire
-// format nests the arguments inside a JSON *string*, but several local servers
-// emit a real object; both shapes arrive here.
+// ArgsJSON normalises arguments to object bytes: the wire format nests a string, some servers send an object.
 func (f FunctionCall) ArgsJSON() (json.RawMessage, error) {
 	raw := bytes.TrimSpace(f.Arguments)
 	if len(raw) == 0 {
@@ -79,15 +74,13 @@ type ToolFunction struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-// Delta is one streamed piece of output. Reasoning and Content are kept apart
-// so the caller can render thinking separately from the answer.
+// Delta is one streamed piece, thinking and answer kept apart so they can render differently.
 type Delta struct {
 	Reasoning string
 	Content   string
 }
 
-// Timings is llama.cpp's per-turn accounting, sent with the last chunk. Other
-// servers may omit it, in which case the counters stay zero.
+// Timings is llama.cpp's per-turn accounting in the last chunk; other servers leave it zero.
 type Timings struct {
 	CacheN             int     `json:"cache_n"`
 	PromptN            int     `json:"prompt_n"`
@@ -155,8 +148,7 @@ type chatChunk struct {
 	Error   *apiError `json:"error"`
 }
 
-// toolCallFragment is a piece of a tool call. Only the first fragment carries
-// the id and name; the rest append argument bytes, keyed by index.
+// toolCallFragment is a piece of a call: only the first carries id and name, keyed by index.
 type toolCallFragment struct {
 	Index    int    `json:"index"`
 	ID       string `json:"id"`

@@ -1,5 +1,4 @@
-// Command ykode is a minimal terminal coding agent for a local
-// OpenAI-compatible server (llama-server, Ollama, LM Studio, vLLM).
+// Command ykode is a terminal coding agent for an OpenAI-compatible server such as llama-server.
 package main
 
 import (
@@ -31,8 +30,7 @@ func main() {
 	}
 }
 
-// run wires the pieces together. Signals belong to the REPL; the context here
-// is only a lifetime for the startup probe.
+// run wires the pieces together; the context here only bounds the startup probe.
 func run() error {
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
@@ -42,8 +40,7 @@ func run() error {
 		return err
 	}
 
-	// Command output logs are written one per oversized command; nothing else
-	// ever deletes them.
+	// command output logs are written one per oversized command and nothing else deletes them
 	if n, err := tools.PruneSpillLogs(os.TempDir(), spillLogAge); err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err)
 	} else if n > 0 {
@@ -87,8 +84,7 @@ func run() error {
 	return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
 }
 
-// pickModel resolves an empty --model to the server's first model, and warns
-// (without failing) when the requested one is not listed.
+// pickModel resolves an empty --model to the server's first, and warns when the requested one is missing.
 func pickModel(ctx context.Context, client *llm.Client, cfg config.Config) (llm.ModelInfo, error) {
 	models, err := client.Models(ctx)
 	if err != nil {

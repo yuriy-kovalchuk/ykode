@@ -14,9 +14,7 @@ var (
 	sseDone       = []byte("[DONE]")
 )
 
-// readSSE walks the event stream and feeds every chunk to the accumulator.
-// It stops at the [DONE] sentinel or at the end of the body, whichever comes
-// first: some servers just close the connection.
+// readSSE feeds every chunk to the accumulator, stopping at [DONE] or the end of the body.
 func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
@@ -44,8 +42,7 @@ func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error 
 	return nil
 }
 
-// streamAccumulator holds the whole reply while it arrives: the answer, the
-// thinking, the finish reason, llama.cpp timings, and tool calls keyed by index.
+// streamAccumulator collects answer, thinking, finish reason, timings and tool calls in arrival order.
 type streamAccumulator struct {
 	content   strings.Builder
 	reasoning strings.Builder
@@ -88,8 +85,7 @@ func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 	}
 }
 
-// turn builds the finished reply. Tool calls come back in the order their first
-// fragment arrived, which is the order the model asked for them.
+// turn builds the reply; tool calls come back in the order their first fragment arrived.
 func (a *streamAccumulator) turn() Turn {
 	turn := Turn{
 		Message: Message{
@@ -106,8 +102,7 @@ func (a *streamAccumulator) turn() Turn {
 	return turn
 }
 
-// callAccumulator stitches tool call fragments back into one call. Only the
-// first fragment of a call carries the id and the name.
+// callAccumulator stitches fragments into one call; only the first carries id and name.
 type callAccumulator struct {
 	id   string
 	name string

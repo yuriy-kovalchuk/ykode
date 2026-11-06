@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// runToolCalls appends one role:"tool" message per call. The API expects an
-// answer for every tool_call, so refused and cancelled calls still get one.
+// runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	for _, call := range calls {
 		a.history = append(a.history, llm.Message{
@@ -22,8 +21,7 @@ func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	}
 }
 
-// runTool never returns an error: whatever went wrong becomes result text the
-// model can react to.
+// runTool never returns an error: whatever went wrong becomes result text the model can act on.
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 	name, args := call.Function.Name, call.Function.Arguments
 	argsText := oneLine(string(args), 200)
@@ -37,8 +35,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 		fmt.Fprintf(a.log, "  !! %s: unknown tool; available: %s\n", name, available)
 		return fmt.Sprintf("error: unknown tool %q; available tools: %s", name, available)
 	}
-	// Check the arguments before the tool sees them: repair could not parse
-	// them, so they arrived cut off or malformed.
+	// repair could not parse these arguments, so check them before any tool sees them
 	if _, err := call.Function.ArgsJSON(); err != nil {
 		fmt.Fprintf(a.log, "  !! %s: %v\n", name, err)
 		return "error: " + err.Error()
@@ -49,8 +46,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 		return "error: " + err.Error()
 	}
 	outside := outsidePaths(targets)
-	// Outside-root access is asked about even under --yes: that flag skips
-	// routine confirmations, not the project boundary.
+	// outside-root access is asked about even under --yes, which only skips routine confirmations
 	if (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0 {
 		if !a.opts.Confirm(describe(name, argsText, outside)) {
 			fmt.Fprintln(a.log, "  !! refused by the user")

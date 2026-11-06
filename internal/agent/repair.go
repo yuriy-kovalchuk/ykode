@@ -6,9 +6,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// repair patches up what a server sent: some omit the role or the tool call id,
-// and several send arguments as an object instead of the JSON string the OpenAI
-// format specifies.
+// repair patches servers that omit the role or id, or send arguments as an object instead of a string.
 func repair(msg llm.Message) llm.Message {
 	if msg.Role == "" {
 		msg.Role = "assistant"

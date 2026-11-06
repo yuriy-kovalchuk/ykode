@@ -58,8 +58,7 @@ func TestExecReportsExitStatus(t *testing.T) {
 }
 
 func TestExecLongOutputSavesTheFullLog(t *testing.T) {
-	// Keep the spill log inside the test's own tree instead of the shared temp
-	// directory, which nothing cleans up until the next ykode start.
+	// keep the spill log in this test's own tree; nothing else cleans the shared temp dir
 	t.Setenv("TMPDIR", t.TempDir())
 	dir := t.TempDir()
 	tool := NewExec(dir)

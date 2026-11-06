@@ -5,9 +5,7 @@ import (
 	"strings"
 )
 
-// globRegexp converts a glob into regexp source: ** spans directories, * and ?
-// do not. Character classes are kept; nothing else about gitignore's escaping
-// is supported, which covers the patterns real projects use.
+// globRegexp compiles a glob to regexp source: ** spans directories, * and ? do not.
 func globRegexp(glob string) string {
 	var b strings.Builder
 	for i := 0; i < len(glob); i++ {

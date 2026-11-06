@@ -18,8 +18,7 @@ const (
 	maxFindResults     = 5000
 )
 
-// FindFiles lists files by glob. fd is used when installed; the Go walker in
-// walk.go covers the same ground without it. Results are sorted either way.
+// FindFiles lists files by glob with fd when installed, or the Go walker, sorted either way.
 type FindFiles struct {
 	scope
 	fdPath string
@@ -116,9 +115,7 @@ func (t FindFiles) Run(ctx context.Context, args json.RawMessage) (string, error
 	return b.String(), nil
 }
 
-// withFd runs fd in the searched directory so its output stays project-relative.
-// Patterns are matched against the whole path, hence the "**/" prefix: it lets
-// "*.go" and "internal/**/*.go" both work, as they do for glob tools generally.
+// withFd runs fd in the searched dir with "**/"-prefixed globs matched against the whole path.
 func (t FindFiles) withFd(ctx context.Context, h handle, pattern string, limit int) ([]string, error) {
 	cmd := groupCommand(ctx, t.fdPath,
 		"--glob", "--full-path", "**/"+pattern,
@@ -163,9 +160,7 @@ func (t FindFiles) withGoWalker(ctx context.Context, h handle, pattern string, l
 	return found, err
 }
 
-// compileGlob turns a user glob into a regexp matched against a slash separated
-// path, anchored at the end and free to start at any depth ("*.go" finds nested
-// files, "internal/*.go" does not wander above internal).
+// compileGlob anchors a glob at the end of a slash path but lets it start at any depth.
 func compileGlob(pattern string) (*regexp.Regexp, error) {
 	body := globRegexp(strings.TrimPrefix(pattern, "./"))
 	if body == "" {

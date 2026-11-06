@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// ignoreSet holds the .gitignore files in effect for a directory, outermost
-// first, because a nested .gitignore overrides the ones above it.
+// ignoreSet holds the .gitignore files in effect, outermost first, since a nested one overrides.
 type ignoreSet []*ignoreFile
 
 // ignoreFile is one .gitignore and the directory it lives in.
@@ -15,9 +14,7 @@ type ignoreFile struct {
 	rules []ignoreRule
 }
 
-// ignoreRule is one pattern line, compiled into a regexp over the path
-// relative to ignoreFile.dir. A rule matches a path when it matches the path
-// itself or any of its ancestors, so ignoring a directory hides its contents.
+// ignoreRule is one pattern line compiled to a regexp over paths relative to its directory.
 type ignoreRule struct {
 	re      *regexp.Regexp
 	negate  bool
@@ -63,9 +60,7 @@ func parseIgnoreRules(text string) []ignoreRule {
 	return rules
 }
 
-// ignored reports whether path (root-relative, slash separated) is excluded by
-// the .gitignore files in effect for it. The deepest file wins, and within one
-// file the last matching pattern wins, as git does it.
+// ignored reports whether path is excluded; the deepest .gitignore wins, last pattern within it.
 func ignored(path string, ignores ignoreSet, isDir bool) bool {
 	for i := len(ignores) - 1; i >= 0; i-- {
 		ig := ignores[i]
@@ -76,9 +71,7 @@ func ignored(path string, ignores ignoreSet, isDir bool) bool {
 		verdict := false
 		decided := false
 		for _, r := range ig.rules {
-			// The patterns end with "(/.*)?$", so they already cover paths inside
-			// a match. A directory-only rule must not match a file of the same
-			// name, so for files it has to match an ancestor instead.
+			// patterns end with "(/.*)?$", so a directory rule must still not match a file of the same name
 			hit := r.re.MatchString(rel)
 			if r.dirOnly && !isDir {
 				hit = false

@@ -33,8 +33,7 @@ func TestFormatResultCountsExactlyWhatItDropped(t *testing.T) {
 		t.Fatal("a long log matters at both ends; both ends must survive")
 	}
 
-	// Read the promise back out of the result: head + omitted + tail must be the
-	// original byte count, whatever the cutter decided to keep.
+	// read the promise back out: head + omitted + tail must equal the original byte count
 	m := omittedMarker.FindStringSubmatch(got)
 	if m == nil {
 		t.Fatalf("no omission marker in:\n%s", shortened(got))

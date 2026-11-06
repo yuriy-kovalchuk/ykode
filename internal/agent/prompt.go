@@ -1,8 +1,6 @@
 package agent
 
-// SystemPrompt is the only thing the model knows about ykode itself. It is
-// deliberately short: small local models follow a few blunt rules better than a
-// long policy.
+// SystemPrompt is all the model knows about ykode, kept short because small models follow blunt rules better.
 const SystemPrompt = `You are ykode, a coding agent working inside a project root.
 
 Paths are relative to that root. A path above it is refused unless the user

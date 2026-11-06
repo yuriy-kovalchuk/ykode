@@ -120,8 +120,7 @@ func TestCompileGlobMatchesWholePaths(t *testing.T) {
 // jsonString quotes a value for embedding in a JSON argument literal.
 func jsonString(s string) string { return strconv.Quote(s) }
 
-// Listing must see what fd sees: binaries and big files included, while
-// searching still skips them.
+// listing must see what fd sees: binaries and oversized files included
 func TestFindListsBinaryAndOversizedFiles(t *testing.T) {
 	root, dir := searchFixture(t)
 	if err := os.WriteFile(filepath.Join(dir, "huge.bin"), bytes.Repeat([]byte("x"), maxScannedFileBytes+1), 0o644); err != nil {

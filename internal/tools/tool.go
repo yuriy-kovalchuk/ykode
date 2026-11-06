@@ -1,6 +1,4 @@
-// Package tools holds the callable surface the agent exposes to the model.
-// In-project file access goes through one *os.Root; paths outside the project
-// root work only for a single call the user approved. Every result is text.
+// Package tools holds the callable surface the agent exposes to the model, and every result is text.
 package tools
 
 import (
@@ -11,10 +9,7 @@ import (
 	"strings"
 )
 
-// Tool is one callable. Run receives the model's raw JSON arguments; decode
-// them into a small struct and return text. Errors are reported back to the
-// model as result text, so they should say what to fix. Targets reports the
-// paths a call would touch, so the caller can confirm access before running it.
+// Tool is one callable: Run takes raw JSON arguments and returns text, and Targets reports the paths it touches.
 type Tool interface {
 	Name() string
 	Description() string
@@ -24,8 +19,7 @@ type Tool interface {
 	Run(ctx context.Context, args json.RawMessage) (string, error)
 }
 
-// BuiltIn is the tool set ykode ships with, in the order the model sees it:
-// locate, read, change, run.
+// BuiltIn is the tool set ykode ships with, ordered locate, read, change, run.
 func BuiltIn(root *os.Root, dir string) *Registry {
 	return NewRegistry(
 		NewListDir(root, dir),
@@ -38,8 +32,7 @@ func BuiltIn(root *os.Root, dir string) *Registry {
 	)
 }
 
-// Registry holds the tools in registration order, which keeps the tool list
-// the model sees stable from run to run.
+// Registry keeps tools in registration order so the list the model sees stays stable.
 type Registry struct {
 	byName  map[string]Tool
 	ordered []Tool
@@ -73,19 +66,15 @@ func (r *Registry) Names() []string {
 }
 
 const (
-	// maxResultBytes is the hard cap on anything the model is shown. Tools aim
-	// under resultBudget so their own explanation of the cut still fits.
+	// tools aim under resultBudget so their own note about the cut still fits
 	maxResultBytes = 12000
 	resultBudget   = maxResultBytes - 512
 	noOutput       = "(no output)"
-	// markerOverhead reserves room for the "bytes omitted" line itself, which is
-	// long enough for a 10 digit count.
+	// markerOverhead leaves room for the "bytes omitted" line itself, which fits a 10 digit count
 	markerOverhead = 64
 )
 
-// FormatResult makes a tool result safe to append to the conversation: never
-// empty, and at most maxResultBytes, keeping the head and the tail of anything
-// longer (long logs usually matter at both ends).
+// FormatResult keeps a result non-empty and inside maxResultBytes, keeping the head and tail of anything longer.
 func FormatResult(out string) string {
 	out = strings.TrimSpace(out)
 	if out == "" {
@@ -94,8 +83,7 @@ func FormatResult(out string) string {
 	if len(out) <= maxResultBytes {
 		return out
 	}
-	// The marker costs bytes too; without the reservation the result could
-	// exceed the cap it promises the agent.
+	// the marker costs bytes too, or the result would break the cap it promises
 	keep := (maxResultBytes - markerOverhead) / 2
 	head, tail := cutUTF8(out, keep), cutUTF8Tail(out, keep)
 	return fmt.Sprintf("%s\n\n[... %d bytes omitted ...]\n\n%s", head, len(out)-len(head)-len(tail), tail)
@@ -129,8 +117,7 @@ func isRuneStart(b byte) bool { return b&0xC0 != 0x80 }
 // clamp keeps a model-supplied count inside a supported range.
 func clamp(v, lo, hi int) int { return min(max(v, lo), hi) }
 
-// clampLimit resolves a limit the model supplied: unset or nonsense means the
-// default, and anything above the supported maximum is cut down to it.
+// clampLimit maps an unset or bogus limit to the default and cuts anything over the maximum.
 func clampLimit(limit, def, upper int) int {
 	if limit <= 0 {
 		return def

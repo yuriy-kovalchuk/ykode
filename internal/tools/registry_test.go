@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// A malformed schema is invisible until the request fails to encode, so check
-// every tool's schema here instead.
+// a malformed schema is invisible until the request fails to encode, so check them here
 func TestBuiltInToolSchemasAreValid(t *testing.T) {
 	root, dir := setup(t)
 	registry := BuiltIn(root, dir)
