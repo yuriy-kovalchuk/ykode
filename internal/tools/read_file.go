@@ -73,8 +73,10 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	if err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
-	// Paging a file far bigger than the output budget would burn the context one
-	// window at a time, and allocating it in full is not free.
+	if info.IsDir() {
+		return "", fmt.Errorf("read_file %q is a directory; use list_dir to see what is in it", in.Path)
+	}
+	// paging a file far bigger than the output budget would burn context one window at a time
 	if info.Size() > maxScannedFileBytes {
 		return "", fmt.Errorf("read_file %q is %.1f MB; use search_text to find a spot, or exec_command with sed -n '1,200p'",
 			in.Path, float64(info.Size())/(1<<20))
@@ -108,8 +110,7 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	for n := first; n <= last; n++ {
 		entry := fmt.Sprintf("%4d\t%s\n", n, lines[n-1])
 		if b.Len()+len(entry) > resultBudget {
-			// One huge line (a minified asset) still gets its head shown
-			// rather than nothing at all.
+			// one huge line (a minified asset) still gets its head shown rather than nothing
 			if n == first {
 				b.WriteString(fmt.Sprintf("%4d\t%s\n", n, cutUTF8(lines[n-1], resultBudget-64)))
 				shown = n
@@ -129,8 +130,7 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	return b.String(), nil
 }
 
-// splitLines drops the empty element a trailing newline would produce, and the
-// \r of a CRLF file: numbered output then matches the LF text edit_file expects.
+// splitLines drops the empty element a trailing newline gives and CRLF's \r, matching edit_file's text.
 func splitLines(data []byte) []string {
 	s := strings.TrimSuffix(string(data), "\n")
 	if s == "" {

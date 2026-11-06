@@ -61,6 +61,13 @@ func (t ListDir) Run(ctx context.Context, args json.RawMessage) (string, error) 
 		return "", toolError(t.Name(), in.Path, err)
 	}
 	defer h.close()
+	info, err := h.root.Stat(h.name)
+	if err != nil {
+		return "", toolError(t.Name(), in.Path, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("list_dir %q is a file; use read_file to see it", in.Path)
+	}
 	dir, err := h.root.Open(h.name)
 	if err != nil {
 		return "", toolError(t.Name(), in.Path, err)

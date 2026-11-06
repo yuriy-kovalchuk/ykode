@@ -82,3 +82,11 @@ func TestListDirStaysInsideTheByteBudget(t *testing.T) {
 		t.Fatalf("no truncation marker in a %d byte listing", len(got))
 	}
 }
+
+func TestListDirRefusesAFileWithAHint(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"a.go": "package a\n"})
+	_, err := NewListDir(root, dir).Run(context.Background(), json.RawMessage(`{"path":"a.go"}`))
+	if err == nil || !strings.Contains(err.Error(), "read_file") {
+		t.Errorf("err = %v, want it to point at read_file", err)
+	}
+}

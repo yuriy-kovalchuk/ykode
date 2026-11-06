@@ -106,3 +106,11 @@ func TestReadStillReadsAFileAtTheSizeCap(t *testing.T) {
 		t.Fatalf("marker wrong:\n%s", cutUTF8(out, 200))
 	}
 }
+
+func TestReadRefusesADirectoryWithAHint(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"src/main.go": "package main\n"})
+	_, err := NewReadFile(root, dir).Run(context.Background(), json.RawMessage(`{"path":"src"}`))
+	if err == nil || !strings.Contains(err.Error(), "list_dir") {
+		t.Errorf("err = %v, want it to point at list_dir", err)
+	}
+}
