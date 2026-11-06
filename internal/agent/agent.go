@@ -25,8 +25,9 @@ type Options struct {
 	CtxSize       int // server context window; 0 = unknown, no budgeting
 	Think         bool
 	AssumeYes     bool
-	NoVerify      bool // never push a text-only answer back into the tools
-	SendReasoning bool // repeat earlier thinking to templates that expect it back
+	Instructions  string // what the project's AGENTS.md / CLAUDE.md said
+	NoVerify      bool   // never push a text-only answer back into the tools
+	SendReasoning bool   // repeat earlier thinking to templates that expect it back
 	Confirm       ConfirmFunc
 }
 
@@ -82,7 +83,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 
 // Reset keeps the system prompt and forgets the rest of the conversation; the learned byte ratio stays.
 func (a *Agent) Reset() {
-	a.history = []llm.Message{{Role: "system", Content: SystemPrompt}}
+	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
 }
 

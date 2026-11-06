@@ -71,6 +71,11 @@ func run() error {
 	}
 	defer root.Close()
 
+	instructions, err := agent.LoadInstructions(cfg.Root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ykode:", err, "- continuing without them")
+	}
+
 	registry := tools.BuiltIn(root, cfg.Root, tools.Options{
 		ReadLines:     cfg.ReadLines,
 		SearchLimit:   cfg.SearchLimit,
@@ -87,6 +92,7 @@ func run() error {
 		CtxSize:       ctxSize,
 		Think:         cfg.Think,
 		AssumeYes:     cfg.AssumeYes,
+		Instructions:  instructions,
 		NoVerify:      cfg.NoVerify,
 		SendReasoning: cfg.SendReasoningFor(model.ID),
 		Confirm:       confirm.Ask,
