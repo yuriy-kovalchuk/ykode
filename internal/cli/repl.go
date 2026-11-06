@@ -1,5 +1,4 @@
-// Package cli is the terminal front end: a line reader, a confirmation prompt
-// and the read-eval loop around the agent.
+// Package cli is the terminal front end: line reader, confirmation prompt, read-eval loop.
 package cli
 
 import (
@@ -15,9 +14,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// LineSource reads stdin on one background goroutine so the prompt and the
-// confirmation prompt never fight over the reader. A line typed while the agent
-// is working is buffered and picked up by the next prompt or confirmation.
+// LineSource reads stdin on one goroutine so prompt and confirmation never fight; typed lines are buffered.
 type LineSource struct {
 	ch chan string
 }
@@ -40,8 +37,7 @@ func (l *LineSource) next() (string, bool) {
 	return line, ok
 }
 
-// readLine waits for a typed line, giving up on Ctrl-C, SIGTERM or ctx
-// cancellation so the prompt itself stays interruptible.
+// readLine waits for a line, giving up on Ctrl-C, SIGTERM or ctx so the prompt stays interruptible.
 func (l *LineSource) readLine(ctx context.Context, sigs chan os.Signal) (line string, ok bool, interrupted bool) {
 	select {
 	case <-ctx.Done():
@@ -65,14 +61,13 @@ func NewREPL(a *agent.Agent, lines *LineSource, out, log io.Writer) *REPL {
 	return &REPL{agent: a, lines: lines, out: out, log: log}
 }
 
-// Run reads requests until EOF, /exit, or Ctrl-C at the prompt. Signals are
-// handled here: during a request Ctrl-C cancels it, at the prompt it quits.
+// Run reads until EOF, /exit or Ctrl-C at the prompt; mid-request Ctrl-C cancels the request.
 func (r *REPL) Run(ctx context.Context) error {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigs)
 
-	fmt.Fprintln(r.out, `ykode: ask for a change, "/reset" clears the history, "/exit" quits.`)
+	fmt.Fprintln(r.out, `ykode: ask for a change, "/help" lists the commands, "/exit" quits.`)
 	for {
 		fmt.Fprint(r.out, "> ")
 		line, ok, interrupted := r.lines.readLine(ctx, sigs)
@@ -100,6 +95,13 @@ func (r *REPL) Run(ctx context.Context) error {
 	}
 }
 
+// helpText lists the commands; the model does the work, so this stays short.
+const helpText = `commands:
+  /help   show this
+  /usage  what the conversation has cost the server
+  /reset  forget the conversation
+  /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
+
 // command handles a slash command and reports whether the REPL should stop.
 func (r *REPL) command(line string) (quit bool, err error) {
 	switch line {
@@ -108,8 +110,12 @@ func (r *REPL) command(line string) (quit bool, err error) {
 	case "/reset":
 		r.agent.Reset()
 		fmt.Fprintln(r.out, "history cleared")
+	case "/usage":
+		fmt.Fprintln(r.out, usageLine(r.agent.Usage(), r.agent.CtxSize()))
+	case "/help":
+		fmt.Fprintln(r.out, helpText)
 	default:
-		fmt.Fprintf(r.log, "unknown command %q; try /reset or /exit\n", line)
+		fmt.Fprintf(r.log, "unknown command %q; try /help, /reset or /exit\n", line)
 	}
 	return false, nil
 }
@@ -125,8 +131,7 @@ func (r *REPL) ask(ctx context.Context, sigs chan os.Signal, prompt string) erro
 		select {
 		case <-done:
 		case <-sigs:
-			// The turn may have finished in the meantime; then the signal was
-			// meant for the prompt and is left to the read loop.
+			// the turn may have finished meanwhile, so the signal was meant for the prompt
 			select {
 			case <-done:
 			default:
