@@ -1,0 +1,6 @@
+# the built binary
+/ykode
+
+# test and profiling output
+coverage.out
+*.test
