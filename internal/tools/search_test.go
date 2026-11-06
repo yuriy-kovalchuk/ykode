@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// searchFixture is a tree with the awkward cases: gitignored directories, a
-// negated pattern, a nested .gitignore that overrides the outer one, a binary
-// file, and an untracked large file.
+// searchFixture covers the awkward cases: ignored dirs, negation, nested .gitignore, binary, big file.
 func searchFixture(t *testing.T) (*os.Root, string) {
 	t.Helper()
 	files := map[string]string{
@@ -219,9 +219,7 @@ func TestSearchLimitStopsEarlyOnBothEngines(t *testing.T) {
 	}
 }
 
-// TestSearchLimitStopsRipgrepEarly covers the case where rg is still producing
-// output when the limit is reached: the pipe holds 64 KB, so 40 files x 500
-// lines guarantees rg is mid-stream.
+// 40 files x 500 lines guarantees rg is still streaming when the limit lands (the pipe holds 64 KB).
 func TestSearchLimitStopsRipgrepEarly(t *testing.T) {
 	root, dir := searchFixture(t)
 	line := strings.Repeat("Needle padded out so the matches fill a pipe quickly\n", 20)
@@ -264,5 +262,116 @@ func TestSearchLimitStopsRipgrepEarly(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("rg kept running after the match limit was reached")
+	}
+}
+
+// summaryFixture has three matches in two files, and one file with none.
+func summaryFixture(t *testing.T) (*SearchText, string) {
+	t.Helper()
+	root, dir := treeFixture(t, map[string]string{
+		"a.go":     "x\nneedle\nneedle\ny\n",
+		"sub/b.go": "needle\n",
+		"c.go":     "nothing here\n",
+	})
+	return &SearchText{scope: scope{root: root, dir: dir}}, dir
+}
+
+func TestSearchCountModeTotalsPerFile(t *testing.T) {
+	tool, _ := summaryFixture(t)
+	got := runSearch(t, tool, `{"pattern":"needle","mode":"count"}`)
+	for _, want := range []string{"a.go:2", "sub/b.go:1", "3 matches in 2 files"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "c.go") {
+		t.Errorf("a file with no matches must not be listed:\n%s", got)
+	}
+}
+
+func TestSearchFilesModeListsEachFileOnce(t *testing.T) {
+	tool, _ := summaryFixture(t)
+	got := runSearch(t, tool, `{"pattern":"needle","mode":"files_with_matches"}`)
+	if strings.Count(got, "a.go") != 1 {
+		t.Errorf("a file with two matches must appear once:\n%s", got)
+	}
+	if !strings.Contains(got, "sub/b.go") || !strings.Contains(got, "2 files matched") {
+		t.Errorf("want both files and a count, got:\n%s", got)
+	}
+	if strings.Contains(got, "needle") || strings.Contains(got, "a.go:") || strings.Contains(got, "sub/b.go:") {
+		t.Errorf("this mode must not echo matched text or print counts:\n%s", got)
+	}
+}
+
+func TestSearchSummaryHonoursTheFileLimit(t *testing.T) {
+	tool, _ := summaryFixture(t)
+	got := runSearch(t, tool, `{"pattern":"needle","mode":"count","limit":1}`)
+	if !strings.Contains(got, "limit") {
+		t.Errorf("a capped summary must say so:\n%s", got)
+	}
+}
+
+func TestSearchRejectsAnUnknownMode(t *testing.T) {
+	tool, _ := summaryFixture(t)
+	if _, err := tool.Run(context.Background(), json.RawMessage(`{"pattern":"needle","mode":"sideways"}`)); err == nil ||
+		!strings.Contains(err.Error(), "files_with_matches") {
+		t.Errorf("err = %v, want the valid modes named", err)
+	}
+}
+
+func TestSearchSummariesMatchRipgrep(t *testing.T) {
+	root, dir := searchFixture(t)
+	goTool := &SearchText{scope: scope{root: root, dir: dir}}
+	rgTool := NewSearchText(root, dir)
+	if rgTool.rgPath == "" {
+		t.Skip("ripgrep is not installed")
+	}
+	modes := []string{`{"pattern":"Needle","mode":"count"}`, `{"pattern":"Needle","mode":"files_with_matches"}`,
+		`{"pattern":"Needle","mode":"count","glob":"*.go"}`, `{"pattern":"NEEDLE","mode":"count","ignore_case":true}`}
+	for _, a := range modes {
+		if sortedLines(runSearch(t, goTool, a)) != sortedLines(runSearch(t, rgTool, a)) {
+			t.Errorf("args %s disagree\ngo: %s\nrg: %s", a, runSearch(t, goTool, a), runSearch(t, rgTool, a))
+		}
+	}
+}
+
+func sortedLines(out string) string {
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
+}
+
+func TestSearchSummaryStopsScanningAtTheFileLimit(t *testing.T) {
+	files := map[string]string{}
+	for i := 0; i < 30; i++ {
+		files["f"+strconv.Itoa(i)+".go"] = "needle\n"
+	}
+	root, dir := treeFixture(t, files)
+	tool := &SearchText{scope: scope{root: root, dir: dir}}
+	got := runSearch(t, tool, `{"pattern":"needle","mode":"count","limit":2}`)
+	if !strings.Contains(got, "after 2 files;") {
+		t.Errorf("the walker must stop at the limit, not scan the tree:\n%s", got)
+	}
+}
+
+func TestSearchRipgrepSummaryDoesNotInventAFileCount(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{
+		"f1.go": "needle\n", "f2.go": "needle\n", "f3.go": "needle\n", "f4.go": "needle\n",
+	})
+	rgTool := NewSearchText(root, dir)
+	if rgTool.rgPath == "" {
+		t.Skip("ripgrep is not installed")
+	}
+	got := runSearch(t, rgTool, `{"pattern":"needle","mode":"count","limit":2}`)
+	if strings.Contains(got, "after 0 files") {
+		t.Errorf("ripgrep never reported a scanned count, so the note must not claim one:\n%s", got)
+	}
+	if !strings.Contains(got, "limit") {
+		t.Errorf("a capped summary must say so:\n%s", got)
 	}
 }

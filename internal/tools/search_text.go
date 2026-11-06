@@ -23,18 +23,24 @@ const (
 	searchTimeout        = 30 * time.Second
 )
 
-// SearchText greps the project. ripgrep is used when installed because it is
-// faster and already understands .gitignore; otherwise the Go walker in walk.go
-// does the same job. The tool output is identical either way.
+// SearchText greps with rg when installed, else the Go walker; the output is identical either way.
 type SearchText struct {
 	scope
 	rgPath string
 }
 
+// search modes: content answers with lines, the summaries answer with files.
+const (
+	modeContent = "content"
+	modeCount   = "count"
+	modeFiles   = "files_with_matches"
+)
+
 type searchInput struct {
 	Pattern    string `json:"pattern"`
 	Path       string `json:"path"`
 	Glob       string `json:"glob"`
+	Mode       string `json:"mode"`
 	IgnoreCase bool   `json:"ignore_case"`
 	Literal    bool   `json:"literal"`
 	Context    int    `json:"context"`
@@ -49,7 +55,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 func (SearchText) Name() string { return "search_text" }
 
 func (SearchText) Description() string {
-	return "Search file contents with a regular expression (set literal for plain text). Returns project-relative path:line:text, with context lines using a dash separator; .gitignore entries and binary files are skipped. Default 100 matches."
+	return "Search file contents with a regular expression (set literal for plain text). Returns project-relative path:line:text, with context lines using a dash separator; .gitignore entries and binary files are skipped. Default 100 matches. Use mode=count or mode=files_with_matches to cover ground in far fewer tokens."
 }
 
 func (SearchText) NeedsConfirm() bool { return false }
@@ -61,10 +67,11 @@ func (SearchText) Schema() json.RawMessage {
 	    "pattern": {"type": "string", "description": "regex, or plain text when literal is true"},
 	    "path": {"type": "string", "description": "file or directory to search (default the project root)"},
 	    "glob": {"type": "string", "description": "only files matching this glob, e.g. *.go"},
+	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"], "description": "content (default) returns matching lines; count returns per-file totals; files_with_matches returns only the file names"},
 	    "ignore_case": {"type": "boolean", "description": "case-insensitive (default false)"},
 	    "literal": {"type": "boolean", "description": "pattern is plain text, not a regex (default false)"},
 	    "context": {"type": "integer", "description": "lines of context around each match (default 0, max %d)"},
-	    "limit": {"type": "integer", "description": "max matches to return (default %d, max %d)"}
+	    "limit": {"type": "integer", "description": "max matches to return, or max files in count and files_with_matches modes (default %d, max %d)"}
 	  },
 	  "required": ["pattern"]
 	}`, maxSearchContext, defaultSearchMatches, maxSearchMatches))
@@ -87,6 +94,15 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 	if in.Pattern == "" {
 		return "", errors.New("search_text: pattern is empty")
 	}
+	if in.Mode == "" {
+		in.Mode = modeContent
+	}
+	if in.Mode != modeContent && in.Mode != modeCount && in.Mode != modeFiles {
+		return "", fmt.Errorf("search_text: unknown mode %q; use content, count or files_with_matches", in.Mode)
+	}
+	if in.Mode != modeContent {
+		in.Context = 0
+	}
 	in.Context = clamp(in.Context, 0, maxSearchContext)
 	limit := clampLimit(in.Limit, defaultSearchMatches, maxSearchMatches)
 
@@ -96,6 +112,9 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	defer h.close()
 
+	if in.Mode != modeContent {
+		return t.summary(ctx, h, in, limit)
+	}
 	if t.rgPath != "" {
 		hits, err := t.withRipgrep(ctx, h, in, limit)
 		if err != nil {
@@ -108,6 +127,103 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 		return "", err
 	}
 	return formatHits(hits, limit, scanned), nil
+}
+
+// summary answers count and files_with_matches with one line per file instead of one per match.
+func (t SearchText) summary(ctx context.Context, h handle, in searchInput, limit int) (string, error) {
+	var files []fileMatch
+	scanned, stopped := 0, false
+	var err error
+	if t.rgPath != "" {
+		files, scanned, stopped, err = t.withRipgrepSummary(ctx, h, in, limit)
+	} else {
+		files, scanned, stopped, err = t.withGoSummary(ctx, h, in, limit)
+	}
+	if err != nil {
+		return "", err
+	}
+	return formatSummary(in.Mode, files, limit, scanned, stopped), nil
+}
+
+// fileMatch is one file's tally in the summary modes.
+type fileMatch struct {
+	path    string
+	matches int
+}
+
+// rgFlags are the options every rg call shares.
+func rgFlags(in searchInput) []string {
+	args := []string{"--no-config", "--color=never", "--hidden"}
+	if in.IgnoreCase {
+		args = append(args, "--ignore-case")
+	}
+	if in.Literal {
+		args = append(args, "--fixed-strings")
+	}
+	if in.Glob != "" {
+		args = append(args, "--glob", in.Glob)
+	}
+	// --hidden brings .git back into view, so put it out again.
+	args = append(args, "--glob", "!"+skipDirName)
+	// --no-require-git makes rg honour .gitignore outside a git repository, like the fallback
+	return append(args, "--no-require-git")
+}
+
+// withRipgrepSummary asks rg for per-file counts or names, a far smaller answer than the matches.
+func (t SearchText) withRipgrepSummary(ctx context.Context, h handle, in searchInput, limit int) ([]fileMatch, int, bool, error) {
+	runCtx, cancel := context.WithTimeout(ctx, searchTimeout)
+	defer cancel()
+
+	flag := "--count"
+	if in.Mode == modeFiles {
+		flag = "--files-with-matches"
+	}
+	args := append(rgFlags(in), flag, "--", in.Pattern, h.target.Resolved)
+
+	cmd := groupCommand(runCtx, t.rgPath, args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("search_text: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, 0, false, fmt.Errorf("search_text: %w", err)
+	}
+
+	var files []fileMatch
+	sc := bufio.NewScanner(out)
+	for sc.Scan() {
+		text := strings.TrimSpace(sc.Text())
+		matches := 1
+		if in.Mode == modeCount {
+			cut := strings.LastIndex(text, ":")
+			if cut <= 0 {
+				continue
+			}
+			count, err := strconv.Atoi(text[cut+1:])
+			if err != nil {
+				continue
+			}
+			matches, text = count, text[:cut]
+		}
+		files = append(files, fileMatch{path: displayPath(t.dir, text), matches: matches})
+		if len(files) >= limit {
+			cancel() // stop rg now, otherwise Wait blocks on the unread stdout pipe
+			break
+		}
+	}
+	if ctx.Err() != nil {
+		return nil, 0, false, ctx.Err()
+	}
+	stopped := len(files) >= limit
+	if err := cmd.Wait(); err != nil && !stopped {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() > 1 {
+			return nil, 0, false, fmt.Errorf("search_text: rg: %s", strings.TrimSpace(stderr.String()))
+		}
+	}
+	return files, 0, stopped, nil
 }
 
 // hit is one output line: a matching line or a line of context around one.
@@ -123,24 +239,11 @@ func (t SearchText) withRipgrep(ctx context.Context, h handle, in searchInput, l
 	runCtx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 
-	args := []string{"--no-config", "--json", "--line-number", "--color=never", "--hidden"}
-	if in.IgnoreCase {
-		args = append(args, "--ignore-case")
-	}
-	if in.Literal {
-		args = append(args, "--fixed-strings")
-	}
-	if in.Glob != "" {
-		args = append(args, "--glob", in.Glob)
-	}
+	args := append(rgFlags(in), "--json", "--line-number")
 	if in.Context > 0 {
 		args = append(args, "--context", strconv.Itoa(in.Context))
 	}
-	// --hidden brings .git back into view, so put it out again.
-	args = append(args, "--glob", "!"+skipDirName)
-	// --no-require-git makes rg honour .gitignore outside a git repository, as
-	// the Go fallback does.
-	args = append(args, "--no-require-git", "--", in.Pattern, h.target.Resolved)
+	args = append(args, "--", in.Pattern, h.target.Resolved)
 
 	cmd := groupCommand(runCtx, t.rgPath, args...)
 	var stderr strings.Builder
@@ -217,23 +320,9 @@ func parseRgHit(line []byte, projectRoot string) (hit, bool) {
 
 // withGoWalker is the fallback when ripgrep is not installed.
 func (t SearchText) withGoWalker(ctx context.Context, h handle, in searchInput, limit int) ([]hit, int, error) {
-	pattern := in.Pattern
-	if in.Literal {
-		pattern = regexp.QuoteMeta(pattern)
-	}
-	if in.IgnoreCase {
-		pattern = "(?i)" + pattern
-	}
-	re, err := regexp.Compile(pattern)
+	re, globRe, err := t.matcher(in)
 	if err != nil {
-		return nil, 0, fmt.Errorf("search_text: bad pattern %q: %v", in.Pattern, err)
-	}
-	var globRe *regexp.Regexp
-	if in.Glob != "" {
-		globRe, err = compileGlob(in.Glob)
-		if err != nil {
-			return nil, 0, fmt.Errorf("search_text: bad glob %q: %v", in.Glob, err)
-		}
+		return nil, 0, err
 	}
 
 	var hits []hit
@@ -241,7 +330,7 @@ func (t SearchText) withGoWalker(ctx context.Context, h handle, in searchInput, 
 	matches := 0
 	stop := false
 	scanFile := func(path string, data []byte) error {
-		if globRe != nil && !globRe.MatchString(path) && !globRe.MatchString(path[strings.LastIndex(path, "/")+1:]) {
+		if !wanted(globRe, path) {
 			return nil
 		}
 		scanned++
@@ -277,18 +366,132 @@ func (t SearchText) withGoWalker(ctx context.Context, h handle, in searchInput, 
 		}
 		return nil
 	}
-	if info, err := h.root.Stat(h.name); err == nil && !info.IsDir() {
-		data, readErr := h.root.ReadFile(h.name)
-		if readErr != nil {
-			return nil, 0, toolError(t.Name(), in.Path, readErr)
-		}
-		if err := scanFile(h.name, data); err != nil && !errors.Is(err, stopWalk) {
-			return nil, 0, err
-		}
-		return hits, scanned, nil
+	if done, err := t.scanOne(h, in, scanFile); done || err != nil {
+		return hits, scanned, err
 	}
 	err = walkFiles(ctx, h.root, h.name, scanFile)
 	return hits, scanned, err
+}
+
+// matcher compiles the search pattern and the optional glob filter.
+func (t SearchText) matcher(in searchInput) (*regexp.Regexp, *regexp.Regexp, error) {
+	pattern := in.Pattern
+	if in.Literal {
+		pattern = regexp.QuoteMeta(pattern)
+	}
+	if in.IgnoreCase {
+		pattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, nil, fmt.Errorf("search_text: bad pattern %q: %v", in.Pattern, err)
+	}
+	var globRe *regexp.Regexp
+	if in.Glob != "" {
+		globRe, err = compileGlob(in.Glob)
+		if err != nil {
+			return nil, nil, fmt.Errorf("search_text: bad glob %q: %v", in.Glob, err)
+		}
+	}
+	return re, globRe, nil
+}
+
+// wanted applies the optional glob filter to a walked path.
+func wanted(globRe *regexp.Regexp, path string) bool {
+	return globRe == nil || globRe.MatchString(path) || globRe.MatchString(path[strings.LastIndex(path, "/")+1:])
+}
+
+// scanOne searches the single file the path names, reporting false when it is a directory.
+func (t SearchText) scanOne(h handle, in searchInput, scan func(path string, data []byte) error) (bool, error) {
+	info, err := h.root.Stat(h.name)
+	if err != nil || info.IsDir() {
+		return false, nil
+	}
+	data, readErr := h.root.ReadFile(h.name)
+	if readErr != nil {
+		return false, toolError(t.Name(), in.Path, readErr)
+	}
+	if err := scan(h.name, data); err != nil && !errors.Is(err, stopWalk) {
+		return false, err
+	}
+	return true, nil
+}
+
+// withGoSummary counts matches per file without keeping the lines.
+func (t SearchText) withGoSummary(ctx context.Context, h handle, in searchInput, limit int) ([]fileMatch, int, bool, error) {
+	re, globRe, err := t.matcher(in)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	var files []fileMatch
+	scanned := 0
+	countFile := func(path string, data []byte) error {
+		if !wanted(globRe, path) {
+			return nil
+		}
+		scanned++
+		matches := 0
+		for _, line := range splitLines(data) {
+			if !re.MatchString(line) {
+				continue
+			}
+			matches++
+			if in.Mode == modeFiles {
+				break
+			}
+		}
+		if matches == 0 {
+			return nil
+		}
+		files = append(files, fileMatch{path: h.display(path), matches: matches})
+		if len(files) >= limit {
+			return stopWalk
+		}
+		return nil
+	}
+	if done, err := t.scanOne(h, in, countFile); done || err != nil {
+		return files, scanned, len(files) >= limit, err
+	}
+	if walkErr := walkFiles(ctx, h.root, h.name, countFile); walkErr != nil {
+		return nil, scanned, false, walkErr
+	}
+	return files, scanned, len(files) >= limit, nil
+}
+
+// formatSummary renders one line per file plus the total the model asked for.
+func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped bool) string {
+	if len(files) == 0 {
+		return "(no matches)"
+	}
+	var b strings.Builder
+	total := 0
+	for i, f := range files {
+		line := f.path
+		if mode != modeFiles { // files_with_matches never counted, so it must not pretend to
+			line += ":" + strconv.Itoa(f.matches)
+		}
+		if b.Len()+len(line)+1 > resultBudget {
+			return b.String() + fmt.Sprintf(
+				"\n\n[... %d more files; output hit the %d byte budget: narrow the pattern or pass glob]", len(files)-i, resultBudget)
+		}
+		total += f.matches
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if stopped {
+		note := fmt.Sprintf("[stopped at the %d file limit; narrow the pattern, pass glob, or raise limit]", limit)
+		if scanned > 0 { // ripgrep reports no file count, so the note would only guess
+			note = fmt.Sprintf("[stopped at the %d file limit after %d files; narrow the pattern, pass glob, or raise limit]", limit, scanned)
+		}
+		b.WriteString("\n" + note)
+		return b.String()
+	}
+	if mode == modeFiles {
+		fmt.Fprintf(&b, "%d files matched\n", len(files))
+	} else {
+		fmt.Fprintf(&b, "%d matches in %d files\n", total, len(files))
+	}
+	return b.String()
 }
 
 // formatHits renders hits and keeps the result inside the tool budget.
@@ -329,8 +532,7 @@ func oneLine(s string, maxChars int) string {
 	return s
 }
 
-// displayPath keeps paths project-relative, since that is what read_file wants
-// next; anything outside stays absolute.
+// displayPath keeps paths project-relative because that is what read_file wants next.
 func displayPath(projectRoot, abs string) string {
 	rel, err := filepath.Rel(projectRoot, abs)
 	if err != nil || strings.HasPrefix(rel, "..") {
