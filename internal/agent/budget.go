@@ -103,7 +103,9 @@ func (a *Agent) trimHistory() {
 			a.tell("trimmed an old tool result to fit the context")
 		}
 	}
-	for a.estimateTokens() > target && a.dropOldestToolCall() {
+	// dropping whole calls is the emergency brake: it costs the model its recent work, so it waits
+	// until the window is nearly full, after shortening and compaction have had their turn.
+	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestToolCall() {
 		a.tell("dropped an older tool call and its result to fit the context")
 	}
 }

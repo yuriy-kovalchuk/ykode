@@ -47,7 +47,9 @@ request and returns to the prompt.
 ## Tools
 
 `find_files`, `search_text`, `read_file`, `write_file`, `edit_file`,
-`exec_command`, `recall`. `find_files` lists one directory with `depth: 1`;
+`exec_command`, and `recall` — which only appears once a result has actually been
+shortened, because a tool description costs tokens in every request.
+`find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`
 window reports the next `offset`, a cut `exec_command` log reports the saved file.
@@ -68,13 +70,20 @@ estimate used to shrink `max_tokens` and trim old tool output, so the context
 budget stops guessing.
 
 Past 3/4 of the server's window, ykode stops paying for output the model has
-already used: older tool results are replaced with a summary the code writes —
-which call it was, how big it was, how it began — and the full text is kept in
-`~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
-newest results are never shortened, and a `read_file` of a window the model
-already has, of a file that has not changed, comes back as one line instead of
-the file. Result sizes scale with the window: 4.8 KB on a 4k context, 24 KB on a
-128k one. A gateway failure or a model still loading on a router
+already used. In order, cheapest first:
+
+1. Older tool results are replaced with a summary the code writes — which call it
+   was, how big it was, how it began — and the full text is kept in
+   `~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
+   newest results are never shortened, and a `read_file` of a window the model
+   already has, of a file that has not changed, comes back as one line.
+2. If that was not enough, the older turns are folded into a summary the **model**
+   writes (goal, files touched, decisions, next step) and the turns it summarised
+   are dropped. This happens once per session, and `/compact` asks for it directly.
+3. Past 9/10 of the window the emergency brake applies: whole tool calls and their
+   replies are removed, oldest first.
+
+Result sizes scale with the window: 4.8 KB on a 4k context, 24 KB on a 128k one. A gateway failure or a model still loading on a router
 gets one retry; a request the server rejected on its merits is never replayed.
 
 ## Staying inside the project

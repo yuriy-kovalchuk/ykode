@@ -13,27 +13,18 @@ const (
 	shrinkMark   = "[ykode shortened this"
 )
 
-// resultIDs labels tool results by position: r1, r2, ... History is only appended to, so an id stays put.
-func (a *Agent) resultIDs() map[int]string {
-	ids := map[int]string{}
-	n := 0
-	for i, m := range a.history {
-		if m.Role == "tool" {
-			n++
-			ids[i] = fmt.Sprintf("r%d", n)
-		}
-	}
-	return ids
-}
-
 // underPressure says the conversation passed 3/4 of the server window, where context starts being worth money.
 func (a *Agent) underPressure() bool {
 	return a.opts.CtxSize > 0 && a.estimateTokens() > a.opts.CtxSize*3/4
 }
 
+// stillTight says shortening the results did not buy enough room, which is when compaction earns its call.
+func (a *Agent) stillTight() bool {
+	return a.opts.CtxSize > 0 && a.estimateTokens() > a.opts.CtxSize*3/4
+}
+
 // shrinkOldResults replaces older large tool results with a summary the code writes, and returns the bytes freed.
 func (a *Agent) shrinkOldResults(keep int) int {
-	ids := a.resultIDs()
 	var positions []int
 	for i, m := range a.history {
 		if m.Role == "tool" {
@@ -46,23 +37,15 @@ func (a *Agent) shrinkOldResults(keep int) int {
 			break // the model is still working with these
 		}
 		m := &a.history[i]
-		if len(m.Content) <= summaryFloor || strings.HasPrefix(m.Content, shrinkMark) {
+		if m.CallID == "" || len(m.Content) <= summaryFloor || strings.HasPrefix(m.Content, shrinkMark) {
 			continue
 		}
-		summary := a.summarize(m, ids[i])
+		summary := a.summarize(m, m.CallID)
 		freed += len(m.Content) - len(summary)
 		m.Content = summary
 		a.shortened = true
 	}
 	return freed
-}
-
-// Compact shrinks the conversation on request: every tool result goes, because the user asked for room.
-func (a *Agent) Compact() int {
-	before := a.estimateTokens()
-	a.shrinkOldResults(0)
-	a.trimHistory()
-	return before - a.estimateTokens()
 }
 
 // summarize is what ykode keeps of a dropped result: which call it was, how big it was, how it began, and where the text is.

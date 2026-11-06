@@ -12,11 +12,13 @@ import (
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	for _, call := range calls {
+		a.callSeq++
 		a.history = append(a.history, llm.Message{
 			Role:       "tool",
 			Content:    a.runTool(ctx, call),
 			ToolCallID: call.ID,
 			Name:       call.Function.Name,
+			CallID:     fmt.Sprintf("r%d", a.callSeq),
 		})
 	}
 }

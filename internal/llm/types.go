@@ -14,6 +14,7 @@ type Message struct {
 	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID    string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
 	Name          string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
+	CallID        string     `json:"-"`                      // ykode's own id for this result: r1, r2, ...
 	Reasoning     string     `json:"-"`
 	WireReasoning string     `json:"reasoning_content,omitempty"` // only sent when SendReasoning is on
 }

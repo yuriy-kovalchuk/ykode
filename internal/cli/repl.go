@@ -114,7 +114,7 @@ func (r *REPL) command(line string) (quit bool, err error) {
 	case "/usage":
 		fmt.Fprintln(r.out, usageLine(r.agent.Usage(), r.agent.CtxSize()))
 	case "/compact":
-		freed := r.agent.Compact()
+		freed := r.agent.Compact(context.Background())
 		fmt.Fprintf(r.out, "older tool results shortened; the conversation is about %d tokens smaller\n", freed)
 	case "/help":
 		fmt.Fprintln(r.out, helpText)

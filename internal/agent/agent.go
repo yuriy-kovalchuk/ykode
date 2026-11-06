@@ -46,6 +46,8 @@ type Agent struct {
 	opts      Options
 	sink      Sink
 	shortened bool // a tool result has been shortened, so recall is worth describing
+	callSeq   int  // numbers the r1, r2... ids that recall and the audit log share
+	compacted bool // the older turns were folded into a summary once already
 	turn      int  // the round-trip currently running, carried on every event
 	history   []llm.Message
 	meter     meter
@@ -65,6 +67,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
+	a.compacted, a.shortened = false, false
 }
 
 const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with find_files, search_text or read_file, then answer again."
@@ -87,7 +90,13 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		if a.underPressure() {
 			a.shrinkOldResults(keepResults)
 		}
-		a.trimHistory()
+		if a.stillTight() && !a.compacted && a.canCompact() {
+			// shortening the results was not enough: pay one request to fold the older turns into a summary
+			a.tell("the conversation is out of room: asking the model to summarise the older turns")
+			a.compacted = true
+			a.Compact(ctx)
+		}
+		a.trimHistory() // last resort: blank what is left, then drop whole calls
 		req, err := a.request(forceTool)
 		forceTool = false
 		if err != nil {
