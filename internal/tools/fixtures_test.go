@@ -1,13 +1,14 @@
 package tools
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// treeFixture writes files into a fresh temp dir, creating parent directories
-// as needed, and returns the open Root a tool needs plus the directory itself.
+// treeFixture writes files into a fresh temp dir and returns the open Root plus the directory.
 func treeFixture(t *testing.T, files map[string]string) (*os.Root, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -26,4 +27,14 @@ func treeFixture(t *testing.T, files map[string]string) (*os.Root, string) {
 	}
 	t.Cleanup(func() { root.Close() })
 	return root, dir
+}
+
+// runTool runs a tool with JSON arguments and fails the test if it errors.
+func runTool(t *testing.T, tool Tool, args string) string {
+	t.Helper()
+	got, err := tool.Run(context.Background(), json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("%s: %v", tool.Name(), err)
+	}
+	return got
 }

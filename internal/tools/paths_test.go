@@ -157,3 +157,38 @@ func TestInProjectSymlinkCannotEscape(t *testing.T) {
 		t.Fatal("a symlink inside the root pointed outside it and the read succeeded")
 	}
 }
+
+func TestFileResultsShowPathsTheModelCanReuse(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"src/a.txt": "one\ntwo\n"})
+	edited := runTool(t, NewEditFile(root, dir), `{"path":"src/a.txt","edits":[{"old_text":"two","new_text":"THREE"}]}`)
+	wrote := runTool(t, NewWriteFile(root, dir), `{"path":"src/a.txt","content":"four\n"}`)
+	for _, got := range []string{edited, wrote} {
+		if !strings.Contains(got, "src/a.txt") {
+			t.Errorf("result must name the project-relative path the next call takes:\n%s", got)
+		}
+		if strings.Contains(got, dir) {
+			t.Errorf("a path under the root must not be printed as an absolute one:\n%s", got)
+		}
+	}
+}
+
+func TestAnOutsideResultKeepsTheAbsolutePath(t *testing.T) {
+	root, dir := setup(t)
+	write := NewWriteFile(root, dir)
+	target := filepath.Join(filepath.Dir(dir), "outside-note.md")
+	args, err := json.Marshal(map[string]string{"path": "../outside-note.md", "content": "written\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := write.Targets(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := write.Run(WithApprovals(context.Background(), []string{targets[0].Resolved}), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, target) {
+		t.Errorf("an outside file must be named absolutely so it can be found again:\n%s", got)
+	}
+}

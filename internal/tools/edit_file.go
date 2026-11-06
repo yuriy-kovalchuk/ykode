@@ -10,9 +10,7 @@ import (
 	"strings"
 )
 
-// EditFile replaces exact text in a file, one or more times per call. All the
-// replacements are checked against the original file before anything is
-// written, so a bad edit leaves the file untouched.
+// EditFile replaces exact text, checking every edit against the original before anything is written.
 type EditFile struct{ scope }
 
 type editInput struct {
@@ -129,8 +127,7 @@ func (t EditFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 		}
 		planned = append(planned, replacement{start: start, end: end, text: newText, fuzzy: fuzzy})
 	}
-	// Every pair matched, so now check they address different parts of the file
-	// and apply them back to front so earlier offsets stay valid.
+	// all pairs matched: check they do not overlap, then apply back to front so offsets stay valid
 	slices.SortFunc(planned, func(a, b replacement) int { return a.start - b.start })
 	for i := 1; i < len(planned); i++ {
 		if planned[i].start < planned[i-1].end {
@@ -149,12 +146,15 @@ func (t EditFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	if fuzzyUsed > 0 {
 		note = fmt.Sprintf("; %d matched ignoring extra whitespace, so re-read the file to check the indentation", fuzzyUsed)
 	}
-	return fmt.Sprintf("edited %s (%d -> %d bytes, %d replacement%s%s)",
-		h.target.Resolved, len(current), len(updated), len(planned), plural(len(planned)), note), nil
+	result := fmt.Sprintf("edited %s (%d -> %d bytes, %d replacement%s%s)",
+		h.shown(), len(current), len(updated), len(planned), plural(len(planned)), note)
+	if diff := diffText(current, updated); diff != "" {
+		result += "\n" + diff
+	}
+	return result, nil
 }
 
-// editPairs accepts the shapes models actually send: an edits array, a single
-// edits object, the array as a JSON string, or flat old_string/new_string.
+// editPairs accepts the shapes models actually send: an array, one object, a JSON string, or flat keys.
 func editPairs(in editInput) ([]editPair, error) {
 	if len(in.Edits) == 0 {
 		if in.OldString == "" && in.OldText == "" {
@@ -166,8 +166,7 @@ func editPairs(in editInput) ([]editPair, error) {
 	if err := json.Unmarshal(in.Edits, &pairs); err == nil && len(pairs) > 0 {
 		return pairs, nil
 	}
-	// A string wrapping the array, or a bare object instead of a one-element
-	// array, are both common slips.
+	// a string-wrapped array or a bare object are common slips
 	var asString string
 	if err := json.Unmarshal(in.Edits, &asString); err == nil {
 		if err := json.Unmarshal([]byte(asString), &pairs); err == nil && len(pairs) > 0 {
@@ -185,9 +184,7 @@ func editPairs(in editInput) ([]editPair, error) {
 	return nil, fmt.Errorf("edits must be a list of {old_text, new_text} objects")
 }
 
-// locate finds the single place old belongs. It tries the exact text, then a
-// whitespace-flexible match, and refuses anything ambiguous rather than editing
-// the wrong spot.
+// locate finds the one place old belongs: exact text first, then whitespace-flexible, never ambiguous.
 func locate(current, old string) (start, end int, fuzzy bool, err error) {
 	switch n := strings.Count(current, old); n {
 	case 1:
@@ -205,8 +202,7 @@ func locate(current, old string) (start, end int, fuzzy bool, err error) {
 // whitespaceRun matches the gap between two tokens of old_text.
 var whitespaceRun = regexp.MustCompile(`\s+`)
 
-// fuzzyLocate matches old_text with any run of whitespace standing in for any
-// other run, which is where small models slip when they retype a block.
+// fuzzyLocate treats any run of whitespace as any other, which is where small models slip on indentation.
 func fuzzyLocate(current, old string) (start, end int, ok bool) {
 	parts := whitespaceRun.Split(strings.TrimSpace(old), -1)
 	if len(parts) < 2 {

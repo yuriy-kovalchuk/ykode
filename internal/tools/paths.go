@@ -9,17 +9,14 @@ import (
 	"strings"
 )
 
-// Target is a path a tool is about to touch, resolved to an absolute path,
-// along with whether it lies outside the project root.
+// Target is a path a tool is about to touch, resolved, plus whether it lies outside the project root.
 type Target struct {
 	Raw      string
 	Resolved string
 	Outside  bool
 }
 
-// resolveTarget makes a model-supplied path absolute. Unlike the earlier
-// sandbox, paths outside the project root are not rejected here: they are
-// reported to the agent, which asks the user about each one.
+// resolveTarget makes a model-supplied path absolute; outside paths are reported to the agent, not rejected.
 func resolveTarget(raw, root string) (Target, error) {
 	p := strings.TrimSpace(raw)
 	var abs string
@@ -45,8 +42,7 @@ func within(root, path string) bool {
 	return strings.HasPrefix(path, root)
 }
 
-// scope is the file handle shared by the file tools: the project's *os.Root
-// plus the outside-path approvals the user granted for this one call.
+// scope is the file handle the file tools share: the project Root plus this call's outside approvals.
 type scope struct {
 	root *os.Root
 	dir  string // absolute project root
@@ -67,9 +63,7 @@ func (h handle) close() {
 	}
 }
 
-// display turns a path reported relative to the handle's Root into one the
-// model can hand straight back to read_file: project-relative inside the
-// project, absolute for an approved outside tree.
+// display renders a handle-relative path so the model can hand it straight back to another tool.
 func (h handle) display(rel string) string {
 	if h.base == "" {
 		return rel
@@ -77,11 +71,10 @@ func (h handle) display(rel string) string {
 	return h.base + "/" + rel
 }
 
-// open resolves raw and returns a Root containing it plus the name to use
-// inside that Root. In-project paths use the single project Root. An approved
-// outside path gets its own Root at the nearest existing directory, so even
-// after approval it cannot reach outside that subtree, and symlinks there are
-// still checked against it.
+// shown is the handle's own path as the model should repeat it: project-relative inside the root.
+func (h handle) shown() string { return h.display(h.name) }
+
+// open resolves raw into a Root and a name inside it, giving an approved outside path its own Root.
 func (s scope) open(ctx context.Context, raw string) (handle, error) {
 	t, err := resolveTarget(raw, s.dir)
 	if err != nil {
@@ -105,8 +98,7 @@ func (s scope) open(ctx context.Context, raw string) (handle, error) {
 	return handle{root: outer, name: rel, target: t, base: dir, closer: outer}, nil
 }
 
-// nearestExistingDir walks up from a path's directory until it finds one that
-// exists, and returns it with the target's name relative to it.
+// nearestExistingDir walks up to the first directory that exists, with the target named relative to it.
 func nearestExistingDir(path string) (dir, rel string) {
 	dir = filepath.Dir(path)
 	for {
@@ -126,8 +118,7 @@ func nearestExistingDir(path string) (dir, rel string) {
 
 type approvalsKey struct{}
 
-// WithApprovals records the outside paths the user agreed to for a single tool
-// call. Nothing is remembered between calls: each attempt asks again.
+// WithApprovals grants outside paths for one call only; nothing is remembered between calls.
 func WithApprovals(ctx context.Context, paths []string) context.Context {
 	return context.WithValue(ctx, approvalsKey{}, paths)
 }

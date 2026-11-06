@@ -69,8 +69,18 @@ func (t WriteFile) Run(ctx context.Context, args json.RawMessage) (string, error
 			return "", fmt.Errorf("write_file %q: mkdir %q: %w", in.Path, dir, err)
 		}
 	}
+	before, err := h.root.ReadFile(h.name)
+	existed := err == nil
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
-	return fmt.Sprintf("wrote %s (%d bytes)", h.target.Resolved, len(in.Content)), nil
+	if !existed {
+		return fmt.Sprintf("created %s (%d bytes, %d lines)",
+			h.shown(), len(in.Content), len(diffSplit(in.Content))), nil
+	}
+	result := fmt.Sprintf("wrote %s (%d bytes)", h.shown(), len(in.Content))
+	if diff := diffText(string(before), in.Content); diff != "" {
+		result += "\n" + diff
+	}
+	return result, nil
 }
