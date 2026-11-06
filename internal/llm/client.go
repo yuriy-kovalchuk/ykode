@@ -1,5 +1,4 @@
-// Package llm talks to an OpenAI-compatible chat-completions server over plain
-// net/http. It knows nothing about tools or the agent loop.
+// Package llm talks to an OpenAI-compatible chat-completions server over plain net/http.
 package llm
 
 import (
@@ -10,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -34,9 +34,7 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// Models lists the models the server serves, with their context size when the
-// server reports one. llama.cpp exposes the ctx both in meta.n_ctx (loaded) and
-// in status.args (the launch command of an unloaded model).
+// Models lists the served models and their context size, which llama.cpp reports in meta.n_ctx or status.args.
 func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
 	if err != nil {
@@ -71,9 +69,7 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	return models, nil
 }
 
-// ChatStream sends a turn and reassembles the streamed reply. onDelta is called
-// for every reasoning and answer fragment as it arrives; it runs on the
-// caller's goroutine and must not block for long.
+// ChatStream streams a turn; onDelta sees each reasoning and answer fragment as it arrives.
 func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(Delta)) (Turn, error) {
 	var empty Turn
 	body.Stream = true
@@ -94,9 +90,31 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	return acc.turn(), nil
 }
 
-// postChat sends the request and rejects anything that is not an event stream,
-// so the rest of the path only has to deal with one shape of response.
+// chatAttempts is how often one turn is sent: once, plus once more for a failure that could pass later.
+const chatAttempts = 2
+
+// retryWait separates a retry from the failure that caused it.
+const retryWait = 500 * time.Millisecond
+
+// postChat rejects any response that is not an event stream, so the rest handles one shape.
 func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, error) {
+	for attempt := 1; ; attempt++ {
+		resp, err := c.sendChat(ctx, payload)
+		if err == nil {
+			return resp, nil
+		}
+		if attempt == chatAttempts || !couldPassLater(err) {
+			return nil, err
+		}
+		select {
+		case <-time.After(retryWait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+func (c *Client) sendChat(ctx context.Context, payload []byte) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -112,9 +130,7 @@ func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, 
 		defer resp.Body.Close()
 		return nil, statusError(resp)
 	}
-	// A proxy or an errored server can answer a streaming request with one plain
-	// JSON body. Read as SSE that would look like an empty model reply instead of
-	// a failure.
+	// a proxy may answer a streaming request with one JSON body, which as SSE looks like an empty reply
 	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "application/json") {
 		defer resp.Body.Close()
 		return nil, fmt.Errorf("server answered %s instead of an event stream: %s", ct, preview(quotedBody(resp)))
@@ -122,13 +138,46 @@ func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, 
 	return resp, nil
 }
 
+// chatFailure is an HTTP status plus the body the server explained it with.
+type chatFailure struct {
+	status string
+	code   int
+	detail string
+}
+
+func (f chatFailure) Error() string {
+	msg := "HTTP " + f.status
+	if f.detail != "" {
+		msg += ": " + f.detail
+	}
+	if modelIsLoading(f.detail) {
+		msg += " (a router like this one loads models on demand, so the model may still be starting)"
+	}
+	return msg
+}
+
+// couldPassLater reports a failure where asking again is worth the wait.
+func couldPassLater(err error) bool {
+	var failure chatFailure
+	if !errors.As(err, &failure) {
+		// a refused or dropped connection: the server may be restarting or swapping a model out
+		return true
+	}
+	switch failure.code {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusTooManyRequests:
+		return true
+	}
+	return modelIsLoading(failure.detail)
+}
+
+// loadingWords is how servers say a model is not in memory yet.
+var loadingWords = regexp.MustCompile(`(?i)(model is loading|loading model|not loaded|no model|server is (busy|starting)|overloaded|temporarily unavailable|no healthy upstream)`)
+
+func modelIsLoading(detail string) bool { return loadingWords.MatchString(detail) }
+
 // statusError quotes the beginning of an error response body.
 func statusError(resp *http.Response) error {
-	detail := quotedBody(resp)
-	if detail == "" {
-		return fmt.Errorf("HTTP %s", resp.Status)
-	}
-	return fmt.Errorf("HTTP %s: %s", resp.Status, detail)
+	return chatFailure{status: resp.Status, code: resp.StatusCode, detail: quotedBody(resp)}
 }
 
 // quotedBody reads the beginning of a response body that is about to be dropped.

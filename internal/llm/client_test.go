@@ -3,18 +3,20 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // frame builds one SSE data line, as the server would send it.
 func frame(payload string) string { return "data: " + payload + "\n\n" }
 
-// streamServer answers a chat request with raw SSE text and records the request
-// body it received.
+// streamServer answers a chat request with raw SSE text and records the body it received.
 func streamServer(t *testing.T, sse string) (*Client, *ChatRequest) {
 	t.Helper()
 	var got ChatRequest
@@ -128,8 +130,7 @@ func TestChatStreamReportsBrokenChunksAndServerErrors(t *testing.T) {
 }
 
 func TestChatStreamRefusesAnOverlongLine(t *testing.T) {
-	// One data line bigger than maxLineBytes must surface as an error, not a
-	// silently truncated message.
+	// a data line over maxLineBytes must surface as an error, not a silently truncated message
 	c, _ := streamServer(t, frame(`{"choices":[{"delta":{"content":"`+strings.Repeat("x", maxLineBytes+16)+`"}}]}`))
 	if _, _, err := collect(t, c); err == nil || !strings.Contains(err.Error(), "read stream") {
 		t.Fatalf("error = %v", err)
@@ -193,8 +194,7 @@ func TestChatStreamKeepsServerTimings(t *testing.T) {
 }
 
 func TestChatStreamRefusesAPlainJSONAnswer(t *testing.T) {
-	// A server that answers a streaming request with a single JSON body (an
-	// error proxy, a load balancer) must not look like an empty model reply.
+	// an error proxy answering a streaming request with one JSON body is not an empty reply
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"error":{"message":"model is not loaded","code":400}}`)
@@ -280,5 +280,101 @@ func TestArgsJSONAcceptsBothWireShapes(t *testing.T) {
 		if err != nil || string(args) != tc.want {
 			t.Errorf("%q = %q (%v), want %q", tc.raw, args, err, tc.want)
 		}
+	}
+}
+
+// flakyServer fails the first fails requests, then streams one short answer.
+func flakyServer(t *testing.T, fails int, status int, body string) (*Client, *atomic.Int32) {
+	t.Helper()
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) <= int32(fails) {
+			w.WriteHeader(status)
+			fmt.Fprint(w, body)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, frame(`{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return NewClient(srv.URL + "/v1"), &attempts
+}
+
+func TestChatStreamRetriesATransientGatewayFailure(t *testing.T) {
+	c, attempts := flakyServer(t, 1, http.StatusBadGateway, "upstream went away")
+	turn, _, err := collect(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Message.Content != "ok" {
+		t.Errorf("answer = %q, want the retry to succeed", turn.Message.Content)
+	}
+	if attempts.Load() != 2 {
+		t.Errorf("attempts = %d, want 2", attempts.Load())
+	}
+}
+
+func TestChatStreamDoesNotReplayADeterministicServerError(t *testing.T) {
+	c, attempts := flakyServer(t, 5, http.StatusInternalServerError, `{"error":"Failed to parse tool call arguments as JSON"}`)
+	_, _, err := collect(t, c)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if attempts.Load() != 1 {
+		t.Errorf("attempts = %d, want 1: replaying a bad request only wastes a turn", attempts.Load())
+	}
+}
+
+func TestChatStreamNamesALoadingModel(t *testing.T) {
+	c, attempts := flakyServer(t, 5, http.StatusServiceUnavailable, `{"error":"model is loading"}`)
+	_, _, err := collect(t, c)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(err.Error(), "may still be starting") {
+		t.Errorf("error = %v, want the hint that the server is still loading the model", err)
+	}
+	if attempts.Load() != chatAttempts {
+		t.Errorf("attempts = %d, want %d", attempts.Load(), chatAttempts)
+	}
+}
+
+func TestChatStreamRetriesADroppedConnection(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(),
+		ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if attempts.Load() != chatAttempts {
+		t.Errorf("attempts = %d, want %d", attempts.Load(), chatAttempts)
+	}
+}
+
+func TestChatStreamStopsPromptlyWhenCancelled(t *testing.T) {
+	c, attempts := flakyServer(t, 5, http.StatusServiceUnavailable, "model is loading")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	_, err := c.ChatStream(ctx, ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if attempts.Load() != 0 {
+		t.Errorf("attempts = %d, want no request at all", attempts.Load())
+	}
+	if spent := time.Since(start); spent > retryWait/2 {
+		t.Errorf("waited %v after the user cancelled, want no retry delay at all", spent)
 	}
 }
