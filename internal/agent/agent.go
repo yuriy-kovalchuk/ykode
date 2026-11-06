@@ -22,10 +22,11 @@ type Options struct {
 	CtxSize       int // server context window; 0 = unknown, no budgeting
 	Think         bool
 	AssumeYes     bool
-	Instructions  string // what the project's AGENTS.md / CLAUDE.md said
-	NoVerify      bool   // never push a text-only answer back into the tools
-	SendReasoning bool   // repeat earlier thinking to templates that expect it back
-	MaxResult     int    // byte cap on one tool result; 0 means the tools' own default
+	Instructions  string            // what the project's AGENTS.md / CLAUDE.md said
+	NoVerify      bool              // never push a text-only answer back into the tools
+	SendReasoning bool              // repeat earlier thinking to templates that expect it back
+	MaxResult     int               // byte cap on one tool result; 0 means the tools' own default
+	Store         tools.ResultStore // where shortened tool results are kept for recall
 }
 
 // Stats summarises one model round-trip for the user.
@@ -39,14 +40,15 @@ type Stats struct {
 }
 
 type Agent struct {
-	client  *llm.Client
-	tools   *tools.Registry
-	model   string
-	opts    Options
-	sink    Sink
-	turn    int // the round-trip currently running, carried on every event
-	history []llm.Message
-	meter   meter
+	client    *llm.Client
+	tools     *tools.Registry
+	model     string
+	opts      Options
+	sink      Sink
+	shortened bool // a tool result has been shortened, so recall is worth describing
+	turn      int  // the round-trip currently running, carried on every event
+	history   []llm.Message
+	meter     meter
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
@@ -82,6 +84,9 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	for turn := 1; ; turn++ {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
+		if a.underPressure() {
+			a.shrinkOldResults(keepResults)
+		}
 		a.trimHistory()
 		req, err := a.request(forceTool)
 		forceTool = false
@@ -176,6 +181,9 @@ func (a *Agent) specs() []llm.ToolSpec {
 	all := a.tools.All()
 	specs := make([]llm.ToolSpec, 0, len(all))
 	for _, t := range all {
+		if t.Name() == "recall" && !a.shortened {
+			continue // nothing has been shortened yet, so the tool only costs tokens in every request
+		}
 		specs = append(specs, llm.ToolSpec{
 			Type:     "function",
 			Function: llm.ToolFunction{Name: t.Name(), Description: t.Description(), Parameters: t.Schema()},

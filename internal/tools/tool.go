@@ -27,7 +27,8 @@ type Options struct {
 	SearchLimit    int
 	ExecTimeout    time.Duration
 	CommandLogDir  string
-	MaxResultBytes int // one tool result; 0 means defaultResultBytes
+	MaxResultBytes int
+	Store          ResultStore
 }
 
 func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
@@ -47,7 +48,13 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	run.LogDir = opts.CommandLogDir
 	run.MaxBytes = opts.MaxResultBytes
 
-	return NewRegistry(find, search, read, write, edit, run)
+	built := []Tool{find, search, read, write, edit, run}
+	if opts.Store.Saved() {
+		recall := NewRecall(opts.Store)
+		recall.budget = opts.MaxResultBytes
+		built = append(built, recall)
+	}
+	return NewRegistry(built...)
 }
 
 // Registry keeps tools in registration order so the list the model sees stays stable.

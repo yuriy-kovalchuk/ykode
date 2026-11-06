@@ -98,8 +98,9 @@ func (r *REPL) Run(ctx context.Context) error {
 // helpText lists the commands; the model does the work, so this stays short.
 const helpText = `commands:
   /help   show this
-  /usage  what the conversation has cost the server
-  /reset  forget the conversation
+  /usage    what the conversation has cost the server
+  /compact  shorten older tool results; the full text stays recallable
+  /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
 
 // command handles a slash command and reports whether the REPL should stop.
@@ -112,6 +113,9 @@ func (r *REPL) command(line string) (quit bool, err error) {
 		fmt.Fprintln(r.out, "history cleared")
 	case "/usage":
 		fmt.Fprintln(r.out, usageLine(r.agent.Usage(), r.agent.CtxSize()))
+	case "/compact":
+		freed := r.agent.Compact()
+		fmt.Fprintf(r.out, "older tool results shortened; the conversation is about %d tokens smaller\n", freed)
 	case "/help":
 		fmt.Fprintln(r.out, helpText)
 	default:

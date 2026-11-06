@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -197,5 +199,52 @@ func TestALongOutlineIsCutWithAHint(t *testing.T) {
 	}
 	if len(out) > 12000 {
 		t.Fatalf("outline is %d bytes, over the tool budget", len(out))
+	}
+}
+
+func TestARepeatOfTheSameWindowCostsOneLine(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"src/main.go": strings.Repeat("package main\n", 30)})
+	tool := NewReadFile(root, dir)
+
+	first := runTool(t, tool, `{"path":"src/main.go","offset":1,"limit":10}`)
+	if !strings.Contains(first, "lines 1-10 of 30") {
+		t.Fatalf("first read looks wrong:\n%s", first)
+	}
+	again := runTool(t, tool, `{"path":"src/main.go","offset":1,"limit":10}`)
+	if !strings.Contains(again, "unchanged since you read lines 1-10") {
+		t.Fatalf("the repeat came back in full (%d bytes):\n%s", len(again), again)
+	}
+	if next := runTool(t, tool, `{"path":"src/main.go","offset":11,"limit":10}`); !strings.Contains(next, "lines 11-20") {
+		t.Fatalf("a different window was refused:\n%s", next)
+	}
+}
+
+func TestAChangedFileIsReadInFullAgain(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"src/main.go": "one\ntwo\n"})
+	tool := NewReadFile(root, dir)
+	runTool(t, tool, `{"path":"src/main.go"}`)
+
+	if err := os.WriteFile(filepath.Join(dir, "src/main.go"), []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := runTool(t, tool, `{"path":"src/main.go"}`)
+	if !strings.Contains(out, "lines 1-3 of 3") {
+		t.Fatalf("an edited file was still pointed at:\n%s", out)
+	}
+}
+
+func TestAnOutlineIsNotSentTwice(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{
+		"src/main.go": "package main\n\nfunc one() {}\n\nfunc two() {}\n",
+	})
+	tool := NewReadFile(root, dir)
+
+	first := runTool(t, tool, `{"path":"src/main.go","outline":true}`)
+	if !strings.Contains(first, "func one") {
+		t.Fatalf("the outline is missing declarations:\n%s", first)
+	}
+	again := runTool(t, tool, `{"path":"src/main.go","outline":true}`)
+	if !strings.Contains(again, "you already have this outline") {
+		t.Fatalf("the second outline came back in full:\n%s", again)
 	}
 }

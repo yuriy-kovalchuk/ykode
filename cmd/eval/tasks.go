@@ -63,12 +63,16 @@ func tasks() []task {
 				"README.md":      "This project uses CheckAuth in the api package.\n",
 			},
 			check: func(project string, ran *transcript, _ error) (bool, string) {
-				for _, name := range []string{"login.go", "refresh.go", "auth.go"} {
+				// auth/auth.go defines CheckAuth, so naming it is wrong as much as missing the two callers
+				for _, name := range []string{"login.go", "refresh.go"} {
 					if !ran.contains(name) {
 						return false, "answer missed " + name + ": " + quote(ran.answer)
 					}
 				}
-				return true, "named every caller"
+				if len(strings.Fields(ran.answer)) > 3 {
+					return false, "the answer padded the two callers with unrelated files: " + quote(ran.answer)
+				}
+				return true, "named every caller and nothing else"
 			},
 		},
 		{

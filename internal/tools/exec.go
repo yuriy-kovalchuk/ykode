@@ -180,33 +180,9 @@ func (t Exec) fit(out string) string {
 	return b.String()
 }
 
-// PruneSpillLogs deletes command output logs older than maxAge; nothing else cleans them.
+// PruneSpillLogs deletes whole command logs older than maxAge.
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil // a first run has no logs to clean
-	}
-	if err != nil {
-		return 0, fmt.Errorf("clean old command logs: %w", err)
-	}
-	removed := 0
-	for _, e := range entries {
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), spillPrefix) {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			return removed, fmt.Errorf("stat %s: %w", e.Name(), err)
-		}
-		if time.Since(info.ModTime()) < maxAge {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-			return removed, fmt.Errorf("remove %s: %w", e.Name(), err)
-		}
-		removed++
-	}
-	return removed, nil
+	return PruneOldDirs(dir, spillPrefix, maxAge)
 }
 
 // writeFullOutput stores an oversized output in a temp dir and returns its path.

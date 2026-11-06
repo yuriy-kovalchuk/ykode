@@ -45,7 +45,8 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 	return req, nil
 }
 
-// sanitizeHistory keeps history marshalable: a cut-off call holds invalid JSON that would fail the request.
+// sanitizeHistory keeps history something a server accepts: a cut-off call holds invalid JSON, and a
+// call whose reply was never written (the user pressed Ctrl-C mid-tool) makes the whole request fail.
 func (a *Agent) sanitizeHistory() {
 	for i := range a.history {
 		for j := range a.history[i].ToolCalls {
@@ -54,6 +55,33 @@ func (a *Agent) sanitizeHistory() {
 			}
 		}
 	}
+
+	repaired := make([]llm.Message, 0, len(a.history))
+	for i := 0; i < len(a.history); i++ {
+		m := a.history[i]
+		repaired = append(repaired, m)
+		if m.Role != "assistant" || len(m.ToolCalls) == 0 {
+			continue
+		}
+		answered := map[string]bool{}
+		j := i + 1
+		for ; j < len(a.history) && a.history[j].Role == "tool"; j++ {
+			answered[a.history[j].ToolCallID] = true
+			repaired = append(repaired, a.history[j])
+		}
+		for _, call := range m.ToolCalls {
+			if !answered[call.ID] {
+				repaired = append(repaired, llm.Message{
+					Role:       "tool",
+					ToolCallID: call.ID,
+					Name:       call.Function.Name,
+					Content:    "this call never ran: the request was interrupted before it finished",
+				})
+			}
+		}
+		i = j - 1 // the replies that were already there have been copied
+	}
+	a.history = repaired
 }
 
 // estimateTokens guesses what the server will count, using the ratio its last real count implied.
@@ -62,7 +90,8 @@ func (a *Agent) estimateTokens() int {
 	return int(float64(a.sendingBytes())/rate) + 4*len(a.history)
 }
 
-// trimHistory blanks large tool results once past 3/4 of the window, and keeps going to half: stopping at the threshold would break the prompt cache again on the next turn.
+// trimHistory keeps the conversation inside the window: large tool results are blanked first, then,
+// if that was not enough, whole tool calls and their replies are dropped from the oldest end.
 func (a *Agent) trimHistory() {
 	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.opts.CtxSize*3/4 {
 		return
@@ -74,4 +103,31 @@ func (a *Agent) trimHistory() {
 			a.tell("trimmed an old tool result to fit the context")
 		}
 	}
+	for a.estimateTokens() > target && a.dropOldestToolCall() {
+		a.tell("dropped an older tool call and its result to fit the context")
+	}
+}
+
+// dropOldestToolCall removes the oldest tool call with its replies, keeping the newest pair intact:
+// past a certain point a summary of something the model already used is worth less than the room.
+func (a *Agent) dropOldestToolCall() bool {
+	var blocks []int
+	for i, m := range a.history {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			blocks = append(blocks, i)
+		}
+	}
+	if len(blocks) <= 1 {
+		return false
+	}
+	i := blocks[0]
+	end := i + 1
+	for end < len(a.history) && a.history[end].Role == "tool" {
+		end++
+	}
+	if end-i-1 < len(a.history[i].ToolCalls) {
+		return false // a call whose replies are still owed must stay: the API pairs them
+	}
+	a.history = append(a.history[:i], a.history[end:]...)
+	return true
 }

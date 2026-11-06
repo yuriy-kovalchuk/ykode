@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -195,4 +196,152 @@ func trimCount(history []llm.Message) int {
 		}
 	}
 	return n
+}
+
+// paired says the history is something a server accepts: every tool reply has the call it answers,
+// and every call has the replies it is owed.
+func paired(history []llm.Message) bool {
+	owed := map[string]bool{}
+	for _, m := range history {
+		if m.Role == "assistant" {
+			for _, call := range m.ToolCalls {
+				owed[call.ID] = false
+			}
+		}
+		if m.Role == "tool" {
+			answered, ok := owed[m.ToolCallID]
+			if !ok || answered {
+				return false
+			}
+			owed[m.ToolCallID] = true
+		}
+	}
+	for _, answered := range owed {
+		if !answered {
+			return false
+		}
+	}
+	return true
+}
+
+func TestASmallWindowDropsTheOldestToolCallWhole(t *testing.T) {
+	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
+	for i, id := range []string{"c1", "c2", "c3"} {
+		history = append(history,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f.go"}`)}}}},
+			llm.Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("x", 300+i)},
+		)
+	}
+	a := newForHistory(Options{CtxSize: (len(SystemPrompt) + 900) / 4})
+	a.history = history
+	a.trimHistory()
+
+	if !paired(a.history) {
+		t.Fatalf("a tool reply was left without its call:\n%s", dump(a.history))
+	}
+	if blocks := callBlocks(a.history); blocks >= 3 {
+		t.Errorf("%d tool calls left, want the oldest dropped", blocks)
+	}
+	var oldest, newest bool
+	for _, m := range a.history {
+		if m.Role == "tool" && m.ToolCallID == "c1" {
+			oldest = true
+		}
+		if m.Role == "tool" && m.ToolCallID == "c3" {
+			newest = true
+		}
+	}
+	if oldest {
+		t.Error("the oldest tool reply is still in the conversation the server sees")
+	}
+	if !newest {
+		t.Error("the newest tool reply was dropped; the model still needs what it just read")
+	}
+}
+
+func TestTrimNeverSendsAnOrphanToolReply(t *testing.T) {
+	for _, ctx := range []int{200, 400, 800, 1600, 6000} {
+		history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "go"}}
+		for i := range 4 {
+			id := string(rune('a' + i))
+			history = append(history,
+				llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f.go"}`)}}}},
+				llm.Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("y", 500)},
+			)
+		}
+		a := newForHistory(Options{CtxSize: ctx})
+		a.history = history
+		a.trimHistory()
+		if !paired(a.history) {
+			t.Errorf("ctx %d left an orphan tool reply", ctx)
+		}
+	}
+}
+
+func callBlocks(history []llm.Message) int {
+	n := 0
+	for _, m := range history {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func dump(history []llm.Message) string {
+	var b strings.Builder
+	for _, m := range history {
+		fmt.Fprintf(&b, "%s %s\n", m.Role, m.ToolCallID)
+	}
+	return b.String()
+}
+
+func TestACallStillOwedItsRepliesIsNeverDropped(t *testing.T) {
+	history := []llm.Message{
+		{Role: "system", Content: SystemPrompt},
+		{Role: "user", Content: "go"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
+		{Role: "assistant", Content: strings.Repeat("thinking ", 60)},
+		{Role: "user", Content: "keep going"},
+	}
+	a := newForHistory(Options{CtxSize: 120})
+	a.history = history
+	a.sanitizeHistory()
+	a.trimHistory()
+	a.sanitizeHistory()
+
+	for _, m := range a.history {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 && len(m.ToolCalls[0].Function.Arguments) == 0 {
+			t.Fatal("a tool call was altered")
+		}
+	}
+	if !paired(a.history) {
+		t.Fatalf("trimming an interrupted turn left a call without replies:\n%s", dump(a.history))
+	}
+}
+
+func TestACallThatNeverRanIsAnsweredBeforeTheServerSeesIt(t *testing.T) {
+	a := newForHistory(Options{})
+	a.history = []llm.Message{
+		{Role: "system", Content: SystemPrompt},
+		{Role: "user", Content: "go"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{
+			{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}},
+			{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}},
+		}},
+		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: "package a"},
+	}
+	a.sanitizeHistory()
+
+	if !paired(a.history) {
+		t.Fatalf("c2 reached the request without a reply:\n%s", dump(a.history))
+	}
+	last := a.history[len(a.history)-1]
+	if last.ToolCallID != "c2" || !strings.Contains(last.Content, "interrupted") {
+		t.Errorf("the invented reply is %q for %q", last.Content, last.ToolCallID)
+	}
+	a.sanitizeHistory()
+	if len(a.history) != 5 {
+		t.Errorf("sanitizing twice invented another reply: %d messages, want 5", len(a.history))
+	}
 }

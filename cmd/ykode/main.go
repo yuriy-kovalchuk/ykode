@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -52,6 +53,13 @@ func run() error {
 	} else if n > 0 {
 		fmt.Fprintf(os.Stderr, "ykode: removed %d old command log(s)\n", n)
 	}
+	// a run's shortened tool results live here until they age out, and recall reads them back
+	store := tools.NewResultStore(cfg.ResultDir)
+	if n, err := tools.PruneOldDirs(filepath.Dir(cfg.ResultDir), "s", cfg.KeepCommandLogs); err != nil {
+		fmt.Fprintln(os.Stderr, "ykode:", err)
+	} else if n > 0 {
+		fmt.Fprintf(os.Stderr, "ykode: removed %d old result dir(s)\n", n)
+	}
 
 	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)
@@ -89,6 +97,7 @@ func run() error {
 		ExecTimeout:    cfg.ExecTimeout,
 		CommandLogDir:  cfg.CommandLogDir,
 		MaxResultBytes: resultBytes,
+		Store:          store,
 	})
 
 	lines := cli.NewLineSource(os.Stdin)
@@ -115,6 +124,7 @@ func run() error {
 		NoVerify:      cfg.NoVerify,
 		SendReasoning: cfg.SendReasoningFor(model.ID),
 		MaxResult:     resultBytes,
+		Store:         store,
 	}, view)
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 

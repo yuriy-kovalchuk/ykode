@@ -155,6 +155,7 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 	}
 	defer root.Close()
 
+	store := tools.NewResultStore(filepath.Join(base, "results"))
 	resultBytes := tools.ResultBytesFor(model.CtxSize)
 	instructions, _ := agent.LoadInstructions(project)
 	rec := newRecorder()
@@ -170,6 +171,7 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 		AssumeYes:    true, // the harness has nobody to ask, so in-project work runs and outside work is refused
 		Instructions: instructions,
 		MaxResult:    resultBytes,
+		Store:        store,
 	}, rec)
 
 	start := time.Now()

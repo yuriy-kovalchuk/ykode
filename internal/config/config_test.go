@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"testing"
 )
 
@@ -32,6 +34,7 @@ func TestLoadDefaults(t *testing.T) {
 		KeepCommandLogs: defaultLogKeep,
 	}
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
+	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time
 	cfg.modelReasoning = nil
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg = %+v, want %+v", cfg, want)
@@ -208,5 +211,23 @@ func TestTheDefaultReadWindowKeepsSearchingFirst(t *testing.T) {
 	}
 	if cfg.ReadLines > 200 {
 		t.Errorf("ReadLines = %d: a window this big lets the model dump files instead of searching", cfg.ReadLines)
+	}
+}
+
+func TestResultsLiveUnderTheHomeDirForThisRun(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("YKODE_HOME", homeDir)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir := filepath.Dir(cfg.ResultDir); dir != filepath.Join(homeDir, "results") {
+		t.Fatalf("results sit in %s, want %s", dir, filepath.Join(homeDir, "results"))
+	}
+	name := filepath.Base(cfg.ResultDir)
+	if !strings.HasPrefix(name, "s2") || len(name) != 16 {
+		t.Fatalf("run dir %q is not stamped like s20060102-150405", name)
 	}
 }
