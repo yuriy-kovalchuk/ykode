@@ -2,14 +2,15 @@ package agent
 
 import (
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// historyFixture is a conversation with two large tool results: the trimmer may
-// only ever sacrifice the oldest one.
+// historyFixture is a conversation with two large tool results, of which only the oldest may go.
 func historyFixture() []llm.Message {
 	big := strings.Repeat("x", 2000)
 	return []llm.Message{
@@ -62,7 +63,7 @@ func TestTrimHistoryStopsAsSoonAsTheEstimateFits(t *testing.T) {
 	a.trimHistory()
 
 	limit := 2000 * 3 / 4
-	if got := promptTokens(a.history); got > limit {
+	if got := a.estimateTokens(); got > limit {
 		t.Fatalf("estimate %d still over the %d limit", got, limit)
 	}
 	if trimmed := trimCount(a.history); trimmed != 1 {
@@ -71,8 +72,7 @@ func TestTrimHistoryStopsAsSoonAsTheEstimateFits(t *testing.T) {
 }
 
 func TestTrimHistoryLeavesSmallResultsAndNoContextAlone(t *testing.T) {
-	// A context this small guarantees the trimmer actually walks the history;
-	// with only short tool results in it, it must still leave every one alone.
+	// this context forces the trimmer to walk the history; short results must still be left alone
 	a := newForHistory(Options{CtxSize: 400})
 	a.history = historyFixture()
 	a.history[3].Content = "short answer"
@@ -92,16 +92,31 @@ func TestTrimHistoryLeavesSmallResultsAndNoContextAlone(t *testing.T) {
 	}
 }
 
-func TestPromptTokensCountsToolArguments(t *testing.T) {
+func TestHistoryBytesCountsToolArguments(t *testing.T) {
 	one := []llm.Message{{Role: "user", Content: strings.Repeat("a", 30)}}
 	bigger := []llm.Message{{Role: "assistant", ToolCalls: []llm.ToolCall{
 		{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(strings.Repeat("b", 30))}},
 	}}}
-	if got, want := promptTokens(one), 30/3+4; got != want {
-		t.Fatalf("plain message = %d, want %d", got, want)
+	if got, want := historyBytes(one), 30; got != want {
+		t.Fatalf("plain message = %d bytes, want %d", got, want)
 	}
-	if promptTokens(bigger) <= promptTokens(one) {
+	if historyBytes(bigger) <= historyBytes(one) {
 		t.Fatal("tool call bytes must count toward the estimate")
+	}
+}
+
+func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	withTools := New(nil, tools.NewRegistry(tools.NewReadFile(root, dir)), "m", Options{}, quietSink{}, io.Discard)
+	without := New(nil, nil, "m", Options{}, quietSink{}, io.Discard)
+	if withTools.estimateTokens() <= without.estimateTokens() {
+		t.Fatal("tool specs must count toward the context estimate")
 	}
 }
 

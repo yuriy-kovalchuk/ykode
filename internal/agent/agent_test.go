@@ -42,8 +42,7 @@ func (s *stubServer) lastRequest(t *testing.T) map[string]any {
 	return s.requests[len(s.requests)-1]
 }
 
-// sse builds a streaming reply: thinking fragments, answer fragments, then tool
-// call fragments with the id and name only in the first one.
+// sse builds a streaming reply: thinking, answer, then tool call fragments keyed by index.
 func sse(reasoning, content string, tool string, argsParts []string, finish string) string {
 	var b strings.Builder
 	chunk := func(delta map[string]any, finish string) {
@@ -129,7 +128,8 @@ func TestMaxTokensFitsTheServerContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := int(stub.lastRequest(t)["max_tokens"].(float64))
-	if got >= 4096 || got < 3000 {
+	// the estimate now carries the system prompt and the tool specs too, so the room left is smaller
+	if got >= 4096 || got < 2048 {
 		t.Fatalf("max_tokens = %d, want it reduced below the 4096 context but still usable", got)
 	}
 }
@@ -160,8 +160,9 @@ func TestTruncatedToolCallIsNotRun(t *testing.T) {
 	if err := a.Ask(context.Background(), "read it"); err != nil {
 		t.Fatal(err)
 	}
-	if len(stub.requests) != 2 {
-		t.Fatalf("requests = %d, want the loop to continue to a second turn", len(stub.requests))
+	if len(stub.requests) != 3 {
+		// turn 1 truncated, turn 2 answered without a tool, turn 3 is the verification retry
+		t.Fatalf("requests = %d, want the truncated turn, the answer, and the verification retry", len(stub.requests))
 	}
 	roles := stub.lastRequest(t)["messages"].([]any)
 	var note string
@@ -236,4 +237,84 @@ func TestMaxTurnsStopsTheLoop(t *testing.T) {
 	if len(stub.requests) != 2 {
 		t.Fatalf("%d requests, want one per tool round", len(stub.requests))
 	}
+}
+
+func TestAnswerWithNoToolCallIsVerifiedOnce(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "the file is fine", "", nil, "stop"),
+		sse("", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "checked: the file is fine", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "why does main.go fail to build?"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 3 {
+		t.Fatalf("%d requests, want: answer, verification retry with a tool, final answer", len(stub.requests))
+	}
+	if got := stub.requests[0]["tool_choice"]; got != "auto" {
+		t.Fatalf("first request tool_choice = %v, want auto", got)
+	}
+	if got := stub.requests[1]["tool_choice"]; got != "required" {
+		t.Fatalf("verification request tool_choice = %v, want required", got)
+	}
+	if !hasUserNote(stub.requests[1], "without calling any tool") {
+		t.Fatalf("verification request has no nudge:\n%v", stub.requests[1]["messages"])
+	}
+}
+
+func TestToolUsingRequestIsNotNudged(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "one directory", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "what files are here?"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 2 {
+		t.Fatalf("%d requests, want the answer to stand after one tool round", len(stub.requests))
+	}
+}
+
+func TestQuestionAboutTheAgentIsNotNudged(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "I am ykode, running Qwen", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "what model are you and how fast are you?"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 1 {
+		t.Fatalf("%d requests, want the chat answer to be final", len(stub.requests))
+	}
+}
+
+func TestVerificationRetryDoesNotLoop(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "no tools needed", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 512}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "fix the failing test"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 2 {
+		t.Fatalf("%d requests, want exactly one verification retry", len(stub.requests))
+	}
+}
+
+// hasUserNote looks for text in the user messages of a recorded request.
+func hasUserNote(req map[string]any, want string) bool {
+	messages, _ := req["messages"].([]any)
+	for _, m := range messages {
+		entry, _ := m.(map[string]any)
+		if entry["role"] == "user" && strings.Contains(fmt.Sprint(entry["content"]), want) {
+			return true
+		}
+	}
+	return false
 }

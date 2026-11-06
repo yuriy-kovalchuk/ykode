@@ -13,10 +13,8 @@ const (
 	trimMarker     = "(older tool output trimmed to fit the server context)"
 )
 
-// request builds the chat body and gives the response the room the server's
-// context window still has, so a long conversation degrades instead of being
-// rejected by the server.
-func (a *Agent) request() (llm.ChatRequest, error) {
+// request builds the chat body and leaves the response the room the context window still has.
+func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 	a.sanitizeHistory()
 	req := llm.ChatRequest{
 		Model:      a.model,
@@ -25,13 +23,16 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 		ToolChoice: "auto",
 		MaxTokens:  a.opts.MaxTokens,
 	}
+	if forceTool {
+		// servers that ignore "required" just keep answering, so the guard costs one turn
+		req.ToolChoice = "required"
+	}
 	if !a.opts.Think {
-		// Verified against llama.cpp: "enable_thinking" is the key it honours;
-		// "thinking_enabled" is silently ignored.
+		// llama.cpp honours "enable_thinking" and silently ignores "thinking_enabled"
 		req.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	}
 	if a.opts.CtxSize > 0 {
-		used := promptTokens(a.history)
+		used := a.estimateTokens()
 		room := a.opts.CtxSize - used - ctxSafetyTok
 		if room < minResponseTok {
 			return llm.ChatRequest{}, fmt.Errorf(
@@ -44,9 +45,7 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 	return req, nil
 }
 
-// sanitizeHistory makes every stored message safe to marshal. A tool call cut
-// off by max_tokens holds arguments that are not valid JSON, and json.RawMessage
-// goes straight to the encoder, which would fail the whole request.
+// sanitizeHistory keeps history marshalable: a cut-off call holds invalid JSON that would fail the request.
 func (a *Agent) sanitizeHistory() {
 	for i := range a.history {
 		for j := range a.history[i].ToolCalls {
@@ -57,29 +56,19 @@ func (a *Agent) sanitizeHistory() {
 	}
 }
 
-// promptTokens estimates a request's size. llama.cpp does not always expose
-// /tokenize, and it measured about 3.3 bytes per token for this payload, so
-// divide by 3 and let the margin absorb the difference.
-func promptTokens(history []llm.Message) int {
-	bytes := 0
-	for _, m := range history {
-		bytes += len(m.Content) + len(m.Name) + len(m.ToolCallID)
-		for _, c := range m.ToolCalls {
-			bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
-		}
-	}
-	return bytes/3 + 4*len(history)
+// estimateTokens guesses what the server will count, using the ratio its last real count implied.
+func (a *Agent) estimateTokens() int {
+	rate := max(a.meter.bytesPerTok, minBytesPerTok)
+	return int(float64(a.sendingBytes())/rate) + 4*len(a.history)
 }
 
-// trimHistory replaces the contents of the oldest large tool results with a
-// marker until the estimate fits. Structure is left alone: every tool_call
-// still has its answer, and the system prompt and recent turns stay intact.
+// trimHistory marks the oldest large tool results until the estimate fits, keeping every tool_call paired.
 func (a *Agent) trimHistory() {
 	if a.opts.CtxSize <= 0 {
 		return
 	}
 	limit := a.opts.CtxSize * 3 / 4
-	for i := 1; i < len(a.history) && promptTokens(a.history) > limit; i++ {
+	for i := 1; i < len(a.history) && a.estimateTokens() > limit; i++ {
 		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 {
 			m.Content = trimMarker
 			fmt.Fprintln(a.log, "  .. trimmed an old tool result to fit the context")

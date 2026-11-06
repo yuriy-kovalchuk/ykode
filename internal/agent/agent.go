@@ -1,5 +1,4 @@
-// Package agent runs the loop between the model and the tools: ask, execute the
-// tool calls it requests, feed the results back, until it answers in text.
+// Package agent runs the loop between the model and the tools until the model answers in text.
 package agent
 
 import (
@@ -15,8 +14,7 @@ import (
 // finishLength is the finish reason a server sends when it stopped at max_tokens.
 const finishLength = "length"
 
-// ConfirmFunc asks the user whether an action may run. The CLI supplies it; the
-// agent only sees the answer.
+// ConfirmFunc asks the user whether an action may run; the CLI supplies it.
 type ConfirmFunc func(what string) bool
 
 // Options configures one agent.
@@ -39,8 +37,7 @@ type Stats struct {
 	DecodeTokSec  float64
 }
 
-// Sink renders streamed output. Reasoning and Content arrive apart so thinking
-// and the answer can be shown as different things.
+// Sink renders streamed output, with thinking and answer arriving apart.
 type Sink interface {
 	Reasoning(chunk string)
 	Content(chunk string)
@@ -64,6 +61,7 @@ type Agent struct {
 	sink    Sink
 	log     io.Writer
 	history []llm.Message
+	meter   meter
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink, log io.Writer) *Agent {
@@ -74,24 +72,45 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 		sink = quietSink{}
 	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink, log: log}
+	a.meter = newMeter()
 	a.Reset()
 	return a
 }
 
-// Reset keeps the system prompt and forgets the rest of the conversation.
+// Reset keeps the system prompt and forgets the rest of the conversation; the learned byte ratio stays.
 func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: SystemPrompt}}
+	a.meter.clearCost()
 }
 
-// Ask appends prompt and runs model round-trips until the model replies with
-// no tool call. A cancelled context ends the turn quietly; anything else is
-// returned for the caller to report.
+const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with list_dir, find_files, search_text or read_file, then answer again."
+
+// projectWorkWords mark requests where answering without reading is likely wrong.
+var projectWorkWords = []string{
+	"fix", "bug", "test", "build", "compile", "error", "fail", "refactor",
+	"implement", "add", "change", "edit", "read", "write", "code", "function",
+	"file", "src/", "why does", "what does", "review",
+}
+
+func looksLikeProjectWork(prompt string) bool {
+	lower := strings.ToLower(prompt)
+	for _, w := range projectWorkWords {
+		if strings.Contains(lower, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	a.history = append(a.history, llm.Message{Role: "user", Content: prompt})
 
+	usedTools, nudged, forceTool := false, false, false
 	for turn := 1; ; turn++ {
 		a.trimHistory()
-		req, err := a.request()
+		req, err := a.request(forceTool)
+		forceTool = false
 		if err != nil {
 			return err
 		}
@@ -110,8 +129,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		if finish == finishLength {
 			fmt.Fprintln(a.log, "  !! the response hit max_tokens and may be incomplete")
 			if !toolCallsRunnable(msg.ToolCalls) {
-				// A cut-off tool call cannot be run; tell the model rather
-				// than hand broken arguments to the tools.
+				// a cut-off tool call cannot run: tell the model rather than hand broken arguments over
 				a.note("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
 				continue
 			}
@@ -120,9 +138,16 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			if strings.TrimSpace(msg.Content) == "" {
 				fmt.Fprintln(a.log, "(the model returned no text)")
 			}
+			if !nudged && !usedTools && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
+				nudged, forceTool = true, true
+				fmt.Fprintln(a.log, "  .. nothing was read for this request; asking once to verify with a tool")
+				a.history = append(a.history, llm.Message{Role: "user", Content: verifyNote})
+				continue
+			}
 			return nil
 		}
 
+		usedTools = true
 		a.runToolCalls(ctx, msg.ToolCalls)
 		if turn >= a.opts.MaxTurns {
 			a.note(fmt.Sprintf("(stopped after %d tool rounds without a final answer)", a.opts.MaxTurns))
@@ -143,19 +168,24 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	if err != nil {
 		return llm.Message{}, "", err
 	}
-	a.sink.TurnDone(Stats{
+	stats := Stats{
 		FinishReason:  turn.FinishReason,
 		PromptTokens:  turn.Timings.PromptTokens(),
 		CachedTokens:  turn.Timings.CacheN,
 		OutputTokens:  turn.Timings.PredictedN,
 		PrefillTokSec: turn.Timings.PromptPerSecond,
 		DecodeTokSec:  turn.Timings.PredictedPerSecond,
-	})
+	}
+	a.meter.observe(stats, a.sendingBytes())
+	a.sink.TurnDone(stats)
 	return repair(turn.Message), turn.FinishReason, nil
 }
 
 // specs describes the tools to the model, in registration order.
 func (a *Agent) specs() []llm.ToolSpec {
+	if a.tools == nil { // a history-only agent, as the budget tests build one
+		return nil
+	}
 	all := a.tools.All()
 	specs := make([]llm.ToolSpec, 0, len(all))
 	for _, t := range all {
