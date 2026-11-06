@@ -15,28 +15,81 @@ import (
 )
 
 const (
-	httpTimeout       = 10 * time.Minute // local inference on a big prompt is slow
-	maxResponseBytes  = 8 << 20          // refuse a runaway server
-	maxErrorBodyBytes = 512              // how much of an error body to quote
-	maxLineBytes      = 1 << 20          // one SSE line can hold a whole message
+	// headerTimeout bounds the wait for the server to accept the request at all.
+	headerTimeout = 30 * time.Second
+	// streamIdleTimeout bounds the silence between events: a cold 60k prompt can take minutes,
+	// so only a stream that stops producing altogether counts as dead.
+	streamIdleTimeout = 2 * time.Minute
+
+	maxResponseBytes  = 8 << 20 // refuse a runaway server
+	maxErrorBodyBytes = 512     // how much of an error body to quote
+	maxLineBytes      = 1 << 20 // one SSE line can hold a whole message
 )
 
 // Client is a stateless caller of one server.
 type Client struct {
 	baseURL string
+	apiKey  string
 	http    *http.Client
+	idle    time.Duration
 }
 
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimSuffix(baseURL, "/"),
-		http:    &http.Client{Timeout: httpTimeout},
+		apiKey:  apiKey,
+		// no whole-request timeout: a long generation is fine, silence is not
+		http: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
+		idle: streamIdleTimeout,
 	}
+}
+
+func (c *Client) newRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	return req, nil
+}
+
+// idleWatchdog cancels a stream that goes quiet, without capping how long it may take overall.
+type idleWatchdog struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	timer  *time.Timer
+	window time.Duration
+}
+
+func newIdleWatchdog(ctx context.Context, window time.Duration) *idleWatchdog {
+	w := &idleWatchdog{window: window}
+	w.ctx, w.cancel = context.WithCancel(ctx)
+	w.timer = time.AfterFunc(window, w.cancel)
+	return w
+}
+
+func (w *idleWatchdog) stop() { w.timer.Stop(); w.cancel() }
+
+func (w *idleWatchdog) wrap(r io.Reader) io.Reader { return &pokeReader{r: r, w: w} }
+
+type pokeReader struct {
+	r io.Reader
+	w *idleWatchdog
+}
+
+func (p *pokeReader) Read(buf []byte) (int, error) {
+	n, err := p.r.Read(buf)
+	if n > 0 {
+		p.w.timer.Reset(p.w.window)
+	}
+	return n, err
 }
 
 // Models lists the served models and their context size, which llama.cpp reports in meta.n_ctx or status.args.
 func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	req, err := c.newRequest(ctx, http.MethodGet, c.baseURL+"/models", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,14 +130,20 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	if err != nil {
 		return empty, fmt.Errorf("encode request: %w", err)
 	}
-	resp, err := c.postChat(ctx, payload)
+	watchdog := newIdleWatchdog(ctx, c.idle)
+	defer watchdog.stop()
+
+	resp, err := c.postChat(watchdog.ctx, payload)
 	if err != nil {
 		return empty, err
 	}
 	defer resp.Body.Close()
 
 	acc := newStreamAccumulator()
-	if err := readSSE(resp.Body, acc, onDelta); err != nil {
+	if err := readSSE(watchdog.wrap(resp.Body), acc, onDelta); err != nil {
+		if ctx.Err() == nil && watchdog.ctx.Err() != nil {
+			return empty, fmt.Errorf("server sent nothing for %s: the model may still be loading, or the connection died", c.idle)
+		}
 		return empty, err
 	}
 	return acc.turn(), nil
@@ -115,7 +174,7 @@ func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, 
 }
 
 func (c *Client) sendChat(ctx context.Context, payload []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+	req, err := c.newRequest(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}

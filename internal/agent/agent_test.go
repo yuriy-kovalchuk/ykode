@@ -97,7 +97,7 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 		tools.NewReadFile(root, dir),
 		tools.NewWriteFile(root, dir),
 	)
-	a := New(llm.NewClient(server.URL+"/v1"), registry, "test-model", opts, sink, io.Discard)
+	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", opts, sink, io.Discard)
 	return a, func() { server.Close(); root.Close() }
 }
 
@@ -203,7 +203,7 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	a := New(llm.NewClient(server.URL+"/v1"),
+	a := New(llm.NewClient(server.URL+"/v1", ""),
 		tools.NewRegistry(tools.NewReadFile(root, project)), "test-model", opts, &captureSink{}, io.Discard)
 
 	if err := a.Ask(context.Background(), "read the file above the root"); err != nil {
@@ -317,4 +317,75 @@ func hasUserNote(req map[string]any, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestTheNudgeMatchesWholeWordsOnly(t *testing.T) {
+	for _, ask := range []string{"fix the bug in main.go", "add a test", "why does this fail", "review this file"} {
+		if !looksLikeProjectWork(ask) {
+			t.Errorf("%q should read as project work", ask)
+		}
+	}
+	for _, ask := range []string{"address the feedback", "update my profile", "what model are you?", "how do I use you?"} {
+		if looksLikeProjectWork(ask) {
+			t.Errorf("%q is not project work", ask)
+		}
+	}
+}
+
+func TestVerifyOffLeavesAMemoryAnswerAlone(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "the file is fine", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512, NoVerify: true}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "why does main.go fail to build?"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 1 {
+		t.Fatalf("%d requests, want one: --no-verify turns the nudge off", len(stub.requests))
+	}
+}
+
+func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("thinking first", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, SendReasoning: true}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "list the files"); err != nil {
+		t.Fatal(err)
+	}
+	if got := assistantReasoning(t, stub.lastRequest(t)); got != "thinking first" {
+		t.Fatalf("reasoning_content in the follow-up = %q, want the earlier thinking back", got)
+	}
+}
+
+func TestThinkingIsNotSentBackUnasked(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("thinking first", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "list the files"); err != nil {
+		t.Fatal(err)
+	}
+	if got := assistantReasoning(t, stub.lastRequest(t)); got != "" {
+		t.Fatalf("reasoning_content in the follow-up = %q, want it left out by default", got)
+	}
+}
+
+// assistantReasoning reads the thinking a server saw on the assistant turn before this request.
+func assistantReasoning(t *testing.T, request map[string]any) string {
+	t.Helper()
+	for _, entry := range request["messages"].([]any) {
+		msg := entry.(map[string]any)
+		if msg["role"] == "assistant" {
+			got, _ := msg["reasoning_content"].(string)
+			return got
+		}
+	}
+	return ""
 }

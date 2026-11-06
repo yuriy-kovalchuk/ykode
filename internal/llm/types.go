@@ -7,14 +7,15 @@ import (
 	"strings"
 )
 
-// Message is one chat entry; Reasoning is kept separate and never sent back, which would double the prompt.
+// Message is one chat entry; Reasoning is kept out of the request unless the template asked for it.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
-	Name       string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
-	Reasoning  string     `json:"-"`
+	Role          string     `json:"role"`
+	Content       string     `json:"content"`
+	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID    string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
+	Name          string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
+	Reasoning     string     `json:"-"`
+	WireReasoning string     `json:"reasoning_content,omitempty"` // only sent when SendReasoning is on
 }
 
 // ToolCall is a function call the model asked for.

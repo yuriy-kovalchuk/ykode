@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -19,12 +20,14 @@ type ConfirmFunc func(what string) bool
 
 // Options configures one agent.
 type Options struct {
-	MaxTurns  int
-	MaxTokens int // cap on one response
-	CtxSize   int // server context window; 0 = unknown, no budgeting
-	Think     bool
-	AssumeYes bool
-	Confirm   ConfirmFunc
+	MaxTurns      int
+	MaxTokens     int // cap on one response
+	CtxSize       int // server context window; 0 = unknown, no budgeting
+	Think         bool
+	AssumeYes     bool
+	NoVerify      bool // never push a text-only answer back into the tools
+	SendReasoning bool // repeat earlier thinking to templates that expect it back
+	Confirm       ConfirmFunc
 }
 
 // Stats summarises one model round-trip for the user.
@@ -85,21 +88,11 @@ func (a *Agent) Reset() {
 
 const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with list_dir, find_files, search_text or read_file, then answer again."
 
-// projectWorkWords mark requests where answering without reading is likely wrong.
-var projectWorkWords = []string{
-	"fix", "bug", "test", "build", "compile", "error", "fail", "refactor",
-	"implement", "add", "change", "edit", "read", "write", "code", "function",
-	"file", "src/", "why does", "what does", "review",
-}
+// projectWorkRe marks requests where answering without reading is likely wrong; whole words, so "address" and "profile" stay out.
+var projectWorkRe = regexp.MustCompile(`\b(?:fix|bug|test|build|compile|error|fail|refactor|implement|add|change|edit|read|write|code|function|file|review|why does|what does)\b|src/`)
 
 func looksLikeProjectWork(prompt string) bool {
-	lower := strings.ToLower(prompt)
-	for _, w := range projectWorkWords {
-		if strings.Contains(lower, w) {
-			return true
-		}
-	}
-	return false
+	return projectWorkRe.MatchString(strings.ToLower(prompt))
 }
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
@@ -138,7 +131,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			if strings.TrimSpace(msg.Content) == "" {
 				fmt.Fprintln(a.log, "(the model returned no text)")
 			}
-			if !nudged && !usedTools && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
+			if !nudged && !usedTools && !a.opts.NoVerify && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
 				nudged, forceTool = true, true
 				fmt.Fprintln(a.log, "  .. nothing was read for this request; asking once to verify with a tool")
 				a.history = append(a.history, llm.Message{Role: "user", Content: verifyNote})
@@ -178,7 +171,11 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	}
 	a.meter.observe(stats, a.sendingBytes())
 	a.sink.TurnDone(stats)
-	return repair(turn.Message), turn.FinishReason, nil
+	msg := repair(turn.Message)
+	if a.opts.SendReasoning {
+		msg.WireReasoning = msg.Reasoning
+	}
+	return msg, turn.FinishReason, nil
 }
 
 // specs describes the tools to the model, in registration order.

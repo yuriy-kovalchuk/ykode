@@ -28,9 +28,40 @@ func newForHistory(opts Options) *Agent {
 	return New(nil, nil, "test-model", opts, quietSink{}, io.Discard)
 }
 
+// sizedFixture has one huge old result and one small recent one, so trimming has an obvious first victim.
+func sizedFixture() []llm.Message {
+	return []llm.Message{
+		{Role: "system", Content: SystemPrompt},
+		{Role: "user", Content: "fix the bug"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
+		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", 4000)},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
+		{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", 800)},
+		{Role: "assistant", Content: "done"},
+	}
+}
+
+// windowBelow returns a context window that the untrimmed history has passed 3/4 of,
+// and that one trim of history[3] already brings under half.
+func windowBelow(t *testing.T, history func() []llm.Message) int {
+	t.Helper()
+	trimmed := newForHistory(Options{})
+	trimmed.history = history()
+	trimmed.history[3].Content = trimMarker
+	ctx := 2*trimmed.estimateTokens() + 200
+
+	full := newForHistory(Options{})
+	full.history = history()
+	if got := full.estimateTokens(); got <= ctx*3/4 {
+		t.Fatalf("fixture estimate %d has not passed 3/4 of %d: the trim would never run", got, ctx)
+	}
+	return ctx
+}
+
 func TestTrimHistorySacrificesTheOldestBigResultFirst(t *testing.T) {
-	a := newForHistory(Options{CtxSize: 2000})
-	a.history = historyFixture()
+	history := sizedFixture()
+	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture)})
+	a.history = history
 
 	a.trimHistory()
 
@@ -57,17 +88,45 @@ func TestTrimHistorySacrificesTheOldestBigResultFirst(t *testing.T) {
 	}
 }
 
-func TestTrimHistoryStopsAsSoonAsTheEstimateFits(t *testing.T) {
-	a := newForHistory(Options{CtxSize: 2000})
-	a.history = historyFixture()
+// Two equally huge results: one trim lands under 3/4 but still above half, so the trim must keep going.
+func TestTrimOncePastTheThresholdKeepsGoingToHalfTheWindow(t *testing.T) {
+	heavy := func() []llm.Message {
+		return []llm.Message{
+			{Role: "system", Content: SystemPrompt},
+			{Role: "user", Content: "fix the bug"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
+			{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", 6000)},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
+			{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", 6000)},
+			{Role: "assistant", Content: "done"},
+		}
+	}
+	oneTrim := newForHistory(Options{})
+	oneTrim.history = heavy()
+	oneTrim.history[3].Content = trimMarker
+	ctx := oneTrim.estimateTokens()*4/3 + 1 // one trim lands just under the 3/4 line
+
+	a := newForHistory(Options{CtxSize: ctx})
+	a.history = heavy()
 	a.trimHistory()
 
-	limit := 2000 * 3 / 4
-	if got := a.estimateTokens(); got > limit {
-		t.Fatalf("estimate %d still over the %d limit", got, limit)
+	if trimmed := trimCount(a.history); trimmed < 2 {
+		t.Errorf("trimmed %d results, want both: stopping at the threshold breaks the prompt cache again next turn", trimmed)
 	}
-	if trimmed := trimCount(a.history); trimmed != 1 {
-		t.Fatalf("trimmed %d results, want exactly 1", trimmed)
+	if got := a.estimateTokens(); got > ctx/2 {
+		t.Errorf("estimate %d is above half of the %d window the trim was aiming at", got, ctx)
+	}
+}
+
+func TestTrimHistoryDoesNothingBelowTheThreshold(t *testing.T) {
+	history := sizedFixture()
+	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture) * 4})
+	a.history = history
+
+	a.trimHistory()
+
+	if trimmed := trimCount(a.history); trimmed != 0 {
+		t.Fatalf("trimmed %d results below the 3/4 threshold; it must not touch a roomy conversation", trimmed)
 	}
 }
 

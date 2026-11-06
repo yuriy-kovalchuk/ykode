@@ -31,7 +31,7 @@ func streamServer(t *testing.T, sse string) (*Client, *ChatRequest) {
 		fmt.Fprint(w, sse)
 	}))
 	t.Cleanup(srv.Close)
-	return NewClient(srv.URL + "/v1"), &got
+	return NewClient(srv.URL+"/v1", ""), &got
 }
 
 func collect(t *testing.T, c *Client) (Turn, []Delta, error) {
@@ -144,7 +144,7 @@ func TestChatStreamQuotesTheServerErrorBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{}, nil)
+	_, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") || !strings.Contains(err.Error(), "tool call arguments") {
 		t.Fatalf("error = %v, want the status and the quoted body", err)
 	}
@@ -201,7 +201,7 @@ func TestChatStreamRefusesAPlainJSONAnswer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	turn, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{Model: "m"}, nil)
+	turn, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{Model: "m"}, nil)
 	if err == nil {
 		t.Fatalf("no error, got turn %+v", turn)
 	}
@@ -223,7 +223,7 @@ func TestModelsReadsContextSize(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := NewClient(srv.URL + "/v1").Models(context.Background())
+	models, err := NewClient(srv.URL+"/v1", "").Models(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestModelsReportsEmptyAndFailedServers(t *testing.T) {
 		fmt.Fprint(w, `{"data":[]}`)
 	}))
 	defer empty.Close()
-	if _, err := NewClient(empty.URL + "/v1").Models(context.Background()); err == nil {
+	if _, err := NewClient(empty.URL+"/v1", "").Models(context.Background()); err == nil {
 		t.Fatal("an empty model list should be an error")
 	}
 
@@ -252,7 +252,7 @@ func TestModelsReportsEmptyAndFailedServers(t *testing.T) {
 		fmt.Fprint(w, "no healthy upstream")
 	}))
 	defer unavailable.Close()
-	_, err := NewClient(unavailable.URL + "/v1").Models(context.Background())
+	_, err := NewClient(unavailable.URL+"/v1", "").Models(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "no healthy upstream") {
 		t.Fatalf("error = %v", err)
 	}
@@ -297,7 +297,7 @@ func flakyServer(t *testing.T, fails int, status int, body string) (*Client, *at
 		fmt.Fprint(w, frame(`{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`))
 	}))
 	t.Cleanup(srv.Close)
-	return NewClient(srv.URL + "/v1"), &attempts
+	return NewClient(srv.URL+"/v1", ""), &attempts
 }
 
 func TestChatStreamRetriesATransientGatewayFailure(t *testing.T) {
@@ -352,7 +352,7 @@ func TestChatStreamRetriesADroppedConnection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(),
+	_, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(),
 		ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err == nil {
 		t.Fatal("want an error")
@@ -376,5 +376,103 @@ func TestChatStreamStopsPromptlyWhenCancelled(t *testing.T) {
 	}
 	if spent := time.Since(start); spent > retryWait/2 {
 		t.Errorf("waited %v after the user cancelled, want no retry delay at all", spent)
+	}
+}
+
+func TestTheBearerTokenGoesWithEveryRequest(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		if r.URL.Path == "/v1/models" {
+			fmt.Fprint(w, `{"data":[{"id":"m","meta":{"n_ctx":8192}}]}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "secret-token")
+	if _, err := c.Models(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range seen {
+		if got != "Bearer secret-token" {
+			t.Errorf("Authorization = %q, want the bearer token on /models and /chat", got)
+		}
+	}
+}
+
+func TestNoAuthHeaderWithoutAKey(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		fmt.Fprint(w, `{"data":[{"id":"m","meta":{"n_ctx":8192}}]}`)
+	}))
+	defer srv.Close()
+
+	if _, err := NewClient(srv.URL+"/v1", "").Models(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Errorf("Authorization = %q, want no header when no key is configured", got)
+	}
+}
+
+func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush() // headers arrive, then silence
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "")
+	c.idle = 50 * time.Millisecond
+	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "sent nothing for") {
+		t.Fatalf("ChatStream() error = %v, want the silence to be named", err)
+	}
+}
+
+func TestChatStreamTakesAsLongAsItNeedsBetweenChunks(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; i < 4; i++ {
+			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n")
+			w.(http.Flusher).Flush()
+			time.Sleep(40 * time.Millisecond)
+		}
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "")
+	c.idle = 150 * time.Millisecond // longer than any gap, shorter than the whole stream
+	turn, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("a slow but living stream must not be cut off: %v", err)
+	}
+	if turn.Message.Content != "xxxx" {
+		t.Fatalf("content = %q", turn.Message.Content)
+	}
+}
+
+func TestChatStreamWorksWithoutADeltaCallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\",\"content\":\"42\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	turn, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "?"}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Message.Content != "42" {
+		t.Fatalf("content = %q, want the turn even with nobody watching the deltas", turn.Message.Content)
 	}
 }

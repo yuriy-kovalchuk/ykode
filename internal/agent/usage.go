@@ -76,7 +76,7 @@ func (a *Agent) sendingBytes() int {
 func historyBytes(history []llm.Message) int {
 	bytes := 0
 	for _, m := range history {
-		bytes += len(m.Content) + len(m.Name) + len(m.ToolCallID)
+		bytes += len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.WireReasoning)
 		for _, c := range m.ToolCalls {
 			bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
 		}

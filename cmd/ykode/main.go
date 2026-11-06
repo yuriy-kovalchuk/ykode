@@ -47,7 +47,7 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "ykode: removed %d old command log(s)\n", n)
 	}
 
-	client := llm.NewClient(cfg.BaseURL)
+	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)
 	defer cancelProbe()
 
@@ -73,12 +73,14 @@ func run() error {
 	confirm := cli.NewConfirmer(lines, os.Stdout)
 	renderer := cli.NewRenderer(os.Stdout, os.Stderr)
 	a := agent.New(client, registry, model.ID, agent.Options{
-		MaxTurns:  cfg.MaxTurns,
-		MaxTokens: cfg.MaxTokens,
-		CtxSize:   ctxSize,
-		Think:     cfg.Think,
-		AssumeYes: cfg.AssumeYes,
-		Confirm:   confirm.Ask,
+		MaxTurns:      cfg.MaxTurns,
+		MaxTokens:     cfg.MaxTokens,
+		CtxSize:       ctxSize,
+		Think:         cfg.Think,
+		AssumeYes:     cfg.AssumeYes,
+		NoVerify:      cfg.NoVerify,
+		SendReasoning: cfg.SendReasoning,
+		Confirm:       confirm.Ask,
 	}, renderer, os.Stderr)
 
 	return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())

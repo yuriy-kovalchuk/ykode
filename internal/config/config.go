@@ -18,14 +18,17 @@ const (
 
 // Config is the fully resolved set of settings.
 type Config struct {
-	BaseURL   string // OpenAI-compatible base, no trailing slash
-	Model     string // empty means "whatever the server lists first"
-	Root      string // absolute project root
-	MaxTurns  int
-	MaxTokens int  // cap on one model response
-	CtxSize   int  // server context window; 0 = read it from the server
-	Think     bool // ask the model to think before answering
-	AssumeYes bool // skip in-project confirmations
+	BaseURL       string // OpenAI-compatible base, no trailing slash
+	APIKey        string // sent as a bearer token when set
+	Model         string // empty means "whatever the server lists first"
+	Root          string // absolute project root
+	MaxTurns      int
+	MaxTokens     int  // cap on one model response
+	CtxSize       int  // server context window; 0 = read it from the server
+	Think         bool // ask the model to think before answering
+	AssumeYes     bool // skip in-project confirmations
+	NoVerify      bool // do not push a text-only answer back into the tools
+	SendReasoning bool // repeat earlier thinking back to models whose template expects it
 }
 
 // Load parses args (os.Args[1:]). flag.ErrHelp is returned for -h.
@@ -33,10 +36,11 @@ func Load(args []string) (Config, error) {
 	var cfg Config
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--yes]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&cfg.BaseURL, "base-url", env("LOCAL_LLM_URL", defaultBaseURL), "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL)")
+	fs.StringVar(&cfg.APIKey, "api-key", os.Getenv("LOCAL_LLM_API_KEY"), "bearer token for servers that ask for one ($LOCAL_LLM_API_KEY)")
 	fs.StringVar(&cfg.Model, "model", env("LOCAL_LLM_MODEL", ""), "model id; empty uses the first from /models ($LOCAL_LLM_MODEL)")
 	fs.StringVar(&cfg.Root, "root", ".", "project root; every file tool is confined to it")
 	fs.IntVar(&cfg.MaxTurns, "max-turns", defaultMaxTurns, "max model round-trips per user request")
@@ -47,6 +51,8 @@ func Load(args []string) (Config, error) {
 		return nil
 	})
 	fs.BoolVar(&cfg.AssumeYes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
+	fs.BoolVar(&cfg.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
+	fs.BoolVar(&cfg.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	cfg.Think = true
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err

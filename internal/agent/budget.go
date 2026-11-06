@@ -62,13 +62,13 @@ func (a *Agent) estimateTokens() int {
 	return int(float64(a.sendingBytes())/rate) + 4*len(a.history)
 }
 
-// trimHistory marks the oldest large tool results until the estimate fits, keeping every tool_call paired.
+// trimHistory blanks large tool results once past 3/4 of the window, and keeps going to half: stopping at the threshold would break the prompt cache again on the next turn.
 func (a *Agent) trimHistory() {
-	if a.opts.CtxSize <= 0 {
+	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.opts.CtxSize*3/4 {
 		return
 	}
-	limit := a.opts.CtxSize * 3 / 4
-	for i := 1; i < len(a.history) && a.estimateTokens() > limit; i++ {
+	target := a.opts.CtxSize / 2
+	for i := 1; i < len(a.history) && a.estimateTokens() > target; i++ {
 		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 {
 			m.Content = trimMarker
 			fmt.Fprintln(a.log, "  .. trimmed an old tool result to fit the context")

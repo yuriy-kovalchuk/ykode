@@ -72,6 +72,22 @@ is possible but asked about, per call, showing the resolved absolute path —
 `--yes` does not skip that. `exec_command` runs `sh -c` in the root with a minimal
 environment (`PATH`, `HOME`, `TERM`, `LANG`) rather than inheriting ykode's.
 
+## What is confined, and what is not
+
+The file tools are opened through a single `*os.Root`, so a path can neither walk out of
+`--root` nor land on a symlink that points outside it. A tool call naming a file that is
+outside the root is shown to you and confirmed per call; the answer is never remembered.
+
+`exec_command` is **not** inside that boundary. It runs `sh -c` with the working directory
+set to `--root`, so `cat ../../secrets` or `rm -rf ~` is possible. Its environment is
+scrubbed to `PATH`, `HOME`, `TERM` and `LANG`, so a command run by the model cannot read
+`LOCAL_LLM_API_KEY` or anything else from the environment ykode was started with, but it can
+still read and write anywhere your user can. `--yes` skips the confirmation for it too.
+
+So: run ykode as a user with access only to what you are willing to let a shell touch, or in
+a container. Closing this gap means an OS-level sandbox (`sandbox-exec` on macOS, `bwrap` on
+Linux), which is on the roadmap.
+
 ## Development
 
 ```

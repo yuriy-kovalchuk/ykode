@@ -137,3 +137,41 @@ func TestLoadReportsHelp(t *testing.T) {
 		t.Fatalf("error = %v, want flag.ErrHelp", err)
 	}
 }
+
+func TestTheApiKeyComesFromTheEnvOrTheFlag(t *testing.T) {
+	t.Setenv("LOCAL_LLM_API_KEY", "env-key")
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "env-key" {
+		t.Fatalf("APIKey = %q, want the env fallback", cfg.APIKey)
+	}
+	cfg, err = Load([]string{"--api-key", "flag-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "flag-key" {
+		t.Fatalf("APIKey = %q, want the flag to win", cfg.APIKey)
+	}
+}
+
+func TestTheVerifyAndReasoningSwitches(t *testing.T) {
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NoVerify {
+		t.Fatal("the verify nudge is on by default")
+	}
+	if cfg.SendReasoning {
+		t.Fatal("thinking is not sent back unless asked")
+	}
+	cfg, err = Load([]string{"--no-verify", "--send-reasoning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.NoVerify || !cfg.SendReasoning {
+		t.Fatalf("NoVerify=%v SendReasoning=%v, want both switches to flip", cfg.NoVerify, cfg.SendReasoning)
+	}
+}

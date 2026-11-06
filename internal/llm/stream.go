@@ -14,8 +14,11 @@ var (
 	sseDone       = []byte("[DONE]")
 )
 
-// readSSE feeds every chunk to the accumulator, stopping at [DONE] or the end of the body.
+// readSSE feeds every chunk to the accumulator and stops at [DONE] or the end of the body; onDelta may be nil.
 func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error {
+	if onDelta == nil {
+		onDelta = func(Delta) {}
+	}
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 	for scanner.Scan() {
