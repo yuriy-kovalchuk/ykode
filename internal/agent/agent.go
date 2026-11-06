@@ -3,8 +3,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 
@@ -14,9 +14,6 @@ import (
 
 // finishLength is the finish reason a server sends when it stopped at max_tokens.
 const finishLength = "length"
-
-// ConfirmFunc asks the user whether an action may run; the CLI supplies it.
-type ConfirmFunc func(what string) bool
 
 // Options configures one agent.
 type Options struct {
@@ -28,7 +25,7 @@ type Options struct {
 	Instructions  string // what the project's AGENTS.md / CLAUDE.md said
 	NoVerify      bool   // never push a text-only answer back into the tools
 	SendReasoning bool   // repeat earlier thinking to templates that expect it back
-	Confirm       ConfirmFunc
+	MaxResult     int    // byte cap on one tool result; 0 means the tools' own default
 }
 
 // Stats summarises one model round-trip for the user.
@@ -41,41 +38,22 @@ type Stats struct {
 	DecodeTokSec  float64
 }
 
-// Sink renders streamed output, with thinking and answer arriving apart.
-type Sink interface {
-	Reasoning(chunk string)
-	Content(chunk string)
-	TurnDone(Stats)
-}
-
-// quietSink discards the stream, for callers with no terminal.
-type quietSink struct{}
-
-func (quietSink) Reasoning(string) {}
-
-func (quietSink) Content(string) {}
-
-func (quietSink) TurnDone(Stats) {}
-
 type Agent struct {
 	client  *llm.Client
 	tools   *tools.Registry
 	model   string
 	opts    Options
 	sink    Sink
-	log     io.Writer
+	turn    int // the round-trip currently running, carried on every event
 	history []llm.Message
 	meter   meter
 }
 
-func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink, log io.Writer) *Agent {
-	if opts.Confirm == nil {
-		opts.Confirm = func(string) bool { return false }
-	}
+func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
 	if sink == nil {
-		sink = quietSink{}
+		sink = nullSink{}
 	}
-	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink, log: log}
+	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
 	a.meter = newMeter()
 	a.Reset()
 	return a
@@ -87,7 +65,7 @@ func (a *Agent) Reset() {
 	a.meter.clearCost()
 }
 
-const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with list_dir, find_files, search_text or read_file, then answer again."
+const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with find_files, search_text or read_file, then answer again."
 
 // projectWorkRe marks requests where answering without reading is likely wrong; whole words, so "address" and "profile" stay out.
 var projectWorkRe = regexp.MustCompile(`\b(?:fix|bug|test|build|compile|error|fail|refactor|implement|add|change|edit|read|write|code|function|file|review|why does|what does)\b|src/`)
@@ -102,6 +80,8 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 
 	usedTools, nudged, forceTool := false, false, false
 	for turn := 1; ; turn++ {
+		a.turn = turn
+		a.emit(Event{Kind: TurnStart, Turn: turn})
 		a.trimHistory()
 		req, err := a.request(forceTool)
 		forceTool = false
@@ -111,7 +91,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		msg, finish, err := a.chat(ctx, req)
 		if err != nil {
 			// Close any half-streamed thinking block before reporting.
-			a.sink.TurnDone(Stats{})
+			a.emit(Event{Kind: TurnEnd, Turn: turn})
 			if ctx.Err() != nil {
 				a.note("(the user cancelled this request)")
 				return nil
@@ -121,7 +101,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		a.history = append(a.history, msg)
 
 		if finish == finishLength {
-			fmt.Fprintln(a.log, "  !! the response hit max_tokens and may be incomplete")
+			a.tell("the response hit max_tokens and may be incomplete")
 			if !toolCallsRunnable(msg.ToolCalls) {
 				// a cut-off tool call cannot run: tell the model rather than hand broken arguments over
 				a.note("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
@@ -130,11 +110,11 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		}
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) == "" {
-				fmt.Fprintln(a.log, "(the model returned no text)")
+				a.tell("the model returned no text")
 			}
 			if !nudged && !usedTools && !a.opts.NoVerify && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
 				nudged, forceTool = true, true
-				fmt.Fprintln(a.log, "  .. nothing was read for this request; asking once to verify with a tool")
+				a.tell("nothing was read for this request; asking once to verify with a tool")
 				a.history = append(a.history, llm.Message{Role: "user", Content: verifyNote})
 				continue
 			}
@@ -153,10 +133,10 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, string, error) {
 	turn, err := a.client.ChatStream(ctx, req, func(d llm.Delta) {
 		if d.Reasoning != "" {
-			a.sink.Reasoning(d.Reasoning)
+			a.emit(Event{Kind: Thinking, Text: d.Reasoning})
 		}
 		if d.Content != "" {
-			a.sink.Content(d.Content)
+			a.emit(Event{Kind: Answer, Text: d.Content})
 		}
 	})
 	if err != nil {
@@ -171,12 +151,21 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		DecodeTokSec:  turn.Timings.PredictedPerSecond,
 	}
 	a.meter.observe(stats, a.sendingBytes())
-	a.sink.TurnDone(stats)
+	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
 	msg := repair(turn.Message)
 	if a.opts.SendReasoning {
 		msg.WireReasoning = msg.Reasoning
 	}
 	return msg, turn.FinishReason, nil
+}
+
+// SpecBytes reports how much the tool descriptions cost in every request.
+func (a *Agent) SpecBytes() int {
+	raw, err := json.Marshal(a.specs())
+	if err != nil {
+		return 0
+	}
+	return len(raw)
 }
 
 // specs describes the tools to the model, in registration order.
@@ -193,6 +182,16 @@ func (a *Agent) specs() []llm.ToolSpec {
 		})
 	}
 	return specs
+}
+
+// tell reports something the run did that is not a tool call.
+func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turn, Text: text}) }
+
+func (a *Agent) emit(ev Event) Decision {
+	if ev.Turn == 0 {
+		ev.Turn = a.turn
+	}
+	return a.sink.Emit(ev)
 }
 
 // note keeps the history honest when a turn ends without an answer.

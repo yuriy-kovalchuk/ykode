@@ -17,8 +17,7 @@ const (
 	defaultExecTimeout = 60 * time.Second
 	maxExecTimeout     = 10 * time.Minute
 	// the head is short because build and test failures live at the end of the output
-	execHeadBytes = resultBudget / 4
-	execTailBytes = resultBudget - execHeadBytes
+	budgetSlackDiv = 4 // the head is a quarter of the budget
 	// spillPrefix names the temp directories that hold a cut command's full log.
 	spillPrefix = "ykode-exec-"
 	// waitDelay bounds the wait when a command exits but leaves its output pipes open
@@ -38,9 +37,10 @@ func commandEnv() []string {
 
 // Exec runs sh -c in the project root: confined by the working directory, not by the file sandbox.
 type Exec struct {
-	dir     string
-	Timeout time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
-	LogDir  string        // where a cut command's full output is saved; empty means os.TempDir()
+	dir      string
+	Timeout  time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
+	LogDir   string        // where a cut command's full output is saved; empty means os.TempDir()
+	MaxBytes int           // bytes the result may use; 0 means defaultResultBytes
 }
 
 func (t Exec) timeout() time.Duration {
@@ -67,7 +67,7 @@ func (t Exec) logDir() string {
 func (Exec) Name() string { return "exec_command" }
 
 func (Exec) Description() string {
-	return fmt.Sprintf("Run a shell command with sh -c in the project root. stdout and stderr are combined. Use it for builds, tests, git. Times out after %d seconds by default; pass timeout for longer work (max %d). If the output is cut, the full log path is reported.", int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Seconds()))
+	return fmt.Sprintf("Run a shell command with sh -c in the project root; you get cleaned output (no escape sequences or progress spam) plus the exit code. Default timeout %ds, max %d minutes. Cut output is saved to a log file whose path is shown: read or grep that instead of re-running.", int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Minutes()))
 }
 
 func (Exec) NeedsConfirm() bool { return true }
@@ -105,7 +105,7 @@ func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	cmd.Dir = t.dir
 	cmd.Env = commandEnv()
 	out, err := cmd.CombinedOutput()
-	result := string(out)
+	result := cleanOutput(string(out))
 	if err == nil {
 		return t.fit(result), nil
 	}
@@ -151,12 +151,22 @@ func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 }
 
 // fit keeps output inside the budget (head plus most of the tail) and spills the full log to a file.
+// aim is the byte ceiling for this command's output, with room left for the note about the cut.
+func (t Exec) aim() int {
+	cap := t.MaxBytes
+	if cap <= 0 {
+		cap = defaultResultBytes
+	}
+	return cap - budgetSlack
+}
+
 func (t Exec) fit(out string) string {
-	if len(out) <= resultBudget {
+	budget := t.aim()
+	if len(out) <= budget {
 		return out
 	}
 	path, err := writeFullOutput(t.logDir(), out)
-	head, tail := cutUTF8(out, execHeadBytes), cutUTF8Tail(out, execTailBytes)
+	head, tail := cutUTF8(out, budget/budgetSlackDiv), cutUTF8Tail(out, budget-budget/budgetSlackDiv)
 	var b strings.Builder
 	b.WriteString(head)
 	fmt.Fprintf(&b, "\n\n[... %d of %d bytes omitted ...", len(out)-len(head)-len(tail), len(out))

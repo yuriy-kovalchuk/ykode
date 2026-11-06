@@ -386,3 +386,21 @@ func TestSettingsSetTheMatchLimit(t *testing.T) {
 		t.Fatalf("%d matches shown, want the configured limit of 2:\n%s", got, out)
 	}
 }
+
+func TestSeveralMatchesInOneFileShareAHeader(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{
+		"src/main.go": "needle one\nneedle two\nneedle three\nother\n",
+		"src/two.go":  "needle four\n",
+	})
+	tool := &SearchText{scope: scope{root: root, dir: dir}}
+
+	out := runSearch(t, tool, `{"pattern":"needle"}`)
+	if got := strings.Count(out, "src/main.go"); got != 1 {
+		t.Fatalf("the path appears %d times, want once as a header:\n%s", got, out)
+	}
+	for _, want := range []string{"src/main.go:\n  1:", "  2:", "  3:", "src/two.go:1:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing from:\n%s", want, out)
+		}
+	}
+}

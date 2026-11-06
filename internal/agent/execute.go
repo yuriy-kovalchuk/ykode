@@ -25,32 +25,28 @@ func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 	name, args := call.Function.Name, call.Function.Arguments
 	argsText := oneLine(string(args), 200)
-	fmt.Fprintf(a.log, "  -> %s %s\n", name, argsText)
+	a.emit(Event{Kind: ToolStart, Tool: name, Args: argsText})
 	if ctx.Err() != nil {
-		return "(cancelled before this tool ran)"
+		return a.failTool(name, "cancelled before this tool ran")
 	}
 	tool, ok := a.tools.Get(name)
 	if !ok {
-		available := strings.Join(a.tools.Names(), ", ")
-		fmt.Fprintf(a.log, "  !! %s: unknown tool; available: %s\n", name, available)
-		return fmt.Sprintf("error: unknown tool %q; available tools: %s", name, available)
+		return a.failTool(name, fmt.Sprintf("unknown tool %q; available tools: %s", name, strings.Join(a.tools.Names(), ", ")))
 	}
 	// repair could not parse these arguments, so check them before any tool sees them
 	if _, err := call.Function.ArgsJSON(); err != nil {
-		fmt.Fprintf(a.log, "  !! %s: %v\n", name, err)
-		return "error: " + err.Error()
+		return a.failTool(name, err.Error())
 	}
 	targets, err := tool.Targets(args)
 	if err != nil {
-		fmt.Fprintf(a.log, "  !! %s: %v\n", name, err)
-		return "error: " + err.Error()
+		return a.failTool(name, err.Error())
 	}
 	outside := outsidePaths(targets)
 	// outside-root access is asked about even under --yes, which only skips routine confirmations
 	if (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0 {
-		if !a.opts.Confirm(describe(name, argsText, outside)) {
-			fmt.Fprintln(a.log, "  !! refused by the user")
-			return "(the user refused this tool call)"
+		decision := a.emit(Event{Kind: Confirm, Tool: name, Args: argsText, Text: describe(name, argsText, outside), Target: outside})
+		if decision == Refuse {
+			return a.failTool(name, "the user refused this tool call")
 		}
 	}
 	if len(outside) > 0 {
@@ -59,12 +55,17 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 
 	out, err := tool.Run(ctx, args)
 	if err != nil {
-		fmt.Fprintf(a.log, "  !! %s: %v\n", name, err)
-		return "error: " + err.Error()
+		return a.failTool(name, err.Error())
 	}
-	result := tools.FormatResult(out)
-	fmt.Fprintf(a.log, "  <- %s %s\n", name, oneLine(result, 120))
+	result := tools.FormatResult(out, a.opts.MaxResult)
+	a.emit(Event{Kind: ToolEnd, Tool: name, Args: argsText, Text: oneLine(result, 200)})
 	return result
+}
+
+// failTool turns a tool failure into the text the model is told, after reporting it.
+func (a *Agent) failTool(name, why string) string {
+	a.emit(Event{Kind: ToolFail, Tool: name, Text: why})
+	return "error: " + why
 }
 
 func outsidePaths(targets []tools.Target) []string {

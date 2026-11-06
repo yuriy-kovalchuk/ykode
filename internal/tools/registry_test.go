@@ -10,8 +10,8 @@ import (
 func TestBuiltInToolSchemasAreValid(t *testing.T) {
 	root, dir := setup(t)
 	registry := BuiltIn(root, dir, Options{})
-	if len(registry.All()) != 7 {
-		t.Fatalf("built-in tool count = %d, want 7", len(registry.All()))
+	if len(registry.All()) != 6 {
+		t.Fatalf("built-in tool count = %d, want 6", len(registry.All()))
 	}
 	for _, tool := range registry.All() {
 		if tool.Name() == "" || tool.Description() == "" {
@@ -30,17 +30,17 @@ func TestBuiltInToolSchemasAreValid(t *testing.T) {
 
 func TestRegistryKeepsRegistrationOrderAndDropsDuplicates(t *testing.T) {
 	root, dir := setup(t)
-	reads, listing := NewReadFile(root, dir), NewListDir(root, dir)
+	reads, listing := NewReadFile(root, dir), NewFindFiles(root, dir)
 
 	registry := NewRegistry(reads, listing, NewReadFile(root, dir))
 
-	if got := strings.Join(registry.Names(), ","); got != "read_file,list_dir" {
+	if got := strings.Join(registry.Names(), ","); got != "read_file,find_files" {
 		t.Fatalf("names = %q, want registration order with the duplicate gone", got)
 	}
 	if len(registry.All()) != 2 {
 		t.Fatalf("%d tools registered, want 2", len(registry.All()))
 	}
-	if _, ok := registry.Get("list_dir"); !ok {
+	if _, ok := registry.Get("find_files"); !ok {
 		t.Fatal("Get must find a registered tool")
 	}
 	if _, ok := registry.Get("delete_everything"); ok {

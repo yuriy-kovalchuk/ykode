@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -25,7 +24,7 @@ func historyFixture() []llm.Message {
 }
 
 func newForHistory(opts Options) *Agent {
-	return New(nil, nil, "test-model", opts, quietSink{}, io.Discard)
+	return New(nil, nil, "test-model", opts, nullSink{})
 }
 
 // sizedFixture has one huge old result and one small recent one, so trimming has an obvious first victim.
@@ -172,8 +171,8 @@ func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
 	}
 	defer root.Close()
 
-	withTools := New(nil, tools.NewRegistry(tools.NewReadFile(root, dir)), "m", Options{}, quietSink{}, io.Discard)
-	without := New(nil, nil, "m", Options{}, quietSink{}, io.Discard)
+	withTools := New(nil, tools.NewRegistry(tools.NewReadFile(root, dir)), "m", Options{}, nullSink{})
+	without := New(nil, nil, "m", Options{}, nullSink{})
 	if withTools.estimateTokens() <= without.estimateTokens() {
 		t.Fatal("tool specs must count toward the context estimate")
 	}

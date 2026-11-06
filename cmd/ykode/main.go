@@ -7,8 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
@@ -63,7 +65,11 @@ func run() error {
 	if ctxSize == 0 {
 		ctxSize = model.CtxSize
 	}
-	fmt.Printf("model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+	if cfg.JSON {
+		fmt.Fprintf(os.Stderr, "model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+	} else {
+		fmt.Printf("model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+	}
 
 	root, err := os.OpenRoot(cfg.Root)
 	if err != nil {
@@ -71,21 +77,34 @@ func run() error {
 	}
 	defer root.Close()
 
+	resultBytes := tools.ResultBytesFor(ctxSize)
 	instructions, err := agent.LoadInstructions(cfg.Root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err, "- continuing without them")
 	}
 
 	registry := tools.BuiltIn(root, cfg.Root, tools.Options{
-		ReadLines:     cfg.ReadLines,
-		SearchLimit:   cfg.SearchLimit,
-		ExecTimeout:   cfg.ExecTimeout,
-		CommandLogDir: cfg.CommandLogDir,
+		ReadLines:      cfg.ReadLines,
+		SearchLimit:    cfg.SearchLimit,
+		ExecTimeout:    cfg.ExecTimeout,
+		CommandLogDir:  cfg.CommandLogDir,
+		MaxResultBytes: resultBytes,
 	})
 
 	lines := cli.NewLineSource(os.Stdin)
-	confirm := cli.NewConfirmer(lines, os.Stdout)
-	renderer := cli.NewRenderer(os.Stdout, os.Stderr)
+	// -p with a pipe has nobody to answer a confirmation, so nothing outside the defaults may run
+	var confirm *cli.Confirmer
+	if cfg.Prompt == "" || cli.IsTerminal(os.Stdin) {
+		confirm = cli.NewConfirmer(lines, os.Stdout)
+	}
+
+	var view agent.Sink = cli.NewView(os.Stdout, os.Stderr, confirm)
+	var events *cli.JSONWriter
+	if cfg.JSON {
+		events = cli.NewJSONWriter(os.Stdout)
+		view = events
+	}
+
 	a := agent.New(client, registry, model.ID, agent.Options{
 		MaxTurns:      cfg.MaxTurns,
 		MaxTokens:     cfg.MaxTokens,
@@ -95,10 +114,29 @@ func run() error {
 		Instructions:  instructions,
 		NoVerify:      cfg.NoVerify,
 		SendReasoning: cfg.SendReasoningFor(model.ID),
-		Confirm:       confirm.Ask,
-	}, renderer, os.Stderr)
+		MaxResult:     resultBytes,
+	}, view)
+	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 
-	return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
+	if cfg.Prompt == "" {
+		return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
+	}
+	return answerOnce(a, events, cfg, ctxSize)
+}
+
+// answerOnce runs one task to completion, for scripts and the eval harness.
+func answerOnce(a *agent.Agent, events *cli.JSONWriter, cfg config.Config, ctxSize int) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := a.Ask(ctx, cfg.Prompt)
+	if events != nil {
+		if err != nil {
+			events.Failure(err)
+		}
+		events.Usage(a.Usage(), ctxSize)
+	}
+	return err
 }
 
 // pickModel resolves an empty --model to the server's first, and warns when the requested one is missing.

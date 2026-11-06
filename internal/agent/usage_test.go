@@ -15,7 +15,7 @@ func answerWithTimings(answer string, promptN, cacheN, predictedN int) string {
 
 func TestUsageAddsUpTheServersOwnNumbers(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("done", 900, 100, 40)}}
-	a, cleanup := newAgent(t, stub, Options{}, quietSink{})
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
 	defer cleanup()
 
 	if err := a.Ask(context.Background(), "hi"); err != nil {
@@ -29,7 +29,7 @@ func TestUsageAddsUpTheServersOwnNumbers(t *testing.T) {
 
 func TestTheEstimateTracksTheServersCount(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("ok", 1400, 0, 5)}}
-	a, cleanup := newAgent(t, stub, Options{}, quietSink{})
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
 	defer cleanup()
 
 	if err := a.Ask(context.Background(), "hi"); err != nil {
@@ -46,7 +46,7 @@ func TestTheEstimateTracksTheServersCount(t *testing.T) {
 
 func TestAnImplausibleServerCountLeavesTheEstimateAlone(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("ok", 5, 0, 5)}}
-	a, cleanup := newAgent(t, stub, Options{}, quietSink{})
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
 	defer cleanup()
 
 	if err := a.Ask(context.Background(), "hi"); err != nil {
@@ -59,7 +59,7 @@ func TestAnImplausibleServerCountLeavesTheEstimateAlone(t *testing.T) {
 
 func TestResetClearsTheCostButKeepsTheLesson(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("ok", 1400, 0, 5)}}
-	a, cleanup := newAgent(t, stub, Options{}, quietSink{})
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
 	defer cleanup()
 
 	if err := a.Ask(context.Background(), "hi"); err != nil {

@@ -17,7 +17,7 @@ const (
 	defaultBaseURL     = "http://127.0.0.1:8080/v1"
 	defaultMaxTurns    = 25
 	defaultMaxTokens   = 4096
-	defaultReadLines   = 400
+	defaultReadLines   = 150
 	defaultSearchLimit = 50
 	defaultExecTimeout = 60 * time.Second
 	defaultLogKeep     = 24 * time.Hour
@@ -43,6 +43,8 @@ type Config struct {
 	ExecTimeout     time.Duration
 	CommandLogDir   string // where a cut command's full output is saved
 	KeepCommandLogs time.Duration
+	Prompt          string          // one task to answer and exit; empty runs the REPL
+	JSON            bool            // print the event stream as JSON lines
 	Version         bool            // print the version and exit
 	modelReasoning  map[string]bool // per-model send_reasoning
 }
@@ -60,6 +62,8 @@ type flagValues struct {
 	Yes           bool
 	NoVerify      bool
 	SendReasoning bool
+	Prompt        string
+	JSON          bool
 	Version       bool
 }
 
@@ -68,7 +72,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -82,6 +86,8 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
 	fs.BoolVar(&f.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
+	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
+	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -158,6 +164,12 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	}
 	if set["send-reasoning"] && f.SendReasoning {
 		c.SendReasoning = true
+	}
+	if set["p"] {
+		c.Prompt = f.Prompt
+	}
+	if set["json"] && f.JSON {
+		c.JSON = true
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	defaultReadLimit = 400 // lines per read_file call when the model omits limit
+	defaultReadLimit = 150 // lines per read_file call when the model omits limit
 	maxReadLimit     = 2000
 )
 
@@ -28,9 +28,10 @@ func (r ReadFile) window() int {
 }
 
 type readInput struct {
-	Path   string `json:"path"`
-	Offset int    `json:"offset"`
-	Limit  int    `json:"limit"`
+	Path    string `json:"path"`
+	Offset  int    `json:"offset"`
+	Limit   int    `json:"limit"`
+	Outline bool   `json:"outline"`
 }
 
 func NewReadFile(root *os.Root, dir string) *ReadFile {
@@ -40,7 +41,7 @@ func NewReadFile(root *os.Root, dir string) *ReadFile {
 func (ReadFile) Name() string { return "read_file" }
 
 func (ReadFile) Description() string {
-	return "Read a text file as numbered lines, which are the exact text edit_file's old_text must match. Page long files with offset and limit; the result says where to continue."
+	return fmt.Sprintf("Read a text file: a header gives the range and total lines, then the text with no line numbers, so old_string can be copied straight from it. Up to %d lines per call, and the output says where to continue. outline=true returns just the declarations with the lines they span - use it before reading a big file. Binary files are refused.", defaultReadLimit)
 }
 
 func (ReadFile) NeedsConfirm() bool { return false }
@@ -51,7 +52,8 @@ func (ReadFile) Schema() json.RawMessage {
 	  "properties": {
 	    "path": {"type": "string", "description": "file path relative to the project root (absolute paths allowed, but need approval)"},
 	    "offset": {"type": "integer", "description": "1-based line to start at (default 1)"},
-	    "limit": {"type": "integer", "description": "max lines to return (default %d, max %d; the byte budget can cut earlier)"}
+	    "limit": {"type": "integer", "description": "max lines to return (default %d, max %d; the byte budget can cut earlier)"},
+	    "outline": {"type": "boolean", "description": "list declarations with their line ranges instead of the text"}
 	  },
 	  "required": ["path"]
 	}`, defaultReadLimit, maxReadLimit))
@@ -84,7 +86,7 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 		return "", toolError(t.Name(), in.Path, err)
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("read_file %q is a directory; use list_dir to see what is in it", in.Path)
+		return "", fmt.Errorf("read_file %q is a directory; list it with find_files pattern '*' and depth 1", in.Path)
 	}
 	// paging a file far bigger than the output budget would burn context one window at a time
 	if info.Size() > maxScannedFileBytes {
@@ -103,6 +105,9 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	if len(lines) == 0 {
 		return "(empty file)", nil
 	}
+	if in.Outline {
+		return fmt.Sprintf("%s: %d lines\n%s", h.shown(), len(lines), outlineText(h.name, lines)), nil
+	}
 	first := in.Offset
 	if first < 1 {
 		first = 1
@@ -116,13 +121,14 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	}
 
 	var b strings.Builder
+	fmt.Fprintf(&b, "%s: lines %d-%d of %d\n", h.shown(), first, last, len(lines))
 	shown := first - 1
 	for n := first; n <= last; n++ {
-		entry := fmt.Sprintf("%4d\t%s\n", n, lines[n-1])
-		if b.Len()+len(entry) > resultBudget {
+		entry := lines[n-1] + "\n"
+		if b.Len()+len(entry) > t.aim() {
 			// one huge line (a minified asset) still gets its head shown rather than nothing
 			if n == first {
-				b.WriteString(fmt.Sprintf("%4d\t%s\n", n, cutUTF8(lines[n-1], resultBudget-64)))
+				b.WriteString(cutUTF8(lines[n-1], t.aim()-b.Len()-64) + "\n")
 				shown = n
 			}
 			break
@@ -131,11 +137,11 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 		shown = n
 	}
 	if shown < len(lines) {
-		reason := "line limit"
+		reason := "pass a larger limit"
 		if shown < last {
-			reason = fmt.Sprintf("%d byte limit", resultBudget)
+			reason = fmt.Sprintf("%d byte limit", t.aim())
 		}
-		fmt.Fprintf(&b, "\n[showing lines %d-%d of %d (%s); continue with offset=%d]\n", first, shown, len(lines), reason, shown+1)
+		fmt.Fprintf(&b, "\n[%d of %d lines shown (%s); continue with offset=%d]\n", shown-first+1, len(lines), reason, shown+1)
 	}
 	return b.String(), nil
 }

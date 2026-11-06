@@ -18,19 +18,32 @@ const (
 	skipDirName         = ".git"
 )
 
+// walkSpec says what one walk reports.
+type walkSpec struct {
+	start    string
+	read     bool // pass file contents to visit
+	dirs     bool // report directories as well, with a trailing slash
+	maxDepth int  // 1 reports only the entries of start; 0 has no limit
+}
+
 // walkFiles walks start honouring .gitignore files, calling visit per text file with its contents.
 func walkFiles(ctx context.Context, root *os.Root, start string, visit func(path string, data []byte) error) error {
-	return walkTree(ctx, root, start, visit, true)
+	return walkTree(ctx, root, walkSpec{start: start, read: true}, visit)
 }
 
 // walkNames is walkFiles without reading: listing sees binary and oversized files too, as fd does.
 func walkNames(ctx context.Context, root *os.Root, start string, visit func(path string, data []byte) error) error {
-	return walkTree(ctx, root, start, visit, false)
+	return walkTree(ctx, root, walkSpec{start: start}, visit)
 }
 
-func walkTree(ctx context.Context, root *os.Root, start string, visit func(path string, data []byte) error, read bool) error {
-	w := walker{root: root, visit: visit}
-	err := w.walk(ctx, filepathCleanSlash(start), nil, read)
+// walkListing reports files and directories to a depth, which is how a directory gets listed.
+func walkListing(ctx context.Context, root *os.Root, start string, depth int, visit func(path string, data []byte) error) error {
+	return walkTree(ctx, root, walkSpec{start: start, dirs: true, maxDepth: depth}, visit)
+}
+
+func walkTree(ctx context.Context, root *os.Root, spec walkSpec, visit func(path string, data []byte) error) error {
+	w := walker{root: root, visit: visit, spec: spec}
+	err := w.walk(ctx, filepathCleanSlash(spec.start), nil, 1)
 	if errors.Is(err, stopWalk) {
 		return nil
 	}
@@ -55,9 +68,11 @@ func joinSlash(dir, name string) string {
 type walker struct {
 	root  *os.Root
 	visit func(path string, data []byte) error
+	spec  walkSpec
 }
 
-func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, read bool) error {
+func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth int) error {
+	read := w.spec.read
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -82,7 +97,15 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, read bo
 		}
 		path := joinSlash(dir, e.Name())
 		if e.IsDir() {
-			if !ignored(path, ignores, true) {
+			if ignored(path, ignores, true) {
+				continue
+			}
+			if w.spec.dirs {
+				if err := w.visit(path+"/", nil); err != nil {
+					return err
+				}
+			}
+			if w.spec.maxDepth == 0 || depth < w.spec.maxDepth {
 				dirs = append(dirs, path)
 			}
 			continue
@@ -106,7 +129,7 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, read bo
 		}
 	}
 	for _, d := range dirs {
-		if err := w.walk(ctx, d, ignores, read); err != nil {
+		if err := w.walk(ctx, d, ignores, depth+1); err != nil {
 			return err
 		}
 	}

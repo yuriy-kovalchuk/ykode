@@ -183,3 +183,30 @@ func TestTheVerifyAndReasoningSwitches(t *testing.T) {
 		t.Fatalf("NoVerify=%v SendReasoning=%v, want both switches to flip", cfg.NoVerify, cfg.SendReasoning)
 	}
 }
+
+func TestTheOneShotFlags(t *testing.T) {
+	cfg, err := Load([]string{"-p", "fix the flaky test", "--json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Prompt != "fix the flaky test" || !cfg.JSON {
+		t.Fatalf("Prompt=%q JSON=%v", cfg.Prompt, cfg.JSON)
+	}
+	cfg, err = Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Prompt != "" || cfg.JSON {
+		t.Fatal("without -p ykode opens a session")
+	}
+}
+
+func TestTheDefaultReadWindowKeepsSearchingFirst(t *testing.T) {
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadLines > 200 {
+		t.Errorf("ReadLines = %d: a window this big lets the model dump files instead of searching", cfg.ReadLines)
+	}
+}

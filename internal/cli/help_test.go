@@ -18,7 +18,7 @@ func TestHelpListsEveryCommand(t *testing.T) {
 
 func TestCommandsReachTheirHandlers(t *testing.T) {
 	var out, log bytes.Buffer
-	r := NewREPL(agent.New(nil, nil, "m", agent.Options{}, nil, &log), NewLineSource(strings.NewReader("")), &out, &log)
+	r := NewREPL(agent.New(nil, nil, "m", agent.Options{}, nil), NewLineSource(strings.NewReader("")), &out, &log)
 	for _, line := range []string{"/help", "/usage", "/reset", "/sideways"} {
 		if quit, err := r.command(line); quit || err != nil {
 			t.Fatalf("%s: quit=%v err=%v", line, quit, err)

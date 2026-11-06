@@ -28,6 +28,7 @@ type findInput struct {
 	Pattern string `json:"pattern"`
 	Path    string `json:"path"`
 	Limit   int    `json:"limit"`
+	Depth   int    `json:"depth"`
 }
 
 func NewFindFiles(root *os.Root, dir string) *FindFiles {
@@ -41,7 +42,7 @@ func NewFindFiles(root *os.Root, dir string) *FindFiles {
 func (FindFiles) Name() string { return "find_files" }
 
 func (FindFiles) Description() string {
-	return "Find files by glob pattern: '*.go', '*_test.go', 'internal/**/*.go'. Returns sorted project-relative paths; .gitignore entries and .git are skipped. Default 1000 results."
+	return "Find files by glob: '*.go', '*_test.go', 'internal/**/*.go'. To list a directory, use pattern '*' with depth 1; directories end in '/'. Sorted project-relative paths; .git and .gitignore entries are skipped."
 }
 
 func (FindFiles) NeedsConfirm() bool { return false }
@@ -50,9 +51,10 @@ func (FindFiles) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "pattern": {"type": "string", "description": "glob to match, e.g. *.go or internal/**/*.go"},
-	    "path": {"type": "string", "description": "directory to search (default the project root)"},
-	    "limit": {"type": "integer", "description": "max paths to return (default %d, max %d)"}
+	    "pattern": {"type": "string", "description": "glob to match, e.g. *.go"},
+	    "path": {"type": "string", "description": "directory to search"},
+	    "limit": {"type": "integer", "description": "max paths (default %d, max %d)"},
+	    "depth": {"type": "integer", "description": "1 lists one directory; 0 or absent is unlimited"}
 	  },
 	  "required": ["pattern"]
 	}`, defaultFindResults, maxFindResults))
@@ -85,9 +87,9 @@ func (t FindFiles) Run(ctx context.Context, args json.RawMessage) (string, error
 
 	var found []string
 	if t.fdPath != "" {
-		found, err = t.withFd(ctx, h, in.Pattern, limit)
+		found, err = t.withFd(ctx, h, in, limit)
 	} else {
-		found, err = t.withGoWalker(ctx, h, in.Pattern, limit)
+		found, err = t.withGoWalker(ctx, h, in, limit)
 	}
 	if err != nil {
 		return "", err
@@ -102,8 +104,8 @@ func (t FindFiles) Run(ctx context.Context, args json.RawMessage) (string, error
 	}
 	b := strings.Builder{}
 	for i, p := range found {
-		if b.Len()+len(p)+1 > resultBudget {
-			fmt.Fprintf(&b, "\n[... %d more paths; output hit the %d byte budget: narrow the pattern or lower limit]", len(found)-i, resultBudget)
+		if b.Len()+len(p)+1 > t.aim() {
+			fmt.Fprintf(&b, "\n[... %d more paths; output hit the %d byte budget: narrow the pattern or lower limit]", len(found)-i, t.aim())
 			break
 		}
 		b.WriteString(p)
@@ -116,12 +118,15 @@ func (t FindFiles) Run(ctx context.Context, args json.RawMessage) (string, error
 }
 
 // withFd runs fd in the searched dir with "**/"-prefixed globs matched against the whole path.
-func (t FindFiles) withFd(ctx context.Context, h handle, pattern string, limit int) ([]string, error) {
-	cmd := groupCommand(ctx, t.fdPath,
-		"--glob", "--full-path", "**/"+pattern,
+func (t FindFiles) withFd(ctx context.Context, h handle, in findInput, limit int) ([]string, error) {
+	args := []string{"--glob", "--full-path", "**/" + in.Pattern,
 		"--hidden", "--no-require-git", "--exclude", skipDirName,
-		"--max-results", strconv.Itoa(limit+1),
-		".")
+		"--max-results", strconv.Itoa(limit + 1),
+	}
+	if in.Depth > 0 {
+		args = append(args, "--max-depth", strconv.Itoa(in.Depth))
+	}
+	cmd := groupCommand(ctx, t.fdPath, append(args, ".")...)
 	cmd.Dir = h.target.Resolved
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -142,18 +147,27 @@ func (t FindFiles) withFd(ctx context.Context, h handle, pattern string, limit i
 	return found, nil
 }
 
-func (t FindFiles) withGoWalker(ctx context.Context, h handle, pattern string, limit int) ([]string, error) {
-	re, err := compileGlob(pattern)
+func (t FindFiles) withGoWalker(ctx context.Context, h handle, in findInput, limit int) ([]string, error) {
+	re, err := compileGlob(in.Pattern)
 	if err != nil {
-		return nil, fmt.Errorf("find_files: bad pattern %q: %v", pattern, err)
+		return nil, fmt.Errorf("find_files: bad pattern %q: %v", in.Pattern, err)
+	}
+	walk := func(visit func(path string, data []byte) error) error {
+		if in.Depth > 0 {
+			return walkListing(ctx, h.root, h.name, in.Depth, visit)
+		}
+		return walkNames(ctx, h.root, h.name, visit)
 	}
 	var found []string
-	err = walkNames(ctx, h.root, h.name, func(path string, _ []byte) error {
-		if re.MatchString(path) {
-			found = append(found, h.display(path))
-			if len(found) > limit {
-				return stopWalk
-			}
+	err = walk(func(path string, _ []byte) error {
+		name, isDir := strings.CutSuffix(path, "/")
+		if !re.MatchString(name) {
+			return nil
+		}
+		_ = isDir // a directory keeps its trailing slash, which is how the model reads it
+		found = append(found, h.display(path))
+		if len(found) > limit {
+			return stopWalk
 		}
 		return nil
 	})

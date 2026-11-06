@@ -64,7 +64,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 func (SearchText) Name() string { return "search_text" }
 
 func (SearchText) Description() string {
-	return "Search file contents with a regular expression (set literal for plain text). Returns project-relative path:line:text, with context lines using a dash separator; .gitignore entries and binary files are skipped. Default 100 matches. Use mode=count or mode=files_with_matches to cover ground in far fewer tokens."
+	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
 }
 
 func (SearchText) NeedsConfirm() bool { return false }
@@ -74,7 +74,7 @@ func (SearchText) Schema() json.RawMessage {
 	  "type": "object",
 	  "properties": {
 	    "pattern": {"type": "string", "description": "regex, or plain text when literal is true"},
-	    "path": {"type": "string", "description": "file or directory to search (default the project root)"},
+	    "path": {"type": "string", "description": "file or directory to search"},
 	    "glob": {"type": "string", "description": "only files matching this glob, e.g. *.go"},
 	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"], "description": "content (default) returns matching lines; count returns per-file totals; files_with_matches returns only the file names"},
 	    "ignore_case": {"type": "boolean", "description": "case-insensitive (default false)"},
@@ -129,13 +129,13 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 		if err != nil {
 			return "", err
 		}
-		return formatHits(hits, limit, 0), nil
+		return formatHits(hits, limit, 0, t.aim()), nil
 	}
 	hits, scanned, err := t.withGoWalker(ctx, h, in, limit)
 	if err != nil {
 		return "", err
 	}
-	return formatHits(hits, limit, scanned), nil
+	return formatHits(hits, limit, scanned, t.aim()), nil
 }
 
 // summary answers count and files_with_matches with one line per file instead of one per match.
@@ -151,7 +151,7 @@ func (t SearchText) summary(ctx context.Context, h handle, in searchInput, limit
 	if err != nil {
 		return "", err
 	}
-	return formatSummary(in.Mode, files, limit, scanned, stopped), nil
+	return formatSummary(in.Mode, files, limit, scanned, stopped, t.aim()), nil
 }
 
 // fileMatch is one file's tally in the summary modes.
@@ -468,7 +468,7 @@ func (t SearchText) withGoSummary(ctx context.Context, h handle, in searchInput,
 }
 
 // formatSummary renders one line per file plus the total the model asked for.
-func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped bool) string {
+func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped bool, budget int) string {
 	if len(files) == 0 {
 		return "(no matches)"
 	}
@@ -479,9 +479,9 @@ func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped b
 		if mode != modeFiles { // files_with_matches never counted, so it must not pretend to
 			line += ":" + strconv.Itoa(f.matches)
 		}
-		if b.Len()+len(line)+1 > resultBudget {
+		if b.Len()+len(line)+1 > budget {
 			return b.String() + fmt.Sprintf(
-				"\n\n[... %d more files; output hit the %d byte budget: narrow the pattern or pass glob]", len(files)-i, resultBudget)
+				"\n\n[... %d more files; output hit the %d byte budget: narrow the pattern or pass glob]", len(files)-i, budget)
 		}
 		total += f.matches
 		b.WriteString(line)
@@ -503,21 +503,39 @@ func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped b
 	return b.String()
 }
 
-// formatHits renders hits and keeps the result inside the tool budget.
-func formatHits(hits []hit, limit, scanned int) string {
+// formatHits renders hits and keeps the result inside the tool budget. A file with several
+// matches gets one header, which is the path once instead of on every line.
+func formatHits(hits []hit, limit, scanned, budget int) string {
 	if len(hits) == 0 {
 		return "(no matches)"
 	}
+	perFile := map[string]int{}
+	contexts := map[string]int{}
+	for _, h := range hits {
+		perFile[h.path]++
+		if h.context {
+			contexts[h.path]++
+		}
+	}
+	grouped := func(path string) bool { return perFile[path] > 1 && contexts[path] == 0 }
+
 	var b strings.Builder
 	for i, h := range hits {
 		sep := ":"
 		if h.context {
 			sep = "-"
 		}
-		line := h.path + sep + strconv.Itoa(h.line) + sep + oneLine(h.text, searchLineChars)
-		if b.Len()+len(line)+1 > resultBudget {
+		body := strconv.Itoa(h.line) + sep + oneLine(h.text, searchLineChars)
+		line := h.path + sep + body
+		if grouped(h.path) {
+			line = "  " + body
+			if i == 0 || hits[i-1].path != h.path {
+				line = h.path + ":\n  " + body
+			}
+		}
+		if b.Len()+len(line)+1 > budget {
 			return b.String() + fmt.Sprintf(
-				"\n\n[... %d more lines; output hit the %d byte budget: narrow the pattern, pass glob, or lower limit]", len(hits)-i, resultBudget)
+				"\n\n[... %d more lines; output hit the %d byte budget: narrow the pattern, pass glob, or lower limit]", len(hits)-i, budget)
 		}
 		b.WriteString(line)
 		b.WriteString("\n")

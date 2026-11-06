@@ -71,7 +71,7 @@ func (a *Agent) trimHistory() {
 	for i := 1; i < len(a.history) && a.estimateTokens() > target; i++ {
 		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 {
 			m.Content = trimMarker
-			fmt.Fprintln(a.log, "  .. trimmed an old tool result to fit the context")
+			a.tell("trimmed an old tool result to fit the context")
 		}
 	}
 }

@@ -23,29 +23,31 @@ type Tool interface {
 // BuiltIn is the tool set ykode ships with, ordered locate, read, change, run.
 // Options carries the settings the tools use when the model does not ask for a size of its own.
 type Options struct {
-	ReadLines     int
-	SearchLimit   int
-	ExecTimeout   time.Duration
-	CommandLogDir string
+	ReadLines      int
+	SearchLimit    int
+	ExecTimeout    time.Duration
+	CommandLogDir  string
+	MaxResultBytes int // one tool result; 0 means defaultResultBytes
 }
 
 func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
-	read := NewReadFile(root, dir)
-	read.Lines = opts.ReadLines
+	find := NewFindFiles(root, dir)
 	search := NewSearchText(root, dir)
+	read := NewReadFile(root, dir)
+	write := NewWriteFile(root, dir)
+	edit := NewEditFile(root, dir)
+	for _, scope := range []*scope{&find.scope, &search.scope, &read.scope, &write.scope, &edit.scope} {
+		scope.budget = opts.MaxResultBytes
+	}
 	search.MatchLimit = opts.SearchLimit
+	read.Lines = opts.ReadLines
+
 	run := NewExec(dir)
 	run.Timeout = opts.ExecTimeout
 	run.LogDir = opts.CommandLogDir
-	return NewRegistry(
-		NewListDir(root, dir),
-		NewFindFiles(root, dir),
-		search,
-		read,
-		NewWriteFile(root, dir),
-		NewEditFile(root, dir),
-		run,
-	)
+	run.MaxBytes = opts.MaxResultBytes
+
+	return NewRegistry(find, search, read, write, edit, run)
 }
 
 // Registry keeps tools in registration order so the list the model sees stays stable.
@@ -82,25 +84,38 @@ func (r *Registry) Names() []string {
 }
 
 const (
-	// tools aim under resultBudget so their own note about the cut still fits
-	maxResultBytes = 12000
-	resultBudget   = maxResultBytes - 512
-	noOutput       = "(no output)"
+	// defaultResultBytes caps one tool result when the context window is unknown
+	defaultResultBytes = 12000
+	// tools aim under their cap so their own note about the cut still fits
+	budgetSlack = 512
+	noOutput    = "(no output)"
 	// markerOverhead leaves room for the "bytes omitted" line itself, which fits a 10 digit count
 	markerOverhead = 64
 )
 
-// FormatResult keeps a result non-empty and inside maxResultBytes, keeping the head and tail of anything longer.
-func FormatResult(out string) string {
+// ResultBytesFor scales one tool result with the window it shares: about a tenth of it in tokens,
+// clamped so a small window still gets a usable result and a huge one does not drown the model.
+func ResultBytesFor(ctxTokens int) int {
+	if ctxTokens <= 0 {
+		return defaultResultBytes
+	}
+	return clamp(ctxTokens/10, 1200, 6000) * 4 // four bytes per token is a generous estimate
+}
+
+// FormatResult keeps a result non-empty and inside maxBytes, keeping the head and tail of anything longer.
+func FormatResult(out string, maxBytes int) string {
+	if maxBytes <= 0 {
+		maxBytes = defaultResultBytes
+	}
 	out = strings.TrimSpace(out)
 	if out == "" {
 		return noOutput
 	}
-	if len(out) <= maxResultBytes {
+	if len(out) <= maxBytes {
 		return out
 	}
 	// the marker costs bytes too, or the result would break the cap it promises
-	keep := (maxResultBytes - markerOverhead) / 2
+	keep := (maxBytes - markerOverhead) / 2
 	head, tail := cutUTF8(out, keep), cutUTF8Tail(out, keep)
 	return fmt.Sprintf("%s\n\n[... %d bytes omitted ...]\n\n%s", head, len(out)-len(head)-len(tail), tail)
 }

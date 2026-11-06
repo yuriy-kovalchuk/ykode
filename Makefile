@@ -8,7 +8,7 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build vet test check cover fmt run install uninstall release clean
+.PHONY: all build vet test check cover fmt run eval install uninstall release clean
 
 all: build check
 
@@ -32,6 +32,10 @@ fmt:
 
 run: build
 	./$(BINARY) $(ARGS)
+
+# eval runs the scripted tasks against a real server; ARGS filters with --only
+eval:
+	$(GO) run ./cmd/eval $(ARGS)
 
 install: build
 	install -d $(INSTALL_DIR)

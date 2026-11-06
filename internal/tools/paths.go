@@ -44,9 +44,21 @@ func within(root, path string) bool {
 
 // scope is the file handle the file tools share: the project Root plus this call's outside approvals.
 type scope struct {
-	root *os.Root
-	dir  string // absolute project root
+	root   *os.Root
+	dir    string // absolute project root
+	budget int    // bytes one result may use; 0 means defaultResultBytes
 }
+
+// cap is the byte ceiling for this tool's result.
+func (s scope) cap() int {
+	if s.budget > 0 {
+		return s.budget
+	}
+	return defaultResultBytes
+}
+
+// aim leaves room for the note that explains a cut.
+func (s scope) aim() int { return s.cap() - budgetSlack }
 
 // handle addresses one target as root+name, and releases anything opened for it.
 type handle struct {

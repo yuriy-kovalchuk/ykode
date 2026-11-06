@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -74,15 +75,41 @@ func sse(reasoning, content string, tool string, argsParts []string, finish stri
 }
 
 // captureSink records what the renderer was given.
+// captureSink collects the event stream so tests can assert on what a consumer would see.
 type captureSink struct {
+	events    []Event
 	reasoning strings.Builder
 	content   strings.Builder
 	stats     []Stats
+	asked     []Event
+	decision  Decision // what this sink answers a Confirm with
 }
 
-func (c *captureSink) Reasoning(chunk string) { c.reasoning.WriteString(chunk) }
-func (c *captureSink) Content(chunk string)   { c.content.WriteString(chunk) }
-func (c *captureSink) TurnDone(stats Stats)   { c.stats = append(c.stats, stats) }
+func (c *captureSink) Emit(ev Event) Decision {
+	c.events = append(c.events, ev)
+	switch ev.Kind {
+	case Thinking:
+		c.reasoning.WriteString(ev.Text)
+	case Answer:
+		c.content.WriteString(ev.Text)
+	case TurnEnd:
+		if ev.Stats != (Stats{}) {
+			c.stats = append(c.stats, ev.Stats)
+		}
+	case Confirm:
+		c.asked = append(c.asked, ev)
+	}
+	return c.decision
+}
+
+// kinds lists the event kinds in order, for asserting the shape of a run.
+func (c *captureSink) kinds() []EventKind {
+	kinds := make([]EventKind, 0, len(c.events))
+	for _, ev := range c.events {
+		kinds = append(kinds, ev.Kind)
+	}
+	return kinds
+}
 
 func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, func()) {
 	t.Helper()
@@ -93,11 +120,11 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 		t.Fatal(err)
 	}
 	registry := tools.NewRegistry(
-		tools.NewListDir(root, dir),
+		tools.NewFindFiles(root, dir),
 		tools.NewReadFile(root, dir),
 		tools.NewWriteFile(root, dir),
 	)
-	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", opts, sink, io.Discard)
+	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", opts, sink)
 	return a, func() { server.Close(); root.Close() }
 }
 
@@ -191,11 +218,7 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 		sse("", "", "read_file", []string{`{"path":"../outside.txt"}`}, "tool_calls"),
 		sse("", "fine", "", nil, "stop"),
 	}}
-	var asked []string
-	opts := Options{MaxTurns: 3, MaxTokens: 512, AssumeYes: true, Confirm: func(what string) bool {
-		asked = append(asked, what)
-		return false
-	}}
+	opts := Options{MaxTurns: 3, MaxTokens: 512, AssumeYes: true}
 	server := httptest.NewServer(stub)
 	defer server.Close()
 	root, err := os.OpenRoot(project)
@@ -203,14 +226,18 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
+	sink := &captureSink{decision: Refuse}
 	a := New(llm.NewClient(server.URL+"/v1", ""),
-		tools.NewRegistry(tools.NewReadFile(root, project)), "test-model", opts, &captureSink{}, io.Discard)
+		tools.NewRegistry(tools.NewReadFile(root, project)), "test-model", opts, sink)
 
 	if err := a.Ask(context.Background(), "read the file above the root"); err != nil {
 		t.Fatal(err)
 	}
-	if len(asked) != 1 || !strings.Contains(asked[0], filepath.Join(dir, "outside.txt")) {
-		t.Fatalf("confirmation asked = %v, want one question naming the resolved outside path", asked)
+	if len(sink.asked) != 1 || !strings.Contains(sink.asked[0].Text, filepath.Join(dir, "outside.txt")) {
+		t.Fatalf("confirmation asked = %v, want one question naming the resolved outside path", sink.asked)
+	}
+	if got := sink.asked[0].Target; len(got) != 1 || got[0] != filepath.Join(dir, "outside.txt") {
+		t.Fatalf("confirm targets = %v, want the outside path listed for the consumer", got)
 	}
 	// The refusal must reach the model as the tool result.
 	var refusal string
@@ -226,7 +253,7 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 }
 
 func TestMaxTurnsStopsTheLoop(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "", "list_dir", []string{`{"path":"."}`}, "tool_calls")}}
+	stub := &stubServer{scripts: []string{sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls")}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 512}, &captureSink{})
 	defer done()
 
@@ -242,7 +269,7 @@ func TestMaxTurnsStopsTheLoop(t *testing.T) {
 func TestAnswerWithNoToolCallIsVerifiedOnce(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "the file is fine", "", nil, "stop"),
-		sse("", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
 		sse("", "checked: the file is fine", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
@@ -267,7 +294,7 @@ func TestAnswerWithNoToolCallIsVerifiedOnce(t *testing.T) {
 
 func TestToolUsingRequestIsNotNudged(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
 		sse("", "one directory", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
@@ -347,7 +374,7 @@ func TestVerifyOffLeavesAMemoryAnswerAlone(t *testing.T) {
 
 func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("thinking first", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("thinking first", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, SendReasoning: true}, &captureSink{})
@@ -363,7 +390,7 @@ func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
 
 func TestThinkingIsNotSentBackUnasked(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("thinking first", "", "list_dir", []string{`{"path":"."}`}, "tool_calls"),
+		sse("thinking first", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, &captureSink{})
@@ -388,4 +415,114 @@ func assistantReasoning(t *testing.T, request map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func TestARunIsAStreamOfTypedEvents(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("pondering", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "list the files"); err != nil {
+		t.Fatal(err)
+	}
+	want := []EventKind{TurnStart, Thinking, TurnEnd, ToolStart, ToolEnd, TurnStart, Answer, TurnEnd}
+	got := sink.kinds()
+	if len(got) != len(want) {
+		t.Fatalf("events = %v, want %v", kindsText(got), kindsText(want))
+	}
+	for i, k := range want {
+		if got[i] != k {
+			t.Fatalf("event %d = %v, want %v (%v)", i, got[i], k, kindsText(got))
+		}
+	}
+	if sink.events[4].Tool != "find_files" || sink.events[4].Text == "" {
+		t.Fatalf("tool_end event = %+v, want the tool name and its result", sink.events[4])
+	}
+	for _, ev := range sink.events {
+		if ev.Kind != Answer && ev.Turn == 0 {
+			t.Fatalf("event %v carries no turn number", ev.Kind)
+		}
+	}
+}
+
+func TestAFailingToolIsReportedAsAnEvent(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "read_file", []string{`{"path":"missing.go"}`}, "tool_calls"),
+		sse("", "nothing there", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read missing.go"); err != nil {
+		t.Fatal(err)
+	}
+	var failed Event
+	for _, ev := range sink.events {
+		if ev.Kind == ToolFail {
+			failed = ev
+		}
+	}
+	if failed.Tool != "read_file" || failed.Text == "" {
+		t.Fatalf("no tool_fail event in %v", kindsText(sink.kinds()))
+	}
+}
+
+func kindsText(kinds []EventKind) string {
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		parts[i] = k.String()
+	}
+	return strings.Join(parts, " ")
+}
+
+func TestThePrefixTheServerCachesStaysIdentical(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{decision: Allow})
+	defer done()
+
+	if err := a.Ask(context.Background(), "read a.go"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 3 {
+		t.Fatalf("%d requests, want three turns", len(stub.requests))
+	}
+	first := stub.requests[0]
+	for i, next := range stub.requests[1:] {
+		if !reflect.DeepEqual(first["tools"], next["tools"]) {
+			t.Errorf("request %d changed the tool specs: the cached prefix must not move", i+1)
+		}
+		if !reflect.DeepEqual(first["messages"].([]any)[0], next["messages"].([]any)[0]) {
+			t.Errorf("request %d changed the system prompt", i+1)
+		}
+	}
+	for i := 1; i < len(stub.requests); i++ {
+		older := stub.requests[i-1]["messages"].([]any)
+		newer := stub.requests[i]["messages"].([]any)
+		if !reflect.DeepEqual(older, newer[:len(older)]) {
+			t.Errorf("request %d rewrote history that was already sent; only appends keep the cache", i)
+		}
+	}
+}
+
+func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
+	if got := a.SpecBytes(); got > 5000 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5000", got, got/3)
+	}
 }

@@ -63,8 +63,8 @@ func TestEditResultStaysInsideTheToolBudget(t *testing.T) {
 	got := runTool(t, NewEditFile(root, dir), fmt.Sprintf(
 		`{"path":"wide.txt","edits":[{"old_text":%s,"new_text":%s}]}`,
 		jsonQuote(padded(120, "x")), jsonQuote(padded(120, "y"))))
-	if len(got) > maxResultBytes {
-		t.Fatalf("result is %d bytes, over the cap of %d", len(got), maxResultBytes)
+	if len(got) > defaultResultBytes {
+		t.Fatalf("result is %d bytes, over the cap of %d", len(got), defaultResultBytes)
 	}
 }
 

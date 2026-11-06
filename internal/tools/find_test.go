@@ -141,3 +141,24 @@ func TestFindListsBinaryAndOversizedFiles(t *testing.T) {
 		t.Errorf("search should skip the oversized file:\n%s", got)
 	}
 }
+
+func TestDepthOneListsOneDirectory(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{
+		"top.go":        "package top\n",
+		"src/main.go":   "package main\n",
+		"src/deep/x.go": "package deep\n",
+		"src/asset.png": "binary",
+	})
+	tool := &FindFiles{scope: scope{root: root, dir: dir}}
+
+	out := runTool(t, tool, `{"pattern":"*","path":"src","depth":1}`)
+	if !strings.Contains(out, "src/main.go") || !strings.Contains(out, "src/asset.png") {
+		t.Fatalf("files of src missing:\n%s", out)
+	}
+	if !strings.Contains(out, "src/deep/") {
+		t.Fatalf("the subdirectory is not marked as a directory:\n%s", out)
+	}
+	if strings.Contains(out, "src/deep/x.go") || strings.Contains(out, "top.go") {
+		t.Fatalf("depth 1 reached past the first level:\n%s", out)
+	}
+}

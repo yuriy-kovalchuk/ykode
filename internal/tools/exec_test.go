@@ -68,8 +68,8 @@ func TestExecLongOutputSavesTheFullLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) > maxResultBytes+512 {
-		t.Fatalf("result is %d bytes, over the %d byte cap", len(out), maxResultBytes)
+	if len(out) > defaultResultBytes+512 {
+		t.Fatalf("result is %d bytes, over the %d byte cap", len(out), defaultResultBytes)
 	}
 	if !strings.Contains(out, "bytes omitted") {
 		t.Fatalf("result = %q, want a note about omitted bytes", out)
@@ -203,5 +203,44 @@ func TestPruneToleratesAFirstRunWithNoLogs(t *testing.T) {
 	removed, err := PruneSpillLogs(missing, time.Hour)
 	if err != nil || removed != 0 {
 		t.Fatalf("PruneSpillLogs() = (%d, %v), want no error for a directory that does not exist yet", removed, err)
+	}
+}
+
+func TestEscapeSequencesNeverReachTheModel(t *testing.T) {
+	tool := NewExec(t.TempDir())
+
+	out := runTool(t, tool, `{"command":"printf '\\033[31mFAIL\\033[0m TestParse\\n'"}`)
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("raw escapes survived: %q", out)
+	}
+	if !strings.Contains(out, "FAIL TestParse") {
+		t.Fatalf("text was lost with the escapes: %q", out)
+	}
+}
+
+func TestAProgressBarKeepsItsLastFrame(t *testing.T) {
+	tool := NewExec(t.TempDir())
+
+	out := runTool(t, tool, `{"command":"printf 'downloading 10%%\\rdownloading 50%%\\rdownloading 100%%\\n'"}`)
+	if strings.Contains(out, "downloading 10%") || strings.Contains(out, "downloading 50%") {
+		t.Fatalf("earlier frames survived: %q", out)
+	}
+	if !strings.Contains(out, "downloading 100%") {
+		t.Fatalf("last frame missing: %q", out)
+	}
+}
+
+func TestARunOfIdenticalLinesIsCollapsed(t *testing.T) {
+	tool := NewExec(t.TempDir())
+
+	out := runTool(t, tool, `{"command":"for i in 1 2 3 4 5 6 7 8 9 10; do echo 'waiting for lock'; done; echo done"}`)
+	if got := strings.Count(out, "waiting for lock"); got != 1 {
+		t.Fatalf("%d copies of the repeated line, want 1:\n%s", got, out)
+	}
+	if !strings.Contains(out, "[previous line repeated 9 more times]") {
+		t.Fatalf("no repeat count:\n%s", out)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("the lines after the run were lost:\n%s", out)
 	}
 }

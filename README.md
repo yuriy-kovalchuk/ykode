@@ -101,7 +101,7 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
   "assume_yes": false,
   "context": { "reserve_output": 4096, "safety_margin": 256 },
   "tools": {
-    "read_lines": 400,
+    "read_lines": 150,
     "search_limit": 100,
     "exec_timeout_sec": 60,
     "command_log_dir": "",
