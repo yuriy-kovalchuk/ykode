@@ -37,9 +37,32 @@ func commandEnv() []string {
 }
 
 // Exec runs sh -c in the project root: confined by the working directory, not by the file sandbox.
-type Exec struct{ dir string }
+type Exec struct {
+	dir     string
+	Timeout time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
+	LogDir  string        // where a cut command's full output is saved; empty means os.TempDir()
+}
+
+func (t Exec) timeout() time.Duration {
+	if t.Timeout > 0 {
+		return t.Timeout
+	}
+	return defaultExecTimeout
+}
 
 func NewExec(dir string) *Exec { return &Exec{dir: dir} }
+
+// logDir is where cut command output lands, created on demand.
+func (t Exec) logDir() string {
+	base := t.LogDir
+	if base == "" {
+		base = os.TempDir()
+	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return os.TempDir()
+	}
+	return base
+}
 
 func (Exec) Name() string { return "exec_command" }
 
@@ -74,7 +97,7 @@ func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	if strings.TrimSpace(in.Command) == "" {
 		return "", fmt.Errorf("exec_command: command is empty")
 	}
-	timeout, capped := execTimeout(in.Timeout)
+	timeout, capped := execTimeout(in.Timeout, t.timeout())
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -108,9 +131,9 @@ func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 }
 
 // execTimeout clamps the model's request into a sane range.
-func execTimeout(seconds int) (time.Duration, bool) {
+func execTimeout(seconds int, def time.Duration) (time.Duration, bool) {
 	if seconds <= 0 {
-		return defaultExecTimeout, false
+		return def, false
 	}
 	if seconds > int(maxExecTimeout.Seconds()) {
 		return maxExecTimeout, true
@@ -132,7 +155,7 @@ func (t Exec) fit(out string) string {
 	if len(out) <= resultBudget {
 		return out
 	}
-	path, err := writeFullOutput(out)
+	path, err := writeFullOutput(t.logDir(), out)
 	head, tail := cutUTF8(out, execHeadBytes), cutUTF8Tail(out, execTailBytes)
 	var b strings.Builder
 	b.WriteString(head)
@@ -150,6 +173,9 @@ func (t Exec) fit(out string) string {
 // PruneSpillLogs deletes command output logs older than maxAge; nothing else cleans them.
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil // a first run has no logs to clean
+	}
 	if err != nil {
 		return 0, fmt.Errorf("clean old command logs: %w", err)
 	}
@@ -174,8 +200,8 @@ func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 }
 
 // writeFullOutput stores an oversized output in a temp dir and returns its path.
-func writeFullOutput(out string) (string, error) {
-	dir, err := os.MkdirTemp("", spillPrefix)
+func writeFullOutput(dir, out string) (string, error) {
+	dir, err := os.MkdirTemp(dir, spillPrefix)
 	if err != nil {
 		return "", err
 	}

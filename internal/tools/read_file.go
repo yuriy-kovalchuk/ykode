@@ -15,7 +15,17 @@ const (
 )
 
 // ReadFile returns a slice of a file, numbered like cat -n.
-type ReadFile struct{ scope }
+type ReadFile struct {
+	scope
+	Lines int // window when the model omits limit; 0 means defaultReadLimit
+}
+
+func (r ReadFile) window() int {
+	if r.Lines > 0 {
+		return r.Lines
+	}
+	return defaultReadLimit
+}
 
 type readInput struct {
 	Path   string `json:"path"`
@@ -24,7 +34,7 @@ type readInput struct {
 }
 
 func NewReadFile(root *os.Root, dir string) *ReadFile {
-	return &ReadFile{scope{root: root, dir: dir}}
+	return &ReadFile{scope: scope{root: root, dir: dir}}
 }
 
 func (ReadFile) Name() string { return "read_file" }
@@ -100,7 +110,7 @@ func (t ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	if first > len(lines) {
 		return "", fmt.Errorf("read_file %q: offset %d is past the end of a %d line file", in.Path, first, len(lines))
 	}
-	last := first - 1 + clampLimit(in.Limit, defaultReadLimit, maxReadLimit)
+	last := first - 1 + clampLimit(in.Limit, t.window(), maxReadLimit)
 	if last > len(lines) {
 		last = len(lines)
 	}

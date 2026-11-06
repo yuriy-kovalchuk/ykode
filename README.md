@@ -72,6 +72,51 @@ is possible but asked about, per call, showing the resolved absolute path —
 `--yes` does not skip that. `exec_command` runs `sh -c` in the root with a minimal
 environment (`PATH`, `HOME`, `TERM`, `LANG`) rather than inheriting ykode's.
 
+## Install
+
+```sh
+make install                      # builds and copies to ~/.local/bin
+make install INSTALL_DIR=/usr/local/bin
+sh scripts/install.sh             # clone-and-build installer, same destination
+make uninstall                    # remove the binary; keeps ~/.ykode
+make uninstall PURGE=1            # also removes ~/.ykode
+ykode --version                   # git tag the binary was built from
+make release                      # linux/amd64, linux/arm64, darwin/arm64 into dist/
+```
+
+`~/.local/bin` is not on `PATH` by default in every shell; add it if `ykode` is not found.
+
+## Settings
+
+Settings resolve in this order, later winning: built-in defaults, `~/.ykode/settings.json`,
+`<root>/.ykode/settings.json`, environment variables, flags.
+
+```json
+{
+  "base_url": "http://127.0.0.1:8080/v1",
+  "model": "Qwen3.6-35B-A3B-GSQ-hybrid",
+  "max_turns": 25,
+  "thinking": true,
+  "verify": true,
+  "assume_yes": false,
+  "context": { "reserve_output": 4096, "safety_margin": 256 },
+  "tools": {
+    "read_lines": 400,
+    "search_limit": 100,
+    "exec_timeout_sec": 60,
+    "command_log_dir": "",
+    "keep_command_logs": "24h"
+  },
+  "models": { "Qwen3.6-35B-A3B-GSQ-hybrid": { "send_reasoning": false } }
+}
+```
+
+`reserve_output` is the token budget for one reply, `safety_margin` what is kept free beside
+it, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
+expects it back from tool-calling turns. The per-user directory is `~/.ykode`, or
+`$YKODE_HOME` when that is set; command logs a cut `exec_command` left behind live in
+`~/.ykode/logs` and are pruned at startup after `keep_command_logs`.
+
 ## What is confined, and what is not
 
 The file tools are opened through a single `*os.Root`, so a path can neither walk out of

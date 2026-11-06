@@ -9,7 +9,7 @@ import (
 // a malformed schema is invisible until the request fails to encode, so check them here
 func TestBuiltInToolSchemasAreValid(t *testing.T) {
 	root, dir := setup(t)
-	registry := BuiltIn(root, dir)
+	registry := BuiltIn(root, dir, Options{})
 	if len(registry.All()) != 7 {
 		t.Fatalf("built-in tool count = %d, want 7", len(registry.All()))
 	}

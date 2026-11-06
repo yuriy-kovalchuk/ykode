@@ -18,10 +18,10 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-const (
-	startupProbeTimeout = 10 * time.Second
-	spillLogAge         = 24 * time.Hour // how long a saved command log stays worth keeping
-)
+const startupProbeTimeout = 10 * time.Second
+
+// version is stamped at build time with -X main.version=...
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -39,9 +39,13 @@ func run() error {
 		}
 		return err
 	}
+	if cfg.Version {
+		fmt.Printf("ykode %s\n", version)
+		return nil
+	}
 
 	// command output logs are written one per oversized command and nothing else deletes them
-	if n, err := tools.PruneSpillLogs(os.TempDir(), spillLogAge); err != nil {
+	if n, err := tools.PruneSpillLogs(cfg.CommandLogDir, cfg.KeepCommandLogs); err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err)
 	} else if n > 0 {
 		fmt.Fprintf(os.Stderr, "ykode: removed %d old command log(s)\n", n)
@@ -67,7 +71,12 @@ func run() error {
 	}
 	defer root.Close()
 
-	registry := tools.BuiltIn(root, cfg.Root)
+	registry := tools.BuiltIn(root, cfg.Root, tools.Options{
+		ReadLines:     cfg.ReadLines,
+		SearchLimit:   cfg.SearchLimit,
+		ExecTimeout:   cfg.ExecTimeout,
+		CommandLogDir: cfg.CommandLogDir,
+	})
 
 	lines := cli.NewLineSource(os.Stdin)
 	confirm := cli.NewConfirmer(lines, os.Stdout)
@@ -79,7 +88,7 @@ func run() error {
 		Think:         cfg.Think,
 		AssumeYes:     cfg.AssumeYes,
 		NoVerify:      cfg.NoVerify,
-		SendReasoning: cfg.SendReasoning,
+		SendReasoning: cfg.SendReasoningFor(model.ID),
 		Confirm:       confirm.Ask,
 	}, renderer, os.Stderr)
 

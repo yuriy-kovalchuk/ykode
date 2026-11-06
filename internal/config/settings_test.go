@@ -1,0 +1,129 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
+)
+
+// fakeHome points $YKODE_HOME at a scratch directory for one test.
+func fakeHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("YKODE_HOME", dir)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	return dir
+}
+
+func writeSettings(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{
+		"base_url": "http://from-settings:8080/v1",
+		"model": "settings-model",
+		"max_turns": 7,
+		"thinking": false,
+		"verify": false,
+		"context": {"safety_margin": 512, "reserve_output": 2048},
+		"tools": {"read_lines": 120, "search_limit": 20, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
+		"models": {"qwen": {"send_reasoning": true}}
+	}`)
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != "http://from-settings:8080/v1" || cfg.Model != "settings-model" {
+		t.Fatalf("base/model = %q / %q", cfg.BaseURL, cfg.Model)
+	}
+	if cfg.MaxTurns != 7 || cfg.MaxTokens != 2048 || cfg.SafetyMargin != 512 {
+		t.Fatalf("turns/max tokens/margin = %d/%d/%d", cfg.MaxTurns, cfg.MaxTokens, cfg.SafetyMargin)
+	}
+	if cfg.Think || !cfg.NoVerify {
+		t.Fatalf("Think=%v NoVerify=%v, want the settings switches honoured", cfg.Think, cfg.NoVerify)
+	}
+	if cfg.ReadLines != 120 || cfg.SearchLimit != 20 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
+		t.Fatalf("tool settings = %+v", cfg)
+	}
+	if !cfg.SendReasoningFor("qwen") || cfg.SendReasoningFor("other") {
+		t.Fatal("send_reasoning must be per model")
+	}
+	if cfg.CommandLogDir != filepath.Join(user, "logs") {
+		t.Fatalf("command log dir = %q, want it under YKODE_HOME", cfg.CommandLogDir)
+	}
+}
+
+func TestProjectSettingsOverrideTheUserOne(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"model": "project-model", "max_turns": 3}`)
+
+	cfg, err := Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "project-model" || cfg.MaxTurns != 3 {
+		t.Fatalf("model/turns = %q/%d, want the project file to win", cfg.Model, cfg.MaxTurns)
+	}
+}
+
+func TestFlagsBeatSettingsAndEnv(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"model": "settings-model", "max_turns": 7}`)
+	t.Setenv("LOCAL_LLM_MODEL", "env-model")
+
+	cfg, err := Load([]string{"--model", "flag-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "flag-model" {
+		t.Fatalf("model = %q, want the flag to win over settings and env", cfg.Model)
+	}
+	if cfg.MaxTurns != 7 {
+		t.Fatalf("max turns = %d, want the setting to survive an unrelated flag", cfg.MaxTurns)
+	}
+}
+
+func TestEnvBeatsSettings(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"base_url": "http://from-settings:8080/v1"}`)
+	t.Setenv("LOCAL_LLM_URL", "http://from-env:8080/v1")
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != "http://from-env:8080/v1" {
+		t.Fatalf("base URL = %q, want env to outrank settings.json", cfg.BaseURL)
+	}
+}
+
+func TestABrokenSettingsFileNamesItself(t *testing.T) {
+	user := fakeHome(t)
+	path := filepath.Join(user, "settings.json")
+
+	writeSettings(t, path, `{"max_turns": `)
+	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "settings.json") {
+		t.Fatalf("Load() error = %v, want the bad JSON named with its file", err)
+	}
+
+	writeSettings(t, path, `{"tools": {"keep_command_logs": "a day"}}`)
+	_, err := Load(nil)
+	if err == nil || !strings.Contains(err.Error(), "keep_command_logs") {
+		t.Fatalf("Load() error = %v, want the bad duration named", err)
+	}
+}

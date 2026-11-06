@@ -375,3 +375,14 @@ func TestSearchRipgrepSummaryDoesNotInventAFileCount(t *testing.T) {
 		t.Errorf("a capped summary must say so:\n%s", got)
 	}
 }
+
+func TestSettingsSetTheMatchLimit(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"hits.txt": "match\nmatch\nmatch\nmatch\n"})
+	tool := NewSearchText(root, dir)
+	tool.MatchLimit = 2
+
+	out := runTool(t, tool, `{"pattern":"match"}`)
+	if got := strings.Count(out, ":match"); got != 2 {
+		t.Fatalf("%d matches shown, want the configured limit of 2:\n%s", got, out)
+	}
+}

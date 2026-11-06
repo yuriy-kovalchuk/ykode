@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // Tool is one callable: Run takes raw JSON arguments and returns text, and Targets reports the paths it touches.
@@ -20,15 +21,30 @@ type Tool interface {
 }
 
 // BuiltIn is the tool set ykode ships with, ordered locate, read, change, run.
-func BuiltIn(root *os.Root, dir string) *Registry {
+// Options carries the settings the tools use when the model does not ask for a size of its own.
+type Options struct {
+	ReadLines     int
+	SearchLimit   int
+	ExecTimeout   time.Duration
+	CommandLogDir string
+}
+
+func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
+	read := NewReadFile(root, dir)
+	read.Lines = opts.ReadLines
+	search := NewSearchText(root, dir)
+	search.MatchLimit = opts.SearchLimit
+	run := NewExec(dir)
+	run.Timeout = opts.ExecTimeout
+	run.LogDir = opts.CommandLogDir
 	return NewRegistry(
 		NewListDir(root, dir),
 		NewFindFiles(root, dir),
-		NewSearchText(root, dir),
-		NewReadFile(root, dir),
+		search,
+		read,
 		NewWriteFile(root, dir),
 		NewEditFile(root, dir),
-		NewExec(dir),
+		run,
 	)
 }
 

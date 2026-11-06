@@ -1,4 +1,4 @@
-// Package config turns ykode's flags (each with an env fallback) into settings.
+// Package config resolves ykode's settings: built-in defaults, then settings.json, then env, then flags.
 package config
 
 import (
@@ -7,60 +7,170 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// Defaults used when neither a flag nor its env var is set.
+// Defaults used when no setting, env var or flag says otherwise.
 const (
-	defaultBaseURL   = "http://127.0.0.1:8080/v1"
-	defaultMaxTurns  = 25
-	defaultMaxTokens = 4096
+	defaultBaseURL     = "http://127.0.0.1:8080/v1"
+	defaultMaxTurns    = 25
+	defaultMaxTokens   = 4096
+	defaultReadLines   = 400
+	defaultSearchLimit = 50
+	defaultExecTimeout = 60 * time.Second
+	defaultLogKeep     = 24 * time.Hour
+	defaultSafety      = 256
 )
 
 // Config is the fully resolved set of settings.
 type Config struct {
-	BaseURL       string // OpenAI-compatible base, no trailing slash
-	APIKey        string // sent as a bearer token when set
-	Model         string // empty means "whatever the server lists first"
-	Root          string // absolute project root
+	BaseURL         string // OpenAI-compatible base, no trailing slash
+	APIKey          string // sent as a bearer token when set
+	Model           string // empty means "whatever the server lists first"
+	Root            string // absolute project root
+	MaxTurns        int
+	MaxTokens       int // cap on one model response
+	CtxSize         int // server context window; 0 = read it from the server
+	SafetyMargin    int // tokens kept free for the reply
+	Think           bool
+	AssumeYes       bool
+	NoVerify        bool // do not push a text-only answer back into the tools
+	SendReasoning   bool // repeat earlier thinking back to models whose template expects it
+	ReadLines       int  // read_file window when the model does not ask for one
+	SearchLimit     int  // search_text match limit when the model does not ask for one
+	ExecTimeout     time.Duration
+	CommandLogDir   string // where a cut command's full output is saved
+	KeepCommandLogs time.Duration
+	Version         bool            // print the version and exit
+	modelReasoning  map[string]bool // per-model send_reasoning
+}
+
+// flagValues carries only what the command line said; unset fields stay zero.
+type flagValues struct {
+	BaseURL       string
+	APIKey        string
+	Model         string
+	Root          string
 	MaxTurns      int
-	MaxTokens     int  // cap on one model response
-	CtxSize       int  // server context window; 0 = read it from the server
-	Think         bool // ask the model to think before answering
-	AssumeYes     bool // skip in-project confirmations
-	NoVerify      bool // do not push a text-only answer back into the tools
-	SendReasoning bool // repeat earlier thinking back to models whose template expects it
+	MaxTokens     int
+	CtxSize       int
+	NoThink       bool
+	Yes           bool
+	NoVerify      bool
+	SendReasoning bool
+	Version       bool
 }
 
 // Load parses args (os.Args[1:]). flag.ErrHelp is returned for -h.
 func Load(args []string) (Config, error) {
-	var cfg Config
+	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [--version]")
 		fs.PrintDefaults()
 	}
-	fs.StringVar(&cfg.BaseURL, "base-url", env("LOCAL_LLM_URL", defaultBaseURL), "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL)")
-	fs.StringVar(&cfg.APIKey, "api-key", os.Getenv("LOCAL_LLM_API_KEY"), "bearer token for servers that ask for one ($LOCAL_LLM_API_KEY)")
-	fs.StringVar(&cfg.Model, "model", env("LOCAL_LLM_MODEL", ""), "model id; empty uses the first from /models ($LOCAL_LLM_MODEL)")
-	fs.StringVar(&cfg.Root, "root", ".", "project root; every file tool is confined to it")
-	fs.IntVar(&cfg.MaxTurns, "max-turns", defaultMaxTurns, "max model round-trips per user request")
-	fs.IntVar(&cfg.MaxTokens, "max-tokens", defaultMaxTokens, "max tokens per model response; shrunk further to fit the context window")
-	fs.IntVar(&cfg.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
-	fs.BoolFunc("no-think", "skip the model's thinking phase", func(string) error {
-		cfg.Think = false
-		return nil
-	})
-	fs.BoolVar(&cfg.AssumeYes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
-	fs.BoolVar(&cfg.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
-	fs.BoolVar(&cfg.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
-	cfg.Think = true
+	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
+	fs.StringVar(&f.APIKey, "api-key", "", "bearer token for servers that ask for one ($LOCAL_LLM_API_KEY)")
+	fs.StringVar(&f.Model, "model", "", "model id; default is the first from /models ($LOCAL_LLM_MODEL)")
+	fs.StringVar(&f.Root, "root", ".", "project root; every file tool is confined to it")
+	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request (default 25)")
+	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "max tokens per model response (default 4096)")
+	fs.IntVar(&f.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
+	fs.BoolVar(&f.NoThink, "no-think", false, "skip the model's thinking phase")
+	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
+	fs.BoolVar(&f.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
+	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
+	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
+
+	cfg := defaults()
+	root, err := filepath.Abs(f.Root)
+	if err != nil {
+		return Config{}, fmt.Errorf("--root %q: %w", f.Root, err)
+	}
+	cfg.Root = root
+	if err := cfg.readSettings(); err != nil {
+		return Config{}, err
+	}
+	cfg.applyEnv()
+	cfg.applyFlags(f, given(fs))
+	cfg.Version = f.Version
+
 	if err := cfg.normalize(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func defaults() Config {
+	return Config{
+		BaseURL:         defaultBaseURL,
+		MaxTurns:        defaultMaxTurns,
+		MaxTokens:       defaultMaxTokens,
+		SafetyMargin:    defaultSafety,
+		Think:           true,
+		ReadLines:       defaultReadLines,
+		SearchLimit:     defaultSearchLimit,
+		ExecTimeout:     defaultExecTimeout,
+		KeepCommandLogs: defaultLogKeep,
+		modelReasoning:  map[string]bool{},
+	}
+}
+
+// given reports which flags the user actually typed.
+func given(fs *flag.FlagSet) map[string]bool {
+	set := map[string]bool{}
+	fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+	return set
+}
+
+func (c *Config) applyFlags(f flagValues, set map[string]bool) {
+	if set["base-url"] {
+		c.BaseURL = f.BaseURL
+	}
+	if set["api-key"] {
+		c.APIKey = f.APIKey
+	}
+	if set["model"] {
+		c.Model = f.Model
+	}
+	if set["max-turns"] {
+		c.MaxTurns = f.MaxTurns
+	}
+	if set["max-tokens"] {
+		c.MaxTokens = f.MaxTokens
+	}
+	if set["ctx"] {
+		c.CtxSize = f.CtxSize
+	}
+	if set["no-think"] && f.NoThink {
+		c.Think = false
+	}
+	if set["yes"] && f.Yes {
+		c.AssumeYes = true
+	}
+	if set["no-verify"] && f.NoVerify {
+		c.NoVerify = true
+	}
+	if set["send-reasoning"] && f.SendReasoning {
+		c.SendReasoning = true
+	}
+}
+
+func (c *Config) applyEnv() {
+	if v := os.Getenv("LOCAL_LLM_URL"); v != "" {
+		c.BaseURL = v
+	}
+	if v := os.Getenv("LOCAL_LLM_MODEL"); v != "" {
+		c.Model = v
+	}
+	if v := os.Getenv("LOCAL_LLM_API_KEY"); v != "" {
+		c.APIKey = v
+	}
 }
 
 // normalize rejects nonsense settings and pins the root to an existing absolute directory.
@@ -74,9 +184,15 @@ func (c *Config) normalize() error {
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)
 	}
+	if c.ReadLines < 1 || c.SearchLimit < 1 {
+		return fmt.Errorf("read_lines and search_limit must be at least 1, got %d and %d", c.ReadLines, c.SearchLimit)
+	}
+	if c.ExecTimeout <= 0 {
+		return fmt.Errorf("exec_timeout_sec must be positive, got %s", c.ExecTimeout)
+	}
 	root, err := filepath.Abs(c.Root)
 	if err != nil {
-		return fmt.Errorf("--root %q: %w", c.Root, err)
+		return fmt.Errorf("--root %q: %w", root, err)
 	}
 	info, err := os.Stat(root)
 	if err != nil {
@@ -87,12 +203,13 @@ func (c *Config) normalize() error {
 	}
 	c.Root = root
 	c.BaseURL = strings.TrimSuffix(c.BaseURL, "/")
+	if c.CommandLogDir == "" {
+		c.CommandLogDir = filepath.Join(home.Dir(), "logs")
+	}
 	return nil
 }
 
-func env(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
+// SendReasoningFor reports a per-model send_reasoning setting.
+func (c *Config) SendReasoningFor(model string) bool {
+	return c.SendReasoning || c.modelReasoning[model]
 }

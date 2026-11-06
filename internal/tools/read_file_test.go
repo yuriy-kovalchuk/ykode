@@ -114,3 +114,18 @@ func TestReadRefusesADirectoryWithAHint(t *testing.T) {
 		t.Errorf("err = %v, want it to point at list_dir", err)
 	}
 }
+
+func TestSettingsSetTheReadingWindow(t *testing.T) {
+	body := strings.Repeat("line\n", 500)
+	root, dir := treeFixture(t, map[string]string{"many.txt": body})
+	tool := NewReadFile(root, dir)
+	tool.Lines = 10
+
+	out := runTool(t, tool, `{"path":"many.txt"}`)
+	if got := strings.Count(out, "\tline"); got != 10 {
+		t.Fatalf("%d lines shown, want the configured window of 10", got)
+	}
+	if !strings.Contains(out, "continue with offset=11") {
+		t.Fatalf("no continuation marker:\n%s", out)
+	}
+}

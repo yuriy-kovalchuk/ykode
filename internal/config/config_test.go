@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -19,13 +20,20 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{
-		BaseURL:   defaultBaseURL,
-		Root:      cwd,
-		MaxTurns:  defaultMaxTurns,
-		MaxTokens: defaultMaxTokens,
-		Think:     true,
+		BaseURL:         defaultBaseURL,
+		Root:            cwd,
+		MaxTurns:        defaultMaxTurns,
+		MaxTokens:       defaultMaxTokens,
+		SafetyMargin:    defaultSafety,
+		Think:           true,
+		ReadLines:       defaultReadLines,
+		SearchLimit:     defaultSearchLimit,
+		ExecTimeout:     defaultExecTimeout,
+		KeepCommandLogs: defaultLogKeep,
 	}
-	if cfg != want {
+	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
+	cfg.modelReasoning = nil
+	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg = %+v, want %+v", cfg, want)
 	}
 }

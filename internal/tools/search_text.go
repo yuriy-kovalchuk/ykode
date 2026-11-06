@@ -26,7 +26,8 @@ const (
 // SearchText greps with rg when installed, else the Go walker; the output is identical either way.
 type SearchText struct {
 	scope
-	rgPath string
+	rgPath     string
+	MatchLimit int // match cap when the model does not ask for one; 0 means defaultSearchMatches
 }
 
 // search modes: content answers with lines, the summaries answer with files.
@@ -45,6 +46,14 @@ type searchInput struct {
 	Literal    bool   `json:"literal"`
 	Context    int    `json:"context"`
 	Limit      int    `json:"limit"`
+}
+
+// MatchLimit is the match cap when the model does not ask for one; 0 means defaultSearchMatches.
+func (s SearchText) matches() int {
+	if s.MatchLimit > 0 {
+		return s.MatchLimit
+	}
+	return defaultSearchMatches
 }
 
 func NewSearchText(root *os.Root, dir string) *SearchText {
@@ -104,7 +113,7 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 		in.Context = 0
 	}
 	in.Context = clamp(in.Context, 0, maxSearchContext)
-	limit := clampLimit(in.Limit, defaultSearchMatches, maxSearchMatches)
+	limit := clampLimit(in.Limit, t.matches(), maxSearchMatches)
 
 	h, err := t.open(ctx, in.Path)
 	if err != nil {

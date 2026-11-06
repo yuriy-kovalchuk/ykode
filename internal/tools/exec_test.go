@@ -33,17 +33,19 @@ func TestExecTimeoutComesFromTheArguments(t *testing.T) {
 func TestExecTimeoutIsClamped(t *testing.T) {
 	cases := []struct {
 		seconds int
+		def     time.Duration
 		want    time.Duration
 		capped  bool
 	}{
-		{0, defaultExecTimeout, false},
-		{-3, defaultExecTimeout, false},
-		{5, 5 * time.Second, false},
-		{300, 5 * time.Minute, false},
-		{100000, maxExecTimeout, true},
+		{0, defaultExecTimeout, defaultExecTimeout, false},
+		{-3, defaultExecTimeout, defaultExecTimeout, false},
+		{0, 5 * time.Minute, 5 * time.Minute, false},
+		{5, defaultExecTimeout, 5 * time.Second, false},
+		{300, defaultExecTimeout, 5 * time.Minute, false},
+		{100000, defaultExecTimeout, maxExecTimeout, true},
 	}
 	for _, c := range cases {
-		got, capped := execTimeout(c.seconds)
+		got, capped := execTimeout(c.seconds, c.def)
 		if got != c.want || capped != c.capped {
 			t.Errorf("execTimeout(%d) = (%v, %v), want (%v, %v)", c.seconds, got, capped, c.want, c.capped)
 		}
@@ -165,7 +167,41 @@ func TestPruneSpillLogsRemovesOnlyOldSpillDirs(t *testing.T) {
 }
 
 func TestPruneSpillLogsReportsAnUnreadableDirectory(t *testing.T) {
-	if _, err := PruneSpillLogs(filepath.Join(t.TempDir(), "missing"), time.Hour); err == nil {
-		t.Fatal("a missing directory must be reported, not swallowed")
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permission this test relies on")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if _, err := PruneSpillLogs(dir, time.Hour); err == nil {
+		t.Fatal("an unreadable log directory must be reported, not swallowed")
+	}
+}
+
+func TestCutCommandOutputLandsInTheConfiguredLogDir(t *testing.T) {
+	logs := t.TempDir()
+	tool := NewExec(t.TempDir())
+	tool.LogDir = logs
+
+	out := runTool(t, tool, `{"command":"seq 1 4000"}`)
+	marker := "full output: "
+	at := strings.Index(out, marker)
+	if at < 0 {
+		t.Fatalf("no log path in: %.200q", out)
+	}
+	path := strings.Fields(out[at+len(marker):])[0]
+	if !strings.HasPrefix(path, filepath.Join(logs, spillPrefix)) {
+		t.Fatalf("log path %q, want it under the configured log dir %q", path, logs)
+	}
+}
+
+func TestPruneToleratesAFirstRunWithNoLogs(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "logs")
+	removed, err := PruneSpillLogs(missing, time.Hour)
+	if err != nil || removed != 0 {
+		t.Fatalf("PruneSpillLogs() = (%d, %v), want no error for a directory that does not exist yet", removed, err)
 	}
 }
