@@ -20,7 +20,7 @@ confines file access to the project root it started in.
 
 ```
 make build
-./ykode --root ~/code/project
+./bin/ykode --root ~/code/project
 make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 ```
 
@@ -39,8 +39,9 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 
 ## In the session
 
-Type a request, or `/reset` to clear history, `/exit` to leave. `Ctrl-C` during a
-reply cancels that request and returns to the prompt.
+Type a request. `/help` lists the commands, `/usage` reports what the
+conversation has cost, `/reset` clears the history, `/exit` leaves. `Ctrl-C`
+during a reply cancels that request and returns to the prompt.
 
 ## Tools
 
@@ -48,7 +49,21 @@ reply cancels that request and returns to the prompt.
 `exec_command`. Every truncated result says how to continue — a `read_file`
 window reports the next `offset`, a cut `exec_command` log reports the saved file.
 `edit_file` takes several `edits[]` in one call and matches them atomically, so a
-bad pair never applies half an edit.
+bad pair never applies half an edit. `edit_file` and `write_file` answer with a
+short diff, and every path they name is one the next call can use: project-relative
+inside the root, absolute only for an approved outside path.
+
+`search_text` answers in three sizes: matching lines (default), `mode="count"`
+(matches per file) and `mode="files_with_matches"` (names only). The two summaries
+cost a fraction of the tokens when the question is *where*, not *what*.
+
+## Context and cost
+
+Each turn's timing line reports the server's own prompt, cached and generated
+token counts, and `/usage` adds them up. Those numbers also calibrate the
+estimate used to shrink `max_tokens` and trim old tool output, so the context
+budget stops guessing. A gateway failure or a model still loading on a router
+gets one retry; a request the server rejected on its merits is never replayed.
 
 ## Staying inside the project
 
