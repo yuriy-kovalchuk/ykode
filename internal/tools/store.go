@@ -35,7 +35,14 @@ func (s ResultStore) Save(id, text string) error {
 	if err := os.Chmod(s.dir, 0o700); err != nil { // a directory made before this was readable by the machine
 		return fmt.Errorf("store: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(s.dir, id+".txt"), []byte(text), 0o600); err != nil {
+	// O_EXCL: an id is handed out once, so writing over one would point an older recall at a
+	// newer result
+	f, err := os.OpenFile(filepath.Join(s.dir, id+".txt"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
 	return nil

@@ -131,3 +131,26 @@ func TestTrimmingNeverEatsTheQuestionBeingAnswered(t *testing.T) {
 		t.Errorf("nothing was shed: %d messages", len(a.history))
 	}
 }
+
+func TestAResumedRunContinuesTheResultNumbers(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{CtxSize: 8000}, &captureSink{})
+	defer done()
+
+	a.Resume([]llm.Message{
+		{Role: "user", Content: "run these"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID: "c1", Type: "function", Function: llm.FunctionCall{Name: "exec_command", Arguments: json.RawMessage(`{"command":"date"}`)},
+		}}},
+		{Role: "tool", Name: "exec_command", ToolCallID: "c1", CallID: "r1", Content: "now"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID: "c2", Type: "function", Function: llm.FunctionCall{Name: "exec_command", Arguments: json.RawMessage(`{"command":"id"}`)},
+		}}},
+		{Role: "tool", Name: "exec_command", ToolCallID: "c2", CallID: "r7", Content: "uid 501"},
+	})
+
+	ids := a.nextCallIDs(2)
+	if ids[0] != "r8" || ids[1] != "r9" {
+		t.Errorf("a resumed run numbered its results %v: recall r7 could now be handed someone else's output", ids)
+	}
+}

@@ -68,3 +68,20 @@ func TestAStoreDirectoryIsPrivate(t *testing.T) {
 		t.Errorf("the store dir is %o, and it holds raw command output", info.Mode().Perm())
 	}
 }
+
+func TestASavedResultIsNeverWrittenOver(t *testing.T) {
+	store := NewResultStore(filepath.Join(t.TempDir(), "results"))
+	if err := store.Save("r1", "what the first run saw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save("r1", "what some other run saw"); err == nil {
+		t.Error("a second result took the id of the first")
+	}
+	text, err := store.Load("r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "what the first run saw" {
+		t.Errorf("recall r1 would now hand back: %q", text)
+	}
+}

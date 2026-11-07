@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -289,9 +290,26 @@ func (a *Agent) add(m llm.Message) {
 // Resume continues where a saved conversation stopped.
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
+	// the new calls continue the saved numbering, or a fresh result would take an id that recall
+	// already points at, and the store would answer with someone else's output
+	a.callSeq = highestCallID(a.history)
 	a.sanitizeHistory()
 	a.trimHistory()
 	a.publishUsage()
+}
+
+// highestCallID is the largest rN a conversation already holds; 0 when it holds none.
+func highestCallID(messages []llm.Message) int {
+	highest := 0
+	for _, m := range messages {
+		if !strings.HasPrefix(m.CallID, "r") {
+			continue
+		}
+		if n, err := strconv.Atoi(m.CallID[1:]); err == nil && n > highest {
+			highest = n
+		}
+	}
+	return highest
 }
 
 func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turn, Text: text}) }
