@@ -36,6 +36,8 @@ func TestLoadDefaults(t *testing.T) {
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
 	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time
 	cfg.AuditDir = ""      // derived from $YKODE_HOME
+	cfg.SessionDir = ""    // derived from $YKODE_HOME
+	cfg.SessionFile = ""   // derived from $YKODE_HOME and the run time
 	cfg.Session = ""       // derived from the run time
 	cfg.modelReasoning = nil
 	if !reflect.DeepEqual(cfg, want) {
@@ -231,5 +233,59 @@ func TestResultsLiveUnderTheHomeDirForThisRun(t *testing.T) {
 	name := filepath.Base(cfg.ResultDir)
 	if !strings.HasPrefix(name, "s2") || len(name) != 16 {
 		t.Fatalf("run dir %q is not stamped like s20060102-150405", name)
+	}
+}
+
+func tempHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("YKODE_HOME", dir)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	return dir
+}
+
+func TestContinueLastPicksTheNewestConversation(t *testing.T) {
+	homeDir := tempHome(t)
+	sessions := filepath.Join(homeDir, "sessions")
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"s20260101-120000", "s20260103-090000"} {
+		if err := os.WriteFile(filepath.Join(sessions, id+".jsonl"), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := Load([]string{"--continue", "last"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Session != "s20260103-090000" {
+		t.Errorf("resuming %q, want the newest conversation", cfg.Session)
+	}
+	if cfg.SessionFile != filepath.Join(sessions, "s20260103-090000.jsonl") {
+		t.Errorf("session file is %q", cfg.SessionFile)
+	}
+	if filepath.Base(cfg.ResultDir) != "s20260103-090000" {
+		t.Errorf("a resumed run should reuse its results dir, got %q", cfg.ResultDir)
+	}
+}
+
+func TestContinueWithNothingSavedSaysWhereItLooked(t *testing.T) {
+	homeDir := tempHome(t)
+	if _, err := Load([]string{"--continue", "last"}); err == nil || !strings.Contains(err.Error(), filepath.Join(homeDir, "sessions")) {
+		t.Fatalf("want the empty directory named, got %v", err)
+	}
+}
+
+func TestContinueRejectsAnythingThatIsNotAnID(t *testing.T) {
+	tempHome(t)
+	for _, want := range []string{"../../etc/passwd", "latest"} {
+		if _, err := Load([]string{"--continue", want}); err == nil || !strings.Contains(err.Error(), "not a session id") {
+			t.Errorf("--continue %q: want it rejected as an id, got %v", want, err)
+		}
+	}
+	if _, err := Load([]string{"--continue", "s20060102-150405"}); err == nil || !strings.Contains(err.Error(), "no such conversation") {
+		t.Errorf("an unknown but well-formed id: %v", err)
 	}
 }

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"strings"
 	"time"
 
@@ -50,6 +53,9 @@ type Config struct {
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
 	Audit           bool            // print what the last run did and exit
+	Continue        string          // resume a saved conversation: "last" or its id
+	SessionDir      string          // where conversations are saved
+	SessionFile     string          // the conversation this run reads and writes
 	Version         bool            // print the version and exit
 	modelReasoning  map[string]bool // per-model send_reasoning
 }
@@ -70,6 +76,7 @@ type flagValues struct {
 	Prompt        string
 	JSON          bool
 	Audit         bool
+	Continue      string
 	Version       bool
 }
 
@@ -78,7 +85,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -95,6 +102,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
 	fs.BoolVar(&f.Audit, "audit", false, "print what the last run did, tool by tool, and exit")
+	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -181,6 +189,9 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	if set["audit"] && f.Audit {
 		c.Audit = true
 	}
+	if set["continue"] {
+		c.Continue = f.Continue
+	}
 }
 
 func (c *Config) applyEnv() {
@@ -229,6 +240,15 @@ func (c *Config) normalize() error {
 		c.CommandLogDir = filepath.Join(home.Dir(), "logs")
 	}
 	c.Session = "s" + time.Now().Format(sessionStamp)
+	if c.Continue != "" {
+		id, err := resumeID(home.Dir(), c.Continue)
+		if err != nil {
+			return err
+		}
+		c.Session = id // the resumed run keeps writing to the same conversation, results and log
+	}
+	c.SessionDir = filepath.Join(home.Dir(), "sessions")
+	c.SessionFile = filepath.Join(c.SessionDir, c.Session+".jsonl")
 	c.ResultDir = filepath.Join(home.Dir(), "results", c.Session)
 	c.AuditDir = filepath.Join(home.Dir(), "audit")
 	return nil
@@ -237,4 +257,30 @@ func (c *Config) normalize() error {
 // SendReasoningFor reports a per-model send_reasoning setting.
 func (c *Config) SendReasoningFor(model string) bool {
 	return c.SendReasoning || c.modelReasoning[model]
+}
+
+// sessionIDPattern guards against a --continue argument that is not an id but a path.
+var sessionIDPattern = regexp.MustCompile(`^s[0-9]{8}-[0-9]{6}$`)
+
+// resumeID turns "last" or an id into a conversation that exists on disk.
+func resumeID(homeDir, want string) (string, error) {
+	if !sessionIDPattern.MatchString(want) && want != "last" {
+		return "", fmt.Errorf("--continue %q: not a session id (they look like s20060102-150405)", want)
+	}
+	ids, err := session.List(filepath.Join(homeDir, "sessions"))
+	if err != nil {
+		return "", err
+	}
+	if want == "last" {
+		if len(ids) == 0 {
+			return "", fmt.Errorf("--continue last: no saved conversation in %s", filepath.Join(homeDir, "sessions"))
+		}
+		return ids[0], nil
+	}
+	for _, id := range ids {
+		if id == want {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("--continue %q: no such conversation in %s", want, filepath.Join(homeDir, "sessions"))
 }

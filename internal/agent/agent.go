@@ -10,6 +10,7 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -29,6 +30,7 @@ type Options struct {
 	MaxResult     int               // byte cap on one tool result; 0 means the tools' own default
 	Store         tools.ResultStore // where shortened tool results are kept for recall
 	Audit         *audit.Logger     // append-only record of every tool call; nil turns it off
+	Session       *session.Log      // append-only copy of the conversation, for --continue
 	Root          string            // the project root, recorded with every call
 }
 
@@ -43,18 +45,19 @@ type Stats struct {
 }
 
 type Agent struct {
-	client      *llm.Client
-	tools       *tools.Registry
-	model       string
-	opts        Options
-	sink        Sink
-	shortened   bool // a tool result has been shortened, so recall is worth describing
-	callSeq     int  // numbers the r1, r2... ids that recall and the audit log share
-	compacted   bool // the older turns were folded into a summary once already
-	auditBroken bool // the audit log failed once: say so once, not per call
-	turn        int  // the round-trip currently running, carried on every event
-	history     []llm.Message
-	meter       meter
+	client        *llm.Client
+	tools         *tools.Registry
+	model         string
+	opts          Options
+	sink          Sink
+	shortened     bool // a tool result has been shortened, so recall is worth describing
+	callSeq       int  // numbers the r1, r2... ids that recall and the audit log share
+	compacted     bool // the older turns were folded into a summary once already
+	auditBroken   bool // the audit log failed once: say so once, not per call
+	sessionBroken bool // the session log failed once: say so once, not per message
+	turn          int  // the round-trip currently running, carried on every event
+	history       []llm.Message
+	meter         meter
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
@@ -85,7 +88,7 @@ func looksLikeProjectWork(prompt string) bool {
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
-	a.history = append(a.history, llm.Message{Role: "user", Content: prompt})
+	a.add(llm.Message{Role: "user", Content: prompt})
 
 	usedTools, nudged, forceTool := false, false, false
 	for turn := 1; ; turn++ {
@@ -116,7 +119,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			}
 			return fmt.Errorf("chat turn %d: %w", turn, err)
 		}
-		a.history = append(a.history, msg)
+		a.add(msg)
 
 		if finish == finishLength {
 			a.tell("the response hit max_tokens and may be incomplete")
@@ -133,7 +136,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			if !nudged && !usedTools && !a.opts.NoVerify && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
 				nudged, forceTool = true, true
 				a.tell("nothing was read for this request; asking once to verify with a tool")
-				a.history = append(a.history, llm.Message{Role: "user", Content: verifyNote})
+				a.add(llm.Message{Role: "user", Content: verifyNote})
 				continue
 			}
 			return nil
@@ -221,6 +224,22 @@ func (a *Agent) specs() []llm.ToolSpec {
 }
 
 // tell reports something the run did that is not a tool call.
+// add extends the conversation and, when one is configured, the on-disk copy of it.
+func (a *Agent) add(m llm.Message) {
+	a.history = append(a.history, m)
+	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken {
+		a.sessionBroken = true // a session that will not save is reported once, not per message
+		a.tell(err.Error())
+	}
+}
+
+// Resume continues where a saved conversation stopped.
+func (a *Agent) Resume(messages []llm.Message) {
+	a.history = append(a.history, messages...)
+	a.sanitizeHistory()
+	a.trimHistory()
+}
+
 func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turn, Text: text}) }
 
 func (a *Agent) emit(ev Event) Decision {
@@ -232,5 +251,5 @@ func (a *Agent) emit(ev Event) Decision {
 
 // note keeps the history honest when a turn ends without an answer.
 func (a *Agent) note(text string) {
-	a.history = append(a.history, llm.Message{Role: "assistant", Content: text})
+	a.add(llm.Message{Role: "assistant", Content: text})
 }

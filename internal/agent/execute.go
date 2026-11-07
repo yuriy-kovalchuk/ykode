@@ -17,7 +17,7 @@ func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	for _, call := range calls {
 		a.callSeq++
 		id := fmt.Sprintf("r%d", a.callSeq)
-		a.history = append(a.history, llm.Message{
+		a.add(llm.Message{
 			Role:       "tool",
 			Content:    a.runTool(ctx, call, id),
 			ToolCallID: call.ID,

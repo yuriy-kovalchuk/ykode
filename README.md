@@ -36,13 +36,18 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--max-turns` | — | `25` | tool rounds per request |
 | `--no-think` | — | thinking on | skips the thinking phase (`chat_template_kwargs`) |
 | `--yes` | — | off | skip in-project confirmations |
+| `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
+| `--audit` | — | — | print what the last run did, call by call, and exit |
+| `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405` |
+| `--version` | — | — | print the version and exit |
 
 ## In the session
 
 Type a request. `/help` lists the commands, `/usage` reports what the
-conversation has cost, `/compact` shortens the older tool results, `/reset`
-clears the history, `/exit` leaves. `Ctrl-C` during a reply cancels that
-request and returns to the prompt.
+conversation has cost, `/compact` folds the older turns into a summary the model
+writes, `/history [what]` shows what this run has done, `/reset` clears the
+history, `/exit` leaves. `Ctrl-C` during a reply cancels that request and
+returns to the prompt.
 
 ## Tools
 
@@ -85,6 +90,20 @@ already used. In order, cheapest first:
 
 Result sizes scale with the window: 4.8 KB on a 4k context, 24 KB on a 128k one. A gateway failure or a model still loading on a router
 gets one retry; a request the server rejected on its merits is never replayed.
+
+## Sessions and the audit log
+
+Every conversation is appended to `$YKODE_HOME/sessions/<id>.jsonl`, one line per
+message, and every tool call is appended to `$YKODE_HOME/audit/YYYY-MM.jsonl`
+before it runs and again after, including the calls that were refused. The audit
+log is never trimmed, compacted or reset — it is the record of what actually
+happened, with the file each call touched, a command's exit code, the size and
+fingerprint of each result, and `OUTSIDE` when a call reached past the root.
+Anything that reads like a key, token or password is masked on the way in.
+
+`--continue last` (or an id) starts where a previous run stopped, and the resumed
+run keeps the same id, so its results and its log stay with its conversation. A
+conversation bigger than the window sheds its oldest turns and keeps the newest.
 
 ## Staying inside the project
 

@@ -19,6 +19,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/cli"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -131,8 +132,18 @@ func run() error {
 		MaxResult:     resultBytes,
 		Store:         store,
 		Audit:         audit.New(cfg.AuditDir, cfg.Session),
+		Session:       session.New(cfg.SessionDir, cfg.Session),
 		Root:          cfg.Root,
 	}, view)
+
+	if cfg.Continue != "" {
+		messages, err := session.Load(cfg.SessionFile)
+		if err != nil {
+			return err
+		}
+		a.Resume(messages)
+		fmt.Fprintf(os.Stderr, "ykode: resumed %s (%d messages)\n", cfg.Session, len(messages))
+	}
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 
 	if cfg.Prompt == "" {

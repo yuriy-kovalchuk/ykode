@@ -108,6 +108,10 @@ func (a *Agent) trimHistory() {
 	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestToolCall() {
 		a.tell("dropped an older tool call and its result to fit the context")
 	}
+	// a resumed conversation can be all prose, and prose has to go some day
+	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestExchange() {
+		a.tell("dropped an older turn to fit the context")
+	}
 }
 
 // dropOldestToolCall removes the oldest tool call with its replies, keeping the newest pair intact:
@@ -132,4 +136,34 @@ func (a *Agent) dropOldestToolCall() bool {
 	}
 	a.history = append(a.history[:i], a.history[end:]...)
 	return true
+}
+
+// dropOldestExchange removes the oldest question and the plain answers under it. Tool calls are
+// dropped as whole blocks elsewhere; this is for the text in between, which nothing else sheds.
+func (a *Agent) dropOldestExchange() bool {
+	for i, m := range a.history {
+		if i == 0 || m.Role != "user" {
+			continue // the system prompt is not a turn
+		}
+		end := i + 1
+		for end < len(a.history) && a.history[end].Role == "assistant" && len(a.history[end].ToolCalls) == 0 {
+			end++
+		}
+		if !anotherTurnFollows(a.history[end:]) {
+			return false // never drop the question being answered now
+		}
+		a.history = append(a.history[:i], a.history[end:]...)
+		return true
+	}
+	return false
+}
+
+// anotherTurnFollows says a later user message is still there to answer.
+func anotherTurnFollows(rest []llm.Message) bool {
+	for _, m := range rest {
+		if m.Role == "user" {
+			return true
+		}
+	}
+	return false
 }
