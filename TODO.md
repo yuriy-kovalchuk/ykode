@@ -98,6 +98,17 @@ sometimes (BASELINE.md rounds 3–4). V3 and V4 do not depend on the model obeyi
   Qwen3.8-27B and Qwen3.8-Flash-Next. Compare pass rates, turns, tokens and the counters
   (call-as-text, unchanged-reread, long-answer, nudge). Keep the winner as `SystemPrompt`;
   delete the other and the flag.
+- **B2 · S · A run that repeats itself never notices.** CUDA round 7, task 05: 164 s, 25 requests, 24
+  `search_text` calls, and the run stopped at `--max-turns (25)` with an **empty answer** — the bench
+  counted 8 identical repeated calls. The same task passed 5/5 on Strata (round 6), so the looping is the
+  small model's, but ykode watched it repeat and said nothing. ykode already counts repeats for the eval
+  (`cmd/eval`) and remembers every call for `/history`; use that: after the same call (tool + arguments)
+  is asked a third time, tell the model in-turn that it is repeating and what it has already learned, and
+  if it repeats again, stop with the best answer so far instead of burning the whole turn budget. Test: a
+  stub server that returns the same search call each turn asserts the notice arrives before turn 25 and
+  that the run ends with an answer, not a `--max-turns` error. Same task on CUDA, `--repeat 5`, is the
+  benchmark check.
+
 - **S2 · M · Settings in YAML, user and project.** `~/.ykode/settings.json` (`internal/home/home.go:47`)
   and `<root>/.ykode/settings.json` (`internal/config/trust.go:18`) become `.yaml`; `fileSettings`
   (`internal/config/settings.go:19-52`, ~25 keys) keeps its pointer-means-set semantics with `yaml` tags,
