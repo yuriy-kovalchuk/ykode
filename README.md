@@ -39,6 +39,7 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
 | `--audit` | — | — | print what the last run did, call by call, and exit |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405` |
+| `--tui` | — | off | full-screen session: scrolling transcript, input box, status bar |
 | `--version` | — | — | print the version and exit |
 
 ## In the session
@@ -48,6 +49,37 @@ conversation has cost, `/compact` folds the older turns into a summary the model
 writes, `/history [what]` shows what this run has done, `/undo` puts the most
 recent file change back, `/reset` clears the history, `/exit` leaves. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
+
+## The full-screen session
+
+`--tui` replaces the line prompt with an alternate-screen session: the
+transcript scrolls, the thinking and the answer arrive as one block each, and
+one line at the bottom reports what the session costs.
+
+```
+ykode --tui                      # or --tui --continue last
+```
+
+| key | what it does |
+|---|---|
+| `enter` | sends the prompt |
+| `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines |
+| `up`, `down` | walks the prompts you sent this session (with an empty box) |
+| `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
+| `ctrl+o` | shows and hides the result text of each tool call |
+| `pgup`, `ctrl+u`, `pgdown`, `ctrl+d` | move the transcript |
+| `y`, `a`, `n` | answers a question about a change: yes, always, no — `n` is the default |
+
+Typing while the model works is allowed: the prompt is queued and goes in the
+moment the turn ends. The commands of `In the session` work there too, except
+that `/reset`, `/compact` and `/undo` wait for the running turn rather than
+racing it.
+
+The bottom line reads `model │ ctx used/total % │ cache % │ tok/s`, and adds
+`working` (and how many prompts are queued) while a turn runs. The cache
+percentage is llama.cpp's: how much of the request it already had. `--tui` and
+`-p`/`--json` are mutually exclusive — one draws a screen, the other writes
+stdout.
 
 ## Tools
 
