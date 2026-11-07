@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,22 @@ func TestRegistryKeepsRegistrationOrderAndDropsDuplicates(t *testing.T) {
 	}
 	if _, ok := registry.Get("delete_everything"); ok {
 		t.Fatal("Get must not invent a tool")
+	}
+}
+
+// Detailed is only safe for tools that never run beside each other, and the agent decides that
+// by name, so pin the half of the built-in set that may overlap.
+func TestNoOverlappingToolRemembersItsLastCall(t *testing.T) {
+	root, dir := setup(t)
+	store := NewResultStore(filepath.Join(dir, "results"))
+	overlapping := map[string]bool{"find_files": true, "search_text": true, "read_file": true, "recall": true}
+
+	for _, tool := range BuiltIn(root, dir, Options{Store: store}).All() {
+		if !overlapping[tool.Name()] {
+			continue
+		}
+		if _, ok := tool.(Detailed); ok {
+			t.Errorf("%s can run in parallel and remembers its last call: the audit would get another call's detail", tool.Name())
+		}
 	}
 }

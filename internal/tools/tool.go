@@ -68,8 +68,10 @@ type Detail struct {
 	LogPath  string // where the full output went when the result was cut
 }
 
-// Detailed is a tool that keeps a little structure about the result it just returned.
-// One agent uses a tool at a time, so remembering the last call is enough.
+// Detailed is a tool that keeps a little structure about the result it just returned, for the
+// audit log. Only tools that never run beside each other may do this: writes, edits and
+// commands go one at a time, while the read-only tools can overlap and so keep nothing of the
+// sort — a pinned invariant in registry_test.go.
 type Detailed interface {
 	LastDetail() Detail
 }
