@@ -74,7 +74,7 @@ func TestChatStreamRequestIsAlwaysStreamed(t *testing.T) {
 
 func TestChatStreamKeepsServerTimings(t *testing.T) {
 	sse := frame(`{"choices":[{"delta":{"content":"x"}}]}`) +
-		frame(`{"choices":[],"timings":{"cache_n":120,"prompt_n":961,"predicted_n":60,"prompt_per_second":456.2,"predicted_per_second":34.2}}`)
+		frame(`{"choices":[],"timings":{"cache_n":120,"prompt_n":961,"predicted_n":60,"prompt_per_second":456.2,"predicted_per_second":34.2,"draft_n":80,"draft_n_accepted":52}}`)
 	c, _ := streamServer(t, sse)
 
 	turn, _, err := collect(t, c)
@@ -83,6 +83,10 @@ func TestChatStreamKeepsServerTimings(t *testing.T) {
 	}
 	if turn.Timings.PromptTokens() != 1081 || turn.Timings.PredictedPerSecond != 34.2 {
 		t.Fatalf("timings = %+v", turn.Timings)
+	}
+	// a router running a draft model reports what it proposed and what was kept
+	if turn.Timings.DraftN != 80 || turn.Timings.DraftNAccepted != 52 {
+		t.Errorf("the draft counters were dropped: %+v", turn.Timings)
 	}
 }
 

@@ -24,6 +24,9 @@ func statusLine(model string, u agent.Usage, ctxSize int, decodeTokSec float64, 
 	if u.PromptTok > 0 {
 		parts = append(parts, fmt.Sprintf("cache %d%%", u.CachedTok*100/u.PromptTok))
 	}
+	if u.Acceptance > 0 {
+		parts = append(parts, fmt.Sprintf("draft %d%%", int(u.Acceptance*100+0.5)))
+	}
 	if decodeTokSec > 0 {
 		parts = append(parts, fmt.Sprintf("%.0f tok/s", decodeTokSec))
 	}

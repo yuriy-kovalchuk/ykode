@@ -91,6 +91,8 @@ type Timings struct {
 	PredictedMS        float64 `json:"predicted_ms"`
 	PromptPerSecond    float64 `json:"prompt_per_second"`
 	PredictedPerSecond float64 `json:"predicted_per_second"`
+	DraftN             int     `json:"draft_n"`          // tokens a draft model proposed
+	DraftNAccepted     int     `json:"draft_n_accepted"` // of those, what the big model kept
 }
 
 // PromptTokens is the full prompt size, including whatever the server cached.

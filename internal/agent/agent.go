@@ -3,7 +3,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,12 +38,14 @@ type Options struct {
 
 // Stats summarises one model round-trip for the user.
 type Stats struct {
-	FinishReason  string
-	PromptTokens  int
-	CachedTokens  int
-	OutputTokens  int
-	PrefillTokSec float64
-	DecodeTokSec  float64
+	FinishReason   string
+	PromptTokens   int
+	CachedTokens   int
+	OutputTokens   int
+	PrefillTokSec  float64
+	DecodeTokSec   float64
+	DraftN         int // tokens a draft model proposed, when the server has one
+	DraftNAccepted int
 }
 
 type Agent struct {
@@ -173,12 +174,14 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		return llm.Message{}, "", err
 	}
 	stats := Stats{
-		FinishReason:  turn.FinishReason,
-		PromptTokens:  turn.Timings.PromptTokens(),
-		CachedTokens:  turn.Timings.CacheN,
-		OutputTokens:  turn.Timings.PredictedN,
-		PrefillTokSec: turn.Timings.PromptPerSecond,
-		DecodeTokSec:  turn.Timings.PredictedPerSecond,
+		FinishReason:   turn.FinishReason,
+		PromptTokens:   turn.Timings.PromptTokens(),
+		CachedTokens:   turn.Timings.CacheN,
+		OutputTokens:   turn.Timings.PredictedN,
+		PrefillTokSec:  turn.Timings.PromptPerSecond,
+		DecodeTokSec:   turn.Timings.PredictedPerSecond,
+		DraftN:         turn.Timings.DraftN,
+		DraftNAccepted: turn.Timings.DraftNAccepted,
 	}
 	a.meter.observe(stats, a.sendingBytes())
 	a.publishUsage()
@@ -190,7 +193,6 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	return msg, turn.FinishReason, nil
 }
 
-// SpecBytes reports how much the tool descriptions cost in every request.
 // History reports what this run's audit log says about the calls it made.
 // History answers /history: a tool name, "failed", "outside", an id like r12, or --all to
 // widen the scope from this run to every run of this root.
@@ -231,35 +233,17 @@ func (a *Agent) logged(all bool) ([]audit.Entry, error) {
 	return a.opts.Audit.Read(a.opts.Audit.Session())
 }
 
-func (a *Agent) SpecBytes() int {
-	raw, err := json.Marshal(a.specs())
-	if err != nil {
-		return 0
-	}
-	return len(raw)
-}
-
-// specs describes the tools to the model, in registration order.
-func (a *Agent) specs() []llm.ToolSpec {
-	if a.tools == nil { // a history-only agent, as the budget tests build one
-		return nil
-	}
-	all := a.tools.All()
-	specs := make([]llm.ToolSpec, 0, len(all))
-	for _, t := range all {
-		if t.Name() == "recall" && !a.shortened {
-			continue // nothing has been shortened yet, so the tool only costs tokens in every request
-		}
-		specs = append(specs, llm.ToolSpec{
-			Type:     "function",
-			Function: llm.ToolFunction{Name: t.Name(), Description: t.Description(), Parameters: t.Schema()},
-		})
-	}
-	return specs
-}
-
 // tell reports something the run did that is not a tool call.
 // add extends the conversation and, when one is configured, the on-disk copy of it.
+// SetModel changes what the next request asks for; the server may still be loading it.
+func (a *Agent) SetModel(id string) { a.model = id }
+
+// SetThink decides whether the model gets a thinking phase on the turns that follow.
+func (a *Agent) SetThink(on bool) { a.opts.Think = on }
+
+// Thinking says whether the model is allowed to think out loud.
+func (a *Agent) Thinking() bool { return a.opts.Think }
+
 func (a *Agent) add(m llm.Message) {
 	a.history = append(a.history, m)
 	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken {

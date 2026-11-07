@@ -113,3 +113,51 @@ func TestUsageLineWithoutAKnownContextWindow(t *testing.T) {
 		t.Errorf("line = %q, want no context window mentioned when the server never reported one", line)
 	}
 }
+
+func TestADraftModelsWorkIsCounted(t *testing.T) {
+	m := newMeter()
+	m.observe(Stats{PromptTokens: 100, DraftN: 200, DraftNAccepted: 120}, 300)
+	m.observe(Stats{PromptTokens: 100, DraftN: 100, DraftNAccepted: 40}, 300)
+	// like the cache and tok/s figures, acceptance describes the turn that just ran
+	if got := acceptance(m.draftOK, m.draft); got != 0.4 {
+		t.Errorf("acceptance should follow the newest turn: %v", got)
+	}
+	m.clearCost()
+	if m.draft != 0 || m.draftOK != 0 {
+		t.Error("clearCost left the draft counters behind")
+	}
+}
+
+func TestTheContextLineMentionsSpeculationOnlyWhenThereWasAny(t *testing.T) {
+	a := New(nil, nil, "m", Options{CtxSize: 8000}, nil)
+	a.report = Usage{Turns: 1, PromptTok: 500, CachedTok: 400}
+	if line := a.ContextLine(); strings.Contains(line, "speculative") {
+		t.Errorf("a server with no draft model: %s", line)
+	}
+	a.report = Usage{Turns: 2, PromptTok: 500, CachedTok: 400, Draft: 100, DraftOK: 60, Acceptance: 0.6}
+	line := a.ContextLine()
+	if !strings.Contains(line, "speculative decoding: 60%") || !strings.Contains(line, "60 of 100") {
+		t.Errorf("acceptance missing: %s", line)
+	}
+	if !strings.Contains(line, "cached (80%)") {
+		t.Errorf("the cache hit rate is missing: %s", line)
+	}
+}
+
+func TestTheDraftCountersReachTheUsageSnapshot(t *testing.T) {
+	script := `data: {"choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}]}` +
+		"\n\ndata: {\"choices\":[],\"timings\":{\"prompt_n\":100,\"predicted_n\":20,\"draft_n\":50,\"draft_n_accepted\":30}}\n\n"
+	a, cleanup := newAgent(t, &stubServer{scripts: []string{script}}, Options{}, nullSink{})
+	defer cleanup()
+
+	if err := a.Ask(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	u := a.Usage()
+	if u.Draft != 50 || u.DraftOK != 30 || u.Acceptance != 0.6 {
+		t.Errorf("usage lost the draft counters: %+v", u)
+	}
+	if !strings.Contains(a.ContextLine(), "speculative decoding: 60%") {
+		t.Errorf("and /ctx does not show it: %s", a.ContextLine())
+	}
+}

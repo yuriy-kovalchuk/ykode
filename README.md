@@ -48,7 +48,20 @@ conversation has cost, `/compact` folds the older turns into a summary the model
 writes, `/history [what]` shows what this run has done (a tool name, `failed`,
 `outside`, one call by id like `r12`, or `--all` for every run of this root),
 `/undo` puts the most recent file change back, `/reset` clears the history,
-`/exit` leaves. `Ctrl-C` during a reply cancels that request and
+`/exit` leaves.
+
+Four commands change the run rather than the conversation:
+
+| command | what it does |
+|---|---|
+| `/ctx` | how full the window is, what the server had cached, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
+| `/tools` | the tools the model may call, and the bytes each description adds to every request |
+| `/model [id]` | which model this run asks for, or ask a different one from now on |
+| `/think on\|off` | whether the model gets a thinking phase on the turns that follow |
+
+A turn owns the conversation and its own settings, so `/reset`, `/compact`, `/undo`,
+`/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage` and
+`/history` answer straight away. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
 
 ## The full-screen session
@@ -76,8 +89,9 @@ moment the turn ends. The commands of `In the session` work there too, except
 that `/reset`, `/compact` and `/undo` wait for the running turn rather than
 racing it.
 
-The bottom line reads `model │ ctx used/total % │ cache % │ tok/s`, and adds
-`working` (and how many prompts are queued) while a turn runs. The cache
+The bottom line reads `model │ ctx used/total % │ cache % │ draft % │ tok/s`, and
+adds `working` (and how many prompts are queued) while a turn runs. `draft %` only
+appears when the server ran a draft model: how much of its work the real model kept. The cache
 percentage is llama.cpp's: how much of the request it already had. `--tui` and
 `-p`/`--json` are mutually exclusive — one draws a screen, the other writes
 stdout.

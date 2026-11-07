@@ -33,7 +33,8 @@ func TestTheStatusLineSaysWhatTheSessionCosts(t *testing.T) {
 
 func TestTheStatusLineKeepsQuietNumbersQuiet(t *testing.T) {
 	line := statusLine("m", agent.Usage{}, 0, 0, false, 0)
-	if strings.Contains(line, "tok/s") || strings.Contains(line, "cache") || strings.Contains(line, "ctx /") {
+	if strings.Contains(line, "tok/s") || strings.Contains(line, "cache") || strings.Contains(line, "ctx /") ||
+		strings.Contains(line, "draft") {
 		t.Errorf("invented numbers before the server gave any: %s", line)
 	}
 	if !strings.Contains(line, "m") {
@@ -42,3 +43,11 @@ func TestTheStatusLineKeepsQuietNumbersQuiet(t *testing.T) {
 }
 
 // stripCodes removes the colour escapes so a test can measure what the terminal shows.
+
+func TestTheStatusLineShowsWhatTheDraftModelSaved(t *testing.T) {
+	u := agent.Usage{Turns: 1, EstTok: 1000, PromptTok: 100, Draft: 200, DraftOK: 120, Acceptance: 0.6}
+	line := statusLine("big-model + draft", u, 8000, 40, false, 0)
+	if !strings.Contains(line, "draft 60%") {
+		t.Errorf("no acceptance in: %s", line)
+	}
+}

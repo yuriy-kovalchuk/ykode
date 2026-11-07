@@ -22,6 +22,10 @@ const Help = `commands:
   /compact  fold the older turns into a summary the model writes
   /history [what]  what this run did: a tool name, failed, outside, an id like r12,
            or --all for every run of this root
+  /ctx        how full the window is, and what the server is caching
+  /tools      what the model may call, and what each description costs
+  /model [id] which model this run asks, or ask a different one
+  /think on|off  whether the model gets a thinking phase
   /undo     put the most recent file change back
   /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
@@ -40,7 +44,10 @@ func UsageLine(u Usage, ctxSize int) string {
 }
 
 // A turn uses the conversation and the files, so a command that changes them waits its turn.
-var waitsForTheTurn = map[string]bool{"/reset": true, "/compact": true, "/undo": true}
+var waitsForTheTurn = map[string]bool{
+	"/reset": true, "/compact": true, "/undo": true,
+	"/model": true, "/think": true, // the turn in flight is already shaped by the old setting
+}
 
 // CommandIsSafeDuringATurn says whether a command only reads: /help, /usage and /history can
 // answer while a turn works; /reset, /compact and /undo would cut the ground from under it.
@@ -55,6 +62,18 @@ func CommandIsSafeDuringATurn(line string) bool {
 // CompactReport is what /compact says when it is done.
 func CompactReport(freed int) string {
 	return fmt.Sprintf("older tool results shortened; the conversation is about %d tokens smaller\n", freed)
+}
+
+// onOff reads what /think was asked for.
+func onOff(arg string) (bool, error) {
+	switch arg {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("think takes on or off, not %q", arg)
+	}
 }
 
 func commandName(line string) string {
@@ -82,6 +101,26 @@ func (a *Agent) Command(line string) (text string, quit bool, err error) {
 		return CompactReport(a.Compact(context.Background())), false, nil
 	case "/history":
 		return a.History(arg, historyLimit), false, nil
+	case "/ctx":
+		return a.ContextLine() + "\n", false, nil
+	case "/tools":
+		return a.ToolsLine() + "\n", false, nil
+	case "/model":
+		if arg == "" {
+			return fmt.Sprintf("model: %s\n", a.Model()), false, nil
+		}
+		a.SetModel(arg)
+		return fmt.Sprintf("model: %s (the next request asks for it; a model the server has to load waits before the first token)\n", arg), false, nil
+	case "/think":
+		on, err := onOff(arg)
+		if err != nil {
+			return "", false, err
+		}
+		a.SetThink(on)
+		if on {
+			return "thinking is on: the model gets a thinking phase\n", false, nil
+		}
+		return "thinking is off: the model answers straight away\n", false, nil
 	case "/undo":
 		if a.opts.Undo == nil || a.opts.Undo.Empty() {
 			return "nothing to undo: ykode has not changed a file yet\n", false, nil
