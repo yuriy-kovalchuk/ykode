@@ -95,16 +95,25 @@ func (r *REPL) Run(ctx context.Context) error {
 	}
 }
 
+// historyLimit caps how many logged calls one /history shows.
+const historyLimit = 20
+
 // helpText lists the commands; the model does the work, so this stays short.
 const helpText = `commands:
   /help   show this
   /usage    what the conversation has cost the server
-  /compact  shorten older tool results; the full text stays recallable
+  /compact  fold the older turns into a summary the model writes
+  /history [what]  what this run did: a tool name, "failed" or "outside"
   /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
 
 // command handles a slash command and reports whether the REPL should stop.
 func (r *REPL) command(line string) (quit bool, err error) {
+	if strings.HasPrefix(line, "/history") {
+		filter := strings.TrimSpace(strings.TrimPrefix(line, "/history"))
+		fmt.Fprint(r.out, r.agent.History(filter, historyLimit))
+		return false, nil
+	}
 	switch line {
 	case "/exit", "/quit":
 		return true, nil

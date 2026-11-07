@@ -49,6 +49,7 @@ type Config struct {
 	KeepCommandLogs time.Duration
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
+	Audit           bool            // print what the last run did and exit
 	Version         bool            // print the version and exit
 	modelReasoning  map[string]bool // per-model send_reasoning
 }
@@ -68,6 +69,7 @@ type flagValues struct {
 	SendReasoning bool
 	Prompt        string
 	JSON          bool
+	Audit         bool
 	Version       bool
 }
 
@@ -76,7 +78,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -92,6 +94,7 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
+	fs.BoolVar(&f.Audit, "audit", false, "print what the last run did, tool by tool, and exit")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -174,6 +177,9 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	}
 	if set["json"] && f.JSON {
 		c.JSON = true
+	}
+	if set["audit"] && f.Audit {
+		c.Audit = true
 	}
 }
 

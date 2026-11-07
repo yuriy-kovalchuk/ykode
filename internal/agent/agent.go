@@ -178,6 +178,21 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 }
 
 // SpecBytes reports how much the tool descriptions cost in every request.
+// History reports what this run's audit log says about the calls it made.
+func (a *Agent) History(filter string, limit int) string {
+	if a.opts.Audit == nil {
+		return "this run has no audit log"
+	}
+	entries, err := a.opts.Audit.Read(a.opts.Audit.Session())
+	if err != nil {
+		return err.Error()
+	}
+	if len(entries) == 0 {
+		return "nothing has been logged yet"
+	}
+	return audit.Format(entries, filter, limit)
+}
+
 func (a *Agent) SpecBytes() int {
 	raw, err := json.Marshal(a.specs())
 	if err != nil {

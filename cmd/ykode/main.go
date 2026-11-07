@@ -43,6 +43,10 @@ func run() error {
 		}
 		return err
 	}
+	if cfg.Audit {
+		return showAudit(cfg)
+	}
+
 	if cfg.Version {
 		fmt.Printf("ykode %s\n", version)
 		return nil
@@ -178,3 +182,22 @@ func describeCtx(tokens int) string {
 	}
 	return strconv.Itoa(tokens) + " tokens"
 }
+
+// showAudit prints the last run's tool calls and exits: the log outlives the conversation.
+func showAudit(cfg config.Config) error {
+	logger := audit.New(cfg.AuditDir, "")
+	session := logger.LatestSession()
+	if session == "" {
+		return errors.New("no audit log yet; it is written to " + cfg.AuditDir)
+	}
+	entries, err := logger.Read(session)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("ykode: run %s\n", session)
+	fmt.Print(audit.Format(entries, "", auditLimit))
+	return nil
+}
+
+// auditLimit caps how many calls one --audit listing shows.
+const auditLimit = 25
