@@ -47,6 +47,7 @@ type scope struct {
 	root   *os.Root
 	dir    string // absolute project root
 	budget int    // bytes one result may use; 0 means defaultResultBytes
+	undo   *UndoStack
 }
 
 // cap is the byte ceiling for this tool's result.
@@ -143,4 +144,22 @@ func approved(ctx context.Context, path string) bool {
 // absolute joins a Root-relative path onto the directory its Root sits at.
 func absolute(dir, rel string) string {
 	return filepath.Join(dir, filepath.FromSlash(rel))
+}
+
+// pushUndo remembers a file as it is now, so /undo can put it back after this call changes it.
+func (s scope) pushUndo(h handle, prev []byte, existed bool) {
+	if s.undo == nil {
+		return
+	}
+	dir := s.dir
+	if h.target.Outside {
+		dir, _ = outsideDir(h.target.Resolved)
+	}
+	s.undo.push(Change{
+		dir:     dir,
+		name:    h.name,
+		shown:   h.shown(),
+		prev:    prev,
+		existed: existed,
+	})
 }

@@ -61,6 +61,7 @@ func run() error {
 	}
 	// a run's shortened tool results live here until they age out, and recall reads them back
 	store := tools.NewResultStore(cfg.ResultDir)
+	undo := &tools.UndoStack{}
 	if n, err := tools.PruneOldDirs(filepath.Dir(cfg.ResultDir), "s", cfg.KeepCommandLogs); err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err)
 	} else if n > 0 {
@@ -104,6 +105,7 @@ func run() error {
 		CommandLogDir:  cfg.CommandLogDir,
 		MaxResultBytes: resultBytes,
 		Store:          store,
+		Undo:           undo,
 	})
 
 	lines := cli.NewLineSource(os.Stdin)
@@ -148,7 +150,7 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 
 	if cfg.Prompt == "" {
-		return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
+		return cli.NewREPL(a, lines, os.Stdout, os.Stderr, undo).Run(context.Background())
 	}
 	return answerOnce(a, events, cfg, ctxSize)
 }

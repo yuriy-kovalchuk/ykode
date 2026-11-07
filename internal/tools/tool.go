@@ -29,6 +29,7 @@ type Options struct {
 	CommandLogDir  string
 	MaxResultBytes int
 	Store          ResultStore
+	Undo           *UndoStack // where write and edit leave a snapshot for /undo
 }
 
 func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
@@ -40,6 +41,8 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	for _, scope := range []*scope{&find.scope, &search.scope, &read.scope, &write.scope, &edit.scope} {
 		scope.budget = opts.MaxResultBytes
 	}
+	write.undo = opts.Undo
+	edit.undo = opts.Undo
 	search.MatchLimit = opts.SearchLimit
 	read.Lines = opts.ReadLines
 

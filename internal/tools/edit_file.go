@@ -142,6 +142,7 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		r := planned[i]
 		updated = updated[:r.start] + r.text + updated[r.end:]
 	}
+	t.pushUndo(h, []byte(current), true)
 	if err := h.root.WriteFile(h.name, []byte(updated), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}

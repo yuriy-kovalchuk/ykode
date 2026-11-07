@@ -74,6 +74,7 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	before, err := h.root.ReadFile(h.name)
 	existed := err == nil
+	t.pushUndo(h, before, existed)
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}

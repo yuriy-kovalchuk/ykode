@@ -45,8 +45,8 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 
 Type a request. `/help` lists the commands, `/usage` reports what the
 conversation has cost, `/compact` folds the older turns into a summary the model
-writes, `/history [what]` shows what this run has done, `/reset` clears the
-history, `/exit` leaves. `Ctrl-C` during a reply cancels that request and
+writes, `/history [what]` shows what this run has done, `/undo` puts the most
+recent file change back, `/reset` clears the history, `/exit` leaves. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
 
 ## Tools
@@ -100,6 +100,11 @@ log is never trimmed, compacted or reset — it is the record of what actually
 happened, with the file each call touched, a command's exit code, the size and
 fingerprint of each result, and `OUTSIDE` when a call reached past the root.
 Anything that reads like a key, token or password is masked on the way in.
+
+`/undo` takes the most recent change off a small stack of snapshots that
+`write_file` and `edit_file` leave behind: a file that was edited goes back to the
+exact bytes it held, and a file that was created is removed. It is a stack, so a
+second `/undo` undoes the change before that.
 
 `--continue last` (or an id) starts where a previous run stopped, and the resumed
 run keeps the same id, so its results and its log stay with its conversation. A
