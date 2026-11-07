@@ -9,3 +9,12 @@ coverage.out
 
 # a project's own ykode settings; commit it on purpose if you want it tracked
 .ykode/
+
+# editor and OS clutter
+.DS_Store
+._*
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
