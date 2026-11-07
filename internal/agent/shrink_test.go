@@ -68,14 +68,14 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	for i := range names {
 		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
 	}
-	// a search is the case worth keeping: unlike a file read, its output cannot be had again by
-	// reading the file, and it may outlive the file
+	// a search is cheap and read-only: a shortened one says to run it again, and keeps no copy that
+	// a later edit would make wrong
 	search := func(i int) string {
 		return sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + names[i] + `"}`}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, sink, dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4300}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "search five files"); err != nil {
@@ -92,7 +92,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	if !strings.HasPrefix(summary, shrinkMark) {
 		t.Fatalf("the oldest result is still whole:\n%s", brief(summary))
 	}
-	if !strings.Contains(summary, `"id":"r1"`) || !strings.Contains(summary, "recall") {
+	if !strings.Contains(summary, "run the same search_text again") {
 		t.Fatalf("the summary does not say how to get the text back:\n%s", summary)
 	}
 	if !strings.Contains(summary, "search_text") || !strings.Contains(summary, "it began:") {
@@ -103,12 +103,8 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 			t.Errorf("a result the model is still working with was shrunk:\n%s", brief(recent))
 		}
 	}
-	full, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt"))
-	if err != nil {
-		t.Fatalf("the full text was not kept: %v", err)
-	}
-	if !strings.Contains(string(full), names[0]) {
-		t.Error("the kept text is not the result that went in")
+	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); err == nil {
+		t.Error("a search result was stored: it goes stale the moment a file changes")
 	}
 }
 
@@ -137,9 +133,6 @@ func TestTheToolListStaysFixedWhileResultsAreShortened(t *testing.T) {
 	}
 	if !toolNames(stub.requests[0])["read_file"] {
 		t.Fatal("the first request lost a tool it should always have")
-	}
-	if !toolNames(stub.requests[0])["recall"] {
-		t.Error("recall was kept out of the first request: Qwen renders the tools inside the system message, so the whole cached prefix is lost when it joins")
 	}
 	first := stub.requests[0]["tools"]
 	for i, next := range stub.requests[1:] {
@@ -206,7 +199,7 @@ func TestAnOldWriteKeepsItsIntentNotItsText(t *testing.T) {
 		return sse("", "", "write_file", []string{args}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{write(0), write(1), write(2), write(3), sse("", "done", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 8000}, &captureSink{decision: Allow}, dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 7500}, &captureSink{decision: Allow}, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "write them"); err != nil {
@@ -255,7 +248,7 @@ func TestTheNewestWritesAndTheFailedOnesKeepTheirText(t *testing.T) {
 	a := New(nil, nil, "m", Options{}, nil)
 	body := strings.Repeat("text the model has already paid to send once ", 40)
 	write := `{"path":"%s","content":"` + body + `"}`
-	edit := `{"path":"%s","edits":[{"old":"one","new":"` + body + `"}]}`
+	edit := `{"path":"%s","edits":[{"old_text":"one","new_text":"` + body + `"}]}`
 	for n, spec := range []struct{ tool, args, reply string }{
 		{"write_file", fmt.Sprintf(write, "a.txt"), "wrote it"},
 		{"write_file", fmt.Sprintf(write, "b.txt"), "error: path is required"}, // a retry may need this one
@@ -366,7 +359,7 @@ func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
 		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{read(0), read(1), read(2), read(3), read(4), sse("", "done", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, &captureSink{decision: Allow}, dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4000}, &captureSink{decision: Allow}, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read five files"); err != nil {
@@ -421,5 +414,22 @@ func TestAReReadAfterShorteningBringsTheTextBack(t *testing.T) {
 	}
 	if strings.Contains(again, "unchanged since you read") {
 		t.Errorf("the text was shortened out of the conversation and the tool still refused to send it: %q", again)
+	}
+}
+
+// an old edit is summarised with what it actually wrote, in either argument shape
+func TestAnEditSummaryCountsTheTextItWrote(t *testing.T) {
+	body := strings.Repeat("x", 2048)
+	for name, args := range map[string]string{
+		"one change": `{"path":"c.go","old_text":"one","new_text":"` + body + `"}`,
+		"edits":      `{"path":"c.go","edits":[{"old_text":"one","new_text":"` + body + `"}]}`,
+	} {
+		raw, ok := editSummary("edit_file", llm.FunctionCall{Name: "edit_file", Arguments: json.RawMessage(args)}, "r3")
+		if !ok {
+			t.Fatalf("%s: no summary", name)
+		}
+		if got := string(raw); !strings.Contains(got, "1 replacement(s), 2.0 KB of new text") {
+			t.Errorf("%s: summary = %s, want one replacement of 2.0 KB", name, got)
+		}
 	}
 }

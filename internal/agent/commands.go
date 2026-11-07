@@ -125,6 +125,7 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		if err != nil {
 			return "", false, err
 		}
+		a.repeats.changed() // a file just went back: an earlier search may no longer be the answer
 		return said + "\n", false, nil
 	default:
 		return fmt.Sprintf("unknown command %q; try /help, /reset or /exit\n", line), false, nil

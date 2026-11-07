@@ -51,7 +51,12 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		}
 		// thinking is billed inside the reply, so it never takes more than the reply can spare
 		if req.ThinkingBudget > 0 {
-			req.ThinkingBudget = min(req.ThinkingBudget, max(req.MaxTokens-minAnswerTok, 0))
+			req.ThinkingBudget = min(req.ThinkingBudget, req.MaxTokens-minAnswerTok)
+			if req.ThinkingBudget <= 0 {
+				// a budget of 0 is left off the wire, and no budget means no limit at all: a reply this
+				// small still thinks, but half of it stays for the answer
+				req.ThinkingBudget = max(req.MaxTokens/2, 1)
+			}
 		}
 	}
 	return req, nil
@@ -142,7 +147,7 @@ func (a *Agent) firstUnseen() int {
 	return i
 }
 
-// trimmed is what is left of a blanked result: a recall pointer when it has an id, else a marker.
+// trimmed is what is left of a blanked result: a summary with a way back when it has an id, else a marker.
 func (a *Agent) trimmed(m *llm.Message) string {
 	if m.CallID == "" {
 		return trimMarker

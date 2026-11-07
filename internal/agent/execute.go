@@ -15,7 +15,7 @@ import (
 
 // readOnlyTools change nothing, so several of them in one turn can run at the same time.
 // Anything else (a write, an edit, a command) waits its turn and keeps the order the model asked for.
-var readOnlyTools = map[string]bool{"find_files": true, "search_text": true, "read_file": true, "recall": true}
+var readOnlyTools = map[string]bool{"find_files": true, "search_text": true, "read_file": true}
 
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
@@ -60,7 +60,7 @@ func allReadOnly(calls []llm.ToolCall) bool {
 	return true
 }
 
-// nextCallIDs takes the next n result ids, the same r1, r2... the recall and audit log share.
+// nextCallIDs takes the next n result ids, the same r1, r2... the summaries and the audit log share.
 func (a *Agent) nextCallIDs(n int) []string {
 	ids := make([]string, n)
 	for i := range ids {
@@ -120,10 +120,26 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)
 	}
+	// a read-only call asked for again is answered from the first one's result: nothing runs, and the
+	// model is pointed at what it already has
+	if guardedTools[name] {
+		if earlier, times := a.repeats.claim(repeatKey(call), id, a.turn); earlier != nil {
+			a.tell(fmt.Sprintf("the model asked for the same %s again (attempt %d)", name, times))
+			reply := a.repeats.reply(name, *earlier, times)
+			a.emit(Event{Kind: ToolEnd, Tool: name, Args: argsText, Text: oneLine(reply, 200)})
+			return reply
+		}
+	}
 	a.record(id, name, argsText, targets, outside, decision, "started", "", tools.Detail{}, start)
 
 	out, err := tool.Run(ctx, args)
 	if err != nil {
+		if guardedTools[name] {
+			a.repeats.release(repeatKey(call)) // it answered nothing, so trying again is not a repeat
+		}
+		if !readOnlyTools[name] {
+			a.repeats.changed() // a command that failed may still have changed files on the way
+		}
 		a.record(id, name, argsText, targets, outside, decision, "error", "", tools.Detail{}, start)
 		return a.failTool(name, err.Error())
 	}
@@ -137,6 +153,9 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	}
 	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
 	a.emit(Event{Kind: ToolEnd, Tool: name, Args: argsText, Text: oneLine(result, 200)})
+	if !readOnlyTools[name] {
+		a.repeats.changed() // the project changed: what was read before is no longer the answer
+	}
 	return result
 }
 

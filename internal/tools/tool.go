@@ -55,13 +55,7 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	run.MaxBytes = opts.MaxResultBytes
 	run.Sandbox = opts.Sandbox
 
-	built := []Tool{find, search, read, write, edit, run}
-	if opts.Store.Saved() {
-		recall := NewRecall(opts.Store)
-		recall.budget = opts.MaxResultBytes
-		built = append(built, recall)
-	}
-	return NewRegistry(built...)
+	return NewRegistry(find, search, read, write, edit, run)
 }
 
 // Detail is what a tool can say about its last result beyond the text, for the audit log.

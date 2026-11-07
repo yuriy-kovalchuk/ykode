@@ -188,3 +188,39 @@ func TestAnOutsideResultKeepsTheAbsolutePath(t *testing.T) {
 		t.Errorf("an outside file must be named absolutely so it can be found again:\n%s", got)
 	}
 }
+
+// a model that copies the root from its environment sometimes drops the leading slash; read as
+// written, that path would create a nested copy of the whole root inside the project
+func TestARootPathWithoutItsLeadingSlashIsTheRoot(t *testing.T) {
+	root := "/private/var/folders/xy/T/run-1/project"
+	for raw, want := range map[string]string{
+		"private/var/folders/xy/T/run-1/project/index.html": root + "/index.html",
+		"private/var/folders/xy/T/run-1/project":            root,
+		"index.html":                                        root + "/index.html",
+		"private/notes.txt":                                 root + "/private/notes.txt", // a real folder that only starts the same way
+	} {
+		got := resolveTarget(raw, root)
+		if got.Resolved != want || got.Outside {
+			t.Errorf("resolveTarget(%q) = %q (outside %v), want %q inside", raw, got.Resolved, got.Outside, want)
+		}
+	}
+	if got := resolveTarget("etc/passwd", "/"); got.Resolved != "/etc/passwd" {
+		t.Errorf("a root of / changed how a relative path reads: %q", got.Resolved)
+	}
+}
+
+// end to end: the slip lands the file in the project, where the user asked for it
+func TestAWriteToTheRootWithoutItsSlashLandsInTheProject(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{})
+	out, err := NewWriteFile(root, dir).Run(context.Background(),
+		[]byte(`{"path":"`+strings.TrimPrefix(dir, "/")+`/index.html","content":"<p>hi</p>"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
+		t.Errorf("index.html is not at the project root (%v); the tool said: %s", err, out)
+	}
+	if !strings.Contains(out, "created index.html") {
+		t.Errorf("the reply does not name the project-relative path: %s", out)
+	}
+}

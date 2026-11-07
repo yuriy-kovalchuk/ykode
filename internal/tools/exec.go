@@ -70,7 +70,7 @@ func (t Exec) logDir() string {
 func (Exec) Name() string { return "exec_command" }
 
 func (Exec) Description() string {
-	return fmt.Sprintf("Run a shell command with sh -c on "+runtime.GOOS+" in the project root; you get cleaned output (no escape sequences or progress spam) plus the exit code. Default timeout %ds, max %d minutes. Cut output is saved to a log file whose path is shown: read or grep that instead of re-running.", int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Minutes()))
+	return "Run a shell command (sh -c on " + runtime.GOOS + ") in the project root; returns the output and exit code. A cut output names the file with the full log."
 }
 
 func (Exec) NeedsConfirm() bool { return true }
@@ -94,8 +94,8 @@ func (Exec) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "command": {"type": "string", "description": "shell command line"},
-	    "timeout": {"type": "integer", "description": "seconds before the command is killed (default %d, max %d)"}
+	    "command": {"type": "string"},
+	    "timeout": {"type": "integer", "description": "seconds (default %d, max %d)"}
 	  },
 	  "required": ["command"]
 	}`, int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Seconds())))

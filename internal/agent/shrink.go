@@ -51,11 +51,21 @@ func (a *Agent) shrinkOldResults(keep int) int {
 	return freed
 }
 
-// readsTheFile are the tools whose result is a copy of something on disk. Storing it would let
-// recall hand back text a later edit already changed, so a shortened read gets a pointer instead.
-var readsTheFile = map[string]bool{"read_file": true}
+// askAgain are the tools whose result is cheaper to ask for again than to keep: a read of a file
+// the disk still has, or a search that changes nothing. Keeping a copy of either would hand back
+// text a later edit already changed.
+var askAgain = map[string]string{
+	"read_file":   "the file on disk has not changed unless you edited it: read the range you need again",
+	"find_files":  "run the same find_files again if you need it",
+	"search_text": "run the same search_text again if you need it",
+	"write_file":  "the file on disk has the result: read it if you need it",
+	"edit_file":   "the file on disk has the result: read it if you need it",
+}
 
-// summarize is what ykode keeps of a dropped result: which call it was, how big it was, how it began, and where the text is.
+// summarize is what ykode keeps of a dropped result: which call it was, how big it was, how it
+// began, and how to get the rest back. A command's output is the one thing not cheap to ask for
+// again - running a test suite twice costs minutes - so its text is kept in a file the model can
+// grep, the way a command whose output was cut already is.
 func (a *Agent) summarize(m *llm.Message, id string) string {
 	name := m.Name
 	if name == "" {
@@ -63,17 +73,18 @@ func (a *Agent) summarize(m *llm.Message, id string) string {
 	}
 	text := fmt.Sprintf("%s %s output (it was %d bytes) to fit the context; it began: %q",
 		shrinkMark, name, len(m.Content), oneLine(m.Content, 120))
-	if readsTheFile[name] {
-		return text + " the file on disk has not changed unless you edited it: read the range you need again]"
+	if how, ok := askAgain[name]; ok {
+		return text + " " + how + "]"
 	}
 	if !a.opts.Store.Saved() {
-		return text + "]"
+		return text + " run it again if you need the rest]"
 	}
-	if err := a.opts.Store.Save(id, m.Content); err != nil {
+	path, err := a.opts.Store.Save(id, m.Content)
+	if err != nil {
 		a.tell(fmt.Sprintf("could not keep the full %s output: %v", name, err))
-		return text + "]"
+		return text + " run it again if you need the rest]"
 	}
-	return fmt.Sprintf("%s: recall {\"id\":\"%s\"} for the whole text, or with pattern for just the lines you need]", text, id)
+	return fmt.Sprintf("%s the whole text is in %s: grep it or read part of it with exec_command, e.g. sed -n '1,80p' %s]", text, path, path)
 }
 
 // writesTheFile are the tools whose argument is mostly text the tool has already put on disk.
@@ -129,10 +140,13 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 		return nil, false
 	}
 	var payload struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-		Edits   []struct {
-			New string `json:"new"`
+		Path      string `json:"path"`
+		Content   string `json:"content"`
+		NewText   string `json:"new_text"`   // the one-change form
+		NewString string `json:"new_string"` // the name models borrow from other tools
+		Edits     []struct {
+			NewText   string `json:"new_text"`
+			NewString string `json:"new_string"`
 		} `json:"edits"`
 	}
 	if err := json.Unmarshal(args, &payload); err != nil || payload.Path == "" {
@@ -141,12 +155,15 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 	line := fmt.Sprintf("%s wrote %s to %s to fit the context; the file on disk has it", shrinkMark,
 		byteSize(len(payload.Content)), payload.Path)
 	if name == "edit_file" {
-		written := 0
+		written, count := len(payload.NewText)+len(payload.NewString), len(payload.Edits)
 		for _, e := range payload.Edits {
-			written += len(e.New)
+			written += len(e.NewText) + len(e.NewString)
+		}
+		if count == 0 {
+			count = 1 // the one-change form: old_text and new_text at the top
 		}
 		line = fmt.Sprintf("%s changed %s: %d replacement(s), %s of new text, to fit the context; the file on disk has it",
-			shrinkMark, payload.Path, len(payload.Edits), byteSize(written))
+			shrinkMark, payload.Path, count, byteSize(written))
 	}
 	if id != "" {
 		line += "; " + id + " was the reply"

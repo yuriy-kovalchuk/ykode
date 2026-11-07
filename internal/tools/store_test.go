@@ -10,7 +10,7 @@ import (
 
 func TestASavedResultComesBackWhole(t *testing.T) {
 	store := NewResultStore(filepath.Join(t.TempDir(), "results"))
-	if err := store.Save("r7", "the whole output"); err != nil {
+	if _, err := store.Save("r7", "the whole output"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Load("r7")
@@ -31,7 +31,7 @@ func TestAStoringRefusesAnIdThatIsNotAnId(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, bad := range []string{"", "r", "rr7", "7", "../outside.txt", "../outside", "r7; rm -rf", "R7"} {
-		err := store.Save(bad, "x")
+		_, err := store.Save(bad, "x")
 		if err == nil {
 			t.Errorf("Save(%q) was accepted", bad)
 		}
@@ -57,7 +57,7 @@ func TestAStoreDirectoryIsPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewResultStore(path)
-	if err := store.Save("r1", "the raw output of a command nobody else should read"); err != nil {
+	if _, err := store.Save("r1", "the raw output of a command nobody else should read"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)
@@ -71,10 +71,10 @@ func TestAStoreDirectoryIsPrivate(t *testing.T) {
 
 func TestASavedResultIsNeverWrittenOver(t *testing.T) {
 	store := NewResultStore(filepath.Join(t.TempDir(), "results"))
-	if err := store.Save("r1", "what the first run saw"); err != nil {
+	if _, err := store.Save("r1", "what the first run saw"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Save("r1", "what some other run saw"); err == nil {
+	if _, err := store.Save("r1", "what some other run saw"); err == nil {
 		t.Error("a second result took the id of the first")
 	}
 	text, err := store.Load("r1")

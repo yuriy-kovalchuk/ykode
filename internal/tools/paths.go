@@ -26,10 +26,26 @@ func resolveTarget(raw, root string) Target {
 		abs = root
 	case filepath.IsAbs(p):
 		abs = filepath.Clean(p)
+	case rootWithoutSlash(p, root):
+		// the root's own path with its leading slash lost, which a model writes when it copies the
+		// root from its environment: read as written, it would create a nested copy of the whole path
+		abs = filepath.Clean(string(filepath.Separator) + p)
 	default:
 		abs = filepath.Clean(filepath.Join(root, p))
 	}
 	return Target{Raw: raw, Resolved: abs, Outside: !within(root, abs)}
+}
+
+// rootWithoutSlash says p is the absolute root, or a path under it, written without its leading slash.
+func rootWithoutSlash(p, root string) bool {
+	if !filepath.IsAbs(root) {
+		return false
+	}
+	bare := strings.TrimPrefix(filepath.Clean(root), string(filepath.Separator))
+	if bare == "" {
+		return false // the root is "/" itself: every relative path would match
+	}
+	return p == bare || strings.HasPrefix(p, bare+string(filepath.Separator))
 }
 
 func within(root, path string) bool {

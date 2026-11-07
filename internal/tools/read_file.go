@@ -49,7 +49,7 @@ func NewReadFile(root *os.Root, dir string) *ReadFile {
 func (*ReadFile) Name() string { return "read_file" }
 
 func (*ReadFile) Description() string {
-	return fmt.Sprintf("Read a text file: a header gives the range and total lines, then the text with no line numbers, so edit_file can copy old_text straight out of it. Up to %d lines per call. outline=true returns the declarations with the lines they span - outline a big file before reading it. Binary files are refused.", defaultReadLimit)
+	return "Read a text file. The header gives the range and total lines; the text has no line numbers. outline=true lists declarations with their line ranges: use it on a big file first."
 }
 
 func (*ReadFile) NeedsConfirm() bool { return false }
@@ -58,13 +58,13 @@ func (*ReadFile) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "path": {"type": "string", "description": "file path relative to the project root (absolute paths allowed, but need approval)"},
-	    "offset": {"type": "integer", "description": "1-based line to start at (default 1)"},
-	    "limit": {"type": "integer", "description": "max lines to return (default %d, max %d; the byte budget can cut earlier)"},
-	    "outline": {"type": "boolean", "description": "list declarations with their line ranges instead of the text"}
+	    "path": {"type": "string", "description": "file path inside the project, e.g. src/main.go"},
+	    "offset": {"type": "integer", "description": "first line, 1-based"},
+	    "limit": {"type": "integer", "description": "lines (default %d)"},
+	    "outline": {"type": "boolean"}
 	  },
 	  "required": ["path"]
-	}`, defaultReadLimit, maxReadLimit))
+	}`, defaultReadLimit))
 }
 
 func (t *ReadFile) Targets(args json.RawMessage) ([]Target, error) {

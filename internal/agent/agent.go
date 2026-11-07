@@ -4,6 +4,7 @@ package agent
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -35,7 +36,7 @@ type Options struct {
 	NoVerify      bool              // never push a text-only answer back into the tools
 	SendReasoning bool              // repeat earlier thinking to templates that expect it back
 	MaxResult     int               // byte cap on one tool result; 0 means the tools' own default
-	Store         tools.ResultStore // where shortened tool results are kept for recall
+	Store         tools.ResultStore // where shortened command output is kept for the model to grep
 	Audit         *audit.Logger     // append-only record of every tool call; nil turns it off
 	Session       *session.Log      // append-only copy of the conversation, for --continue
 	Root          string            // the project root, recorded with every call
@@ -61,12 +62,13 @@ type Agent struct {
 	model         string
 	opts          Options
 	sink          Sink
-	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
+	callSeq       int          // numbers the r1, r2... ids that the summaries and the audit log share
 	prompt        string       // the system message, built once so the cached prefix never moves
 	task          string       // the prompt being answered, which compaction keeps word for word
 	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
 	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
+	repeats       *loopGuard   // calls this run has already answered, so a repeat costs one line
 	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
@@ -83,6 +85,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.meter = newMeter()
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
+	a.repeats = newLoopGuard()
 	base := SystemPrompt
 	if opts.NewPrompt {
 		base = newSystemPrompt
@@ -97,7 +100,8 @@ func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.meter.clearCost()
 	a.compactedAt = -1
-	a.forgetAll() // the tools forget what they handed over too: there is nothing in front of the model
+	a.repeats.changed() // nothing the model saw before is in front of it any more
+	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.publishUsage()
 }
 
@@ -110,6 +114,9 @@ func (a *Agent) forget(messages ...llm.Message) {
 	for _, m := range messages {
 		if m.Role != "tool" {
 			continue
+		}
+		if a.repeats != nil && m.CallID != "" {
+			a.repeats.forgetID(m.CallID) // the same call again is now the only way back to that text
 		}
 		tool, ok := a.tools.Get(m.Name)
 		if !ok {
@@ -146,8 +153,9 @@ func looksLikeProjectWork(prompt string) bool {
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	a.add(llm.Message{Role: "user", Content: prompt})
 	a.task = prompt
+	a.repeats.changed() // between prompts the user may have changed the files: nothing is a repeat yet
 
-	usedTools, nudged, forceTool := false, false, false
+	usedTools, nudged, forceTool, emptyNudged, loops := false, false, false, false, 0
 	for turn := 1; ; turn++ {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
@@ -169,6 +177,17 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			return err
 		}
 		msg, finish, err := a.chat(ctx, req)
+		if errors.Is(err, errRepeating) {
+			// the half-written reply is dropped: it holds nothing but the loop
+			a.emit(Event{Kind: TurnEnd, Turn: turn})
+			if loops++; loops > 1 || turn >= a.opts.MaxTurns {
+				a.tell("the reply went in circles again: asking for an answer with no tools")
+				return a.forceAnswer(ctx, "No tools now. Answer in text from what you have already read, and say what you could not confirm.")
+			}
+			a.tell("the reply kept repeating the same lines: stopped it and told the model to move on")
+			a.modelNote("(your last reply kept repeating the same lines and was stopped. Do not go over it again: make the next tool call, or answer from what you have.)")
+			continue
+		}
 		if err != nil {
 			// Close any half-streamed thinking block before reporting.
 			a.emit(Event{Kind: TurnEnd, Turn: turn})
@@ -185,12 +204,21 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			if !toolCallsRunnable(msg.ToolCalls) {
 				// a cut-off tool call cannot run: tell the model rather than hand broken arguments over
 				a.modelNote("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
+				if turn >= a.opts.MaxTurns {
+					return a.outOfTurns(ctx)
+				}
 				continue
 			}
 		}
 		if len(msg.ToolCalls) == 0 {
 			if strings.TrimSpace(msg.Content) == "" {
 				a.tell("the model returned no text")
+				// an empty reply is not an answer: the task is left half done, so ask once to go on
+				if !emptyNudged && turn < a.opts.MaxTurns {
+					emptyNudged = true
+					a.modelNote("(your reply was empty. Continue the task with the next tool call, or answer if it is done.)")
+					continue
+				}
 			}
 			if !nudged && !usedTools && !a.opts.NoVerify && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) {
 				nudged, forceTool = true, true
@@ -203,14 +231,21 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 
 		usedTools = true
 		a.runToolCalls(ctx, msg.ToolCalls)
+		if a.repeats.isStuck() {
+			a.tell("the model kept asking for the same call: stopping the tools and asking for an answer")
+			return a.forceAnswer(ctx, "You keep asking for a result you already have. No tools now. Answer in text from what you have already read, and say what you could not confirm.")
+		}
 		if turn >= a.opts.MaxTurns {
-			a.note(fmt.Sprintf("(stopped after %d tool rounds without a final answer)", a.opts.MaxTurns))
-			return fmt.Errorf("reached --max-turns (%d) before the model answered", a.opts.MaxTurns)
+			return a.outOfTurns(ctx)
 		}
 	}
 }
 
 func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	thinking, answer := newLineRepeats(), newLineRepeats()
+	looping := false
 	turn, err := a.client.ChatStream(ctx, req, func(d llm.Delta) {
 		if d.Reasoning != "" {
 			a.emit(Event{Kind: Thinking, Text: d.Reasoning})
@@ -218,7 +253,14 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		if d.Content != "" {
 			a.emit(Event{Kind: Answer, Text: d.Content})
 		}
+		if !looping && (thinking.add(d.Reasoning) || answer.add(d.Content)) {
+			looping = true
+			cancel() // the rest of this reply would be more of the same, for as long as the window lasts
+		}
 	})
+	if looping {
+		return llm.Message{}, "", errRepeating
+	}
 	if err != nil {
 		return llm.Message{}, "", err
 	}
@@ -235,6 +277,10 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	a.meter.observe(stats, a.sendingBytes())
 	a.publishUsage()
 	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
+	if turn.Unfinished {
+		// accepted, since some servers never send [DONE], but a dropped connection looks the same
+		a.tell("the server ended the reply without saying it was finished; it may be cut short")
+	}
 	msg := repair(turn.Message)
 	if a.opts.SendReasoning {
 		msg.WireReasoning = msg.Reasoning

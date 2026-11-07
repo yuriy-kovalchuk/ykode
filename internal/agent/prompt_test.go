@@ -170,8 +170,10 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 
 	store := tools.NewResultStore(filepath.Join(dir, "results"))
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
-	if got := a.SpecBytes(); got > 5400 { // every tool, recall included, is sent from the first turn
-		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5400", got, got/3)
+	// every tool is sent on every request; 3266 bytes when this budget was set, down from 5356 with
+	// recall and the longer descriptions. Raise it on purpose, not by drift.
+	if got := a.SpecBytes(); got > 3600 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3600", got, got/3)
 	}
 }
 

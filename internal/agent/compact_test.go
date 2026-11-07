@@ -31,8 +31,18 @@ func TestCompactShortensTheRestAndSaysHowMuch(t *testing.T) {
 	if after := a.estimateTokens(); after >= before {
 		t.Errorf("the conversation is %d tokens after Compact and %d before", after, before)
 	}
-	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); err != nil {
-		t.Errorf("Compact dropped the result without keeping it: %v", err)
+	// a search is cheaper to run again than to keep: the summary says so, and no stale copy is left
+	var pointer bool
+	for _, m := range a.history {
+		if m.Role == "tool" && strings.Contains(m.Content, "run the same search_text again") {
+			pointer = true
+		}
+	}
+	if !pointer {
+		t.Error("Compact shortened the search without saying how to get it back")
+	}
+	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); err == nil {
+		t.Error("a search result was stored: it goes stale the moment a file changes")
 	}
 }
 

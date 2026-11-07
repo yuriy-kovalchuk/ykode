@@ -113,7 +113,7 @@ func TestTrimmingNeverEatsTheQuestionBeingAnswered(t *testing.T) {
 		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("p", 1200)})
 	}
 	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 2600}, &captureSink{})
+	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 2100}, &captureSink{})
 	defer done()
 	a.Resume(saved)
 	if err := a.Ask(context.Background(), strings.Repeat("question ", 280)); err == nil {

@@ -8,10 +8,10 @@ import (
 	"regexp"
 )
 
-// resultIDPattern keeps a recall id from turning into a path.
+// resultIDPattern keeps a result id from turning into a path.
 var resultIDPattern = regexp.MustCompile(`^r[0-9]{1,6}$`)
 
-// ResultStore keeps tool output the conversation dropped, so recall can hand it back.
+// ResultStore keeps command output the conversation dropped, in a file the model can grep.
 type ResultStore struct {
 	dir string
 }
@@ -22,28 +22,29 @@ func NewResultStore(dir string) ResultStore { return ResultStore{dir: dir} }
 // Saved says whether output is kept anywhere.
 func (s ResultStore) Saved() bool { return s.dir != "" }
 
-// Save writes one result under its id.
-func (s ResultStore) Save(id, text string) error {
+// Save writes one result under its id and returns the file it went to.
+func (s ResultStore) Save(id, text string) (string, error) {
 	if !resultIDPattern.MatchString(id) {
-		return fmt.Errorf("store: bad result id %q", id)
+		return "", fmt.Errorf("store: bad result id %q", id)
 	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
-		return fmt.Errorf("store: %w", err)
+		return "", fmt.Errorf("store: %w", err)
 	}
 	if err := os.Chmod(s.dir, 0o700); err != nil { // a directory made before this was readable by the machine
-		return fmt.Errorf("store: %w", err)
+		return "", fmt.Errorf("store: %w", err)
 	}
-	// O_EXCL: an id is handed out once, so writing over one would point an older recall at a
+	path := filepath.Join(s.dir, id+".txt")
+	// O_EXCL: an id is handed out once, so writing over one would point an older summary at a
 	// newer result
-	f, err := os.OpenFile(filepath.Join(s.dir, id+".txt"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("store: %w", err)
+		return "", fmt.Errorf("store: %w", err)
 	}
 	defer f.Close()
 	if _, err := f.WriteString(text); err != nil {
-		return fmt.Errorf("store: %w", err)
+		return "", fmt.Errorf("store: %w", err)
 	}
-	return nil
+	return path, nil
 }
 
 // Load reads back one saved result.

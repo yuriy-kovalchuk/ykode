@@ -177,3 +177,57 @@ func TestAFailedEditDoesNotReportAnEarlierEdit(t *testing.T) {
 		t.Errorf("the failed call still reports an earlier edit's diff:\n%s", tool.LastDetail().Diff)
 	}
 }
+
+// a pair with no new_text is a slip, not a request to delete: it fails and leaves the file alone,
+// while an explicit "" still deletes
+func TestEditRefusesAPairWithoutNewText(t *testing.T) {
+	for _, args := range []string{
+		`{"path":"target.txt","edits":[{"old_text":"two\n"}]}`,
+		`{"path":"target.txt","old_string":"two\n"}`,
+	} {
+		tool, current := editToolFixture(t, "one\ntwo\nthree\n")
+		if _, err := tool.Run(context.Background(), json.RawMessage(args)); err == nil || !strings.Contains(err.Error(), "no new_text") {
+			t.Errorf("%s: err = %v, want the missing new_text named", args, err)
+		}
+		if current() != "one\ntwo\nthree\n" {
+			t.Errorf("%s: the file changed: %q", args, current())
+		}
+	}
+	for _, args := range []string{
+		`{"path":"target.txt","edits":[{"old_text":"two\n","new_text":""}]}`,
+		`{"path":"target.txt","old_string":"two\n","new_string":""}`,
+	} {
+		tool, current := editToolFixture(t, "one\ntwo\nthree\n")
+		if _, err := tool.Run(context.Background(), json.RawMessage(args)); err != nil {
+			t.Fatalf("%s: %v", args, err)
+		}
+		if current() != "one\nthree\n" {
+			t.Errorf("%s: an explicit empty new_text did not delete: %q", args, current())
+		}
+	}
+}
+
+// models send one change as two plain strings, though the schema only offers edits
+func TestEditTakesOneChangeAsTopLevelText(t *testing.T) {
+	tool, current := editToolFixture(t, "a\n\treturn x\n")
+	args := map[string]string{"path": "target.txt", "old_text": "\treturn x", "new_text": "\treturn u.Name + \" <\" + u.Email + \">\""}
+	raw, _ := json.Marshal(args)
+	if _, err := tool.Run(context.Background(), raw); err != nil {
+		t.Fatal(err)
+	}
+	if want := "a\n\treturn u.Name + \" <\" + u.Email + \">\"\n"; current() != want {
+		t.Errorf("file = %q, want %q", current(), want)
+	}
+}
+
+// both shapes in one call is ambiguous: which change was meant is not ours to guess
+func TestEditRefusesBothShapesAtOnce(t *testing.T) {
+	tool, current := editToolFixture(t, "one\ntwo\n")
+	_, err := tool.Run(context.Background(), json.RawMessage(`{"path":"target.txt","old_text":"one","new_text":"ONE","edits":[{"old_text":"two","new_text":"TWO"}]}`))
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("err = %v, want both shapes refused", err)
+	}
+	if current() != "one\ntwo\n" {
+		t.Errorf("the file changed: %q", current())
+	}
+}

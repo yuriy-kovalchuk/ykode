@@ -26,7 +26,7 @@ func NewWriteFile(root *os.Root, dir string) *WriteFile {
 func (*WriteFile) Name() string { return "write_file" }
 
 func (*WriteFile) Description() string {
-	return "Write a file inside the project root, replacing it if it exists. Parent directories are created. Prefer edit_file for small changes to an existing file. Paths outside the root are allowed but need approval."
+	return "Create a file or replace it whole; parent directories are created. Use edit_file to change part of a file."
 }
 
 func (*WriteFile) NeedsConfirm() bool { return true }
@@ -35,7 +35,7 @@ func (*WriteFile) Schema() json.RawMessage {
 	return json.RawMessage(`{
 	  "type": "object",
 	  "properties": {
-	    "path": {"type": "string", "description": "file path relative to the project root (absolute paths allowed, but need approval)"},
+	    "path": {"type": "string", "description": "file path inside the project, e.g. src/main.go"},
 	    "content": {"type": "string", "description": "complete file contents"}
 	  },
 	  "required": ["path", "content"]
@@ -75,10 +75,10 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	before, err := h.root.ReadFile(h.name)
 	existed := err == nil
-	t.pushUndo(h, before, []byte(in.Content), existed)
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
+	t.pushUndo(h, before, []byte(in.Content), existed) // only a change that happened is undone
 	if !existed {
 		return fmt.Sprintf("created %s (%d bytes, %d lines)",
 			h.shown(), len(in.Content), len(diffSplit(in.Content))), nil

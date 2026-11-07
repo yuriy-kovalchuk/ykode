@@ -151,8 +151,8 @@ func TestMaxTurnsStopsTheLoop(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reached --max-turns (2)") {
 		t.Fatalf("error = %v, want the max-turns failure", err)
 	}
-	if len(stub.requests) != 2 {
-		t.Fatalf("%d requests, want one per tool round", len(stub.requests))
+	if len(stub.requests) != 3 {
+		t.Fatalf("%d requests, want one per tool round plus the answer-only one", len(stub.requests))
 	}
 }
 

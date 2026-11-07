@@ -147,7 +147,9 @@ func TestTrimNeverBlanksAResultTheModelHasNotSeen(t *testing.T) {
 	}
 }
 
-func TestATrimmedResultCanStillBeRecalled(t *testing.T) {
+// a command's output is not cheap to have again - a test suite takes minutes - so a trimmed one is
+// kept in a file the model can grep, the way a cut command log already is
+func TestATrimmedCommandOutputIsKeptInAFile(t *testing.T) {
 	store := tools.NewResultStore(t.TempDir())
 	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture), Store: store})
 	a.history = sizedFixture()
@@ -156,11 +158,11 @@ func TestATrimmedResultCanStillBeRecalled(t *testing.T) {
 
 	a.trimHistory()
 
-	if !strings.Contains(a.history[3].Content, "recall") {
-		t.Fatalf("the trimmed result names no way back: %.80q", a.history[3].Content)
+	if !strings.Contains(a.history[3].Content, "r1.txt") || !strings.Contains(a.history[3].Content, "sed -n") {
+		t.Fatalf("the trimmed result names no way back: %q", a.history[3].Content)
 	}
 	if saved, err := store.Load("r1"); err != nil || saved != full {
-		t.Errorf("the trimmed text was not kept for recall: %v", err)
+		t.Errorf("the trimmed text was not kept: %v", err)
 	}
 }
 

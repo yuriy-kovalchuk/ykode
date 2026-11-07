@@ -99,12 +99,10 @@ stdout.
 
 ## Tools
 
-`find_files`, `search_text`, `read_file`, `write_file`, `edit_file`,
-`exec_command`, and `recall` whenever the run can keep results at all. The list is fixed for
-the whole session: Qwen renders it inside the system message, so a tool that appears later
-throws away everything the server had cached. A whole result comes back once; after that
-`recall {"id":"r7","pattern":"FAIL"}` (or `offset` and `limit`) brings back one part of it,
-which is what keeps a second look cheap.
+`find_files`, `search_text`, `read_file`, `write_file`, `edit_file` and
+`exec_command`. The list is fixed for the whole session: Qwen renders it inside the system
+message, so a tool that appears later throws away everything the server had cached. The six
+descriptions cost about 3.3 KB on every request, and a test keeps them under 3.6 KB.
 `find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`
@@ -121,8 +119,8 @@ lines read `path:line:text`; a file with several matches gets its path once with
 lines indented under it, including the lines of context, because the path is the part
 that repeats.
 
-When a turn asks for several reads at once, `find_files`, `search_text`, `read_file`
-and `recall` run at the same time and their replies still come back in the order the
+When a turn asks for several reads at once, `find_files`, `search_text` and `read_file`
+run at the same time and their replies still come back in the order the
 model asked for. Anything that changes something — a write, an edit, a command —
 still runs one at a time, in order.
 
@@ -137,15 +135,16 @@ Past 3/4 of the server's window, ykode stops paying for output the model has
 already used. In order, cheapest first:
 
 1. Older tool results are replaced with a summary the code writes — which call it
-   was, how big it was, how it began — and the full text is kept in
-   `~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
-   newest results are never shortened, and a `read_file` of a window the model
-   already has, of a file that has not changed, comes back as one line. That
-   pointer lasts only while the text is still in front of the model: once a result
-   has been shortened, trimmed or dropped away, the same read sends the text again.
-   An old `read_file` is the exception: it is replaced by a pointer to read the range
-   again, never stored for `recall`, because the file on disk is the source of truth and
-   a stored copy goes stale the moment the model edits it.
+   was, how big it was, how it began — and how to get the rest back, whichever is
+   cheapest: a `read_file` says to read the range again and a `find_files` or
+   `search_text` says to run it again, because the disk is the source of truth and a
+   stored copy goes stale the moment the model edits a file. A command's output is the
+   one thing kept, in `~/.ykode/results/<run>/r7.txt`, because running a test suite
+   twice costs minutes; the summary names the file to grep, the way a cut command log
+   already does. The two newest results are never shortened, and a `read_file` of a
+   window the model already has, of a file that has not changed, comes back as one
+   line. That pointer lasts only while the text is still in front of the model: once a
+   result has been shortened, trimmed or dropped away, the same read sends the text again.
    The same pass drops the text an older `write_file` or `edit_file` sent: the
    history keeps one line saying how much went where, because the file on disk has
    the rest. A call that failed keeps its arguments, so a retry still has them.
@@ -287,9 +286,9 @@ gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p
 `api_key`, or from the variable `api_key_env` names — the second keeps the secret out of
 the file, and an unset variable is no error.
 
-A saved conversation ages out after `keep_sessions` (30 days by default), and the tool results
-that run saved for `recall` go with it: a result is only reachable by the conversation that
-names its id, so the two survive exactly as long as each other.
+A saved conversation ages out after `keep_sessions` (30 days by default), and the command output
+that run saved go with it: a saved file is only named by the conversation that shortened it, so
+the two survive exactly as long as each other.
 
 A key the settings file does not recognise is an error naming the file and the key, not a
 silently ignored line.
@@ -333,7 +332,7 @@ make eval ARGS="--new-prompt --baseline last" # try the candidate system prompt
 
 The tasks run with built-in defaults, not your `settings.yaml` (`--use-settings` opts back in).
 Each line reports the pass rate, median turns and tokens, and counters for what the prompt work
-targets: tool calls written as text, unchanged re-reads, recalls and re-run commands, verify
+targets: tool calls written as text, unchanged re-reads and re-run commands, verify
 nudges, compactions, long answers.
 
 ## Development

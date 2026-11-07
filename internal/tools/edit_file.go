@@ -20,18 +20,29 @@ type editInput struct {
 	Path  string          `json:"path"`
 	Edits json.RawMessage `json:"edits"`
 	// The flat form is what models reach for when they remember an older API.
-	OldString string `json:"old_string"`
-	NewString string `json:"new_string"`
-	OldText   string `json:"old_text"`
-	NewText   string `json:"new_text"`
+	OldString string  `json:"old_string"`
+	NewString *string `json:"new_string"`
+	OldText   string  `json:"old_text"`
+	NewText   *string `json:"new_text"`
 }
 
 type editPair struct {
-	OldText string `json:"old_text"`
-	NewText string `json:"new_text"`
+	OldText string  `json:"old_text"`
+	NewText *string `json:"new_text"` // a pointer: left out is a slip, "" is a deletion
 	// Some models reuse whichever names they have seen in other tools.
-	OldString string `json:"old_string"`
-	NewString string `json:"new_string"`
+	OldString string  `json:"old_string"`
+	NewString *string `json:"new_string"`
+}
+
+// replacement is the new text of a pair, and whether the model gave one at all.
+func (p editPair) replacement() (string, bool) {
+	switch {
+	case p.NewText != nil:
+		return *p.NewText, true
+	case p.NewString != nil:
+		return *p.NewString, true
+	}
+	return "", false
 }
 
 func NewEditFile(root *os.Root, dir string) *EditFile {
@@ -41,7 +52,7 @@ func NewEditFile(root *os.Root, dir string) *EditFile {
 func (*EditFile) Name() string { return "edit_file" }
 
 func (*EditFile) Description() string {
-	return "Replace exact text: edits is a list of {old_text, new_text}, each matched against the file as it is now. old_text has to land in one place; copy it from read_file or search_text output. If it is missing or appears more than once, the call fails and says how many. All pairs apply, or none."
+	return "Replace exact text in a file: edits is a list of {old_text, new_text}. Each old_text is copied from read_file or search_text output and occurs once in the file. All edits apply or none."
 }
 
 func (*EditFile) NeedsConfirm() bool { return true }
@@ -50,16 +61,13 @@ func (*EditFile) Schema() json.RawMessage {
 	return json.RawMessage(`{
 	  "type": "object",
 	  "properties": {
-	    "path": {"type": "string", "description": "file path relative to the project root (absolute paths allowed, but need approval)"},
+	    "path": {"type": "string", "description": "file path inside the project, e.g. src/main.go"},
 	    "edits": {
 	      "type": "array",
-	      "description": "one or more replacements, all matched against the file as it is now; do not overlap them",
+	      "description": "one or more changes; do not overlap them",
 	      "items": {
 	        "type": "object",
-	        "properties": {
-	          "old_text": {"type": "string", "description": "exact text to replace, unique in the file"},
-	          "new_text": {"type": "string", "description": "replacement text"}
-	        },
+	        "properties": {"old_text": {"type": "string"}, "new_text": {"type": "string"}},
 	        "required": ["old_text", "new_text"]
 	      }
 	    }
@@ -110,10 +118,13 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	var fuzzyUsed int
 	for i, pair := range pairs {
 		old := firstNonEmpty(pair.OldText, pair.OldString)
-		newText := firstNonEmpty(pair.NewText, pair.NewString)
+		newText, given := pair.replacement()
 		switch {
 		case old == "":
 			return "", fmt.Errorf("edit_file %q: edit %d has no old_text; supply the exact text to replace", in.Path, i+1)
+		case !given:
+			// a pair without new_text would quietly delete old_text; say so, and let "" mean delete
+			return "", fmt.Errorf("edit_file %q: edit %d has no new_text; pass the replacement, or \"\" to delete old_text", in.Path, i+1)
 		case old == newText:
 			return "", fmt.Errorf("edit_file %q: edit %d replaces text with identical text; nothing to do", in.Path, i+1)
 		}
@@ -143,10 +154,10 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		r := planned[i]
 		updated = updated[:r.start] + r.text + updated[r.end:]
 	}
-	t.pushUndo(h, []byte(current), []byte(updated), true)
 	if err := h.root.WriteFile(h.name, []byte(updated), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
+	t.pushUndo(h, []byte(current), []byte(updated), true) // only a change that happened is undone
 	note := ""
 	if fuzzyUsed > 0 {
 		note = fmt.Sprintf("; %d matched ignoring extra whitespace, so re-read the file to check the indentation", fuzzyUsed)
@@ -165,11 +176,16 @@ func (t *EditFile) LastDetail() Detail { return t.last }
 
 // editPairs accepts the shapes models actually send: an array, one object, a JSON string, or flat keys.
 func editPairs(in editInput) ([]editPair, error) {
-	if len(in.Edits) == 0 {
+	flat := in.OldText != "" || in.OldString != "" || in.NewText != nil || in.NewString != nil
+	if flat && len(in.Edits) > 0 && string(in.Edits) != "null" && string(in.Edits) != "[]" {
+		// two shapes in one call: guessing which one was meant could apply the wrong change
+		return nil, fmt.Errorf("pass either old_text and new_text for one change, or edits for several, not both")
+	}
+	if len(in.Edits) == 0 || string(in.Edits) == "null" || string(in.Edits) == "[]" {
 		if in.OldString == "" && in.OldText == "" {
 			return nil, fmt.Errorf("no edits: pass edits as a list of {old_text, new_text} (or old_string and new_string for one change)")
 		}
-		return []editPair{{OldText: firstNonEmpty(in.OldText, in.OldString), NewText: firstNonEmpty(in.NewText, in.NewString)}}, nil
+		return []editPair{{OldText: firstNonEmpty(in.OldText, in.OldString), NewText: in.NewText, NewString: in.NewString}}, nil
 	}
 	var pairs []editPair
 	if err := json.Unmarshal(in.Edits, &pairs); err == nil && len(pairs) > 0 {

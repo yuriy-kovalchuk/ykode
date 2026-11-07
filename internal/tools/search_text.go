@@ -64,7 +64,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 func (SearchText) Name() string { return "search_text" }
 
 func (SearchText) Description() string {
-	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
+	return "Search file contents by regex, like rg: path:line:text. To ask where rather than what, mode=files_with_matches (paths) or count (per file) costs far less."
 }
 
 func (SearchText) NeedsConfirm() bool { return false }
@@ -73,17 +73,17 @@ func (SearchText) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "pattern": {"type": "string", "description": "regex, or plain text when literal is true"},
-	    "path": {"type": "string", "description": "file or directory to search"},
-	    "glob": {"type": "string", "description": "only files matching this glob, e.g. *.go"},
-	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"], "description": "content (default) is matching lines; count is per-file totals; files_with_matches is paths only"},
-	    "ignore_case": {"type": "boolean", "description": "case-insensitive (default false)"},
-	    "literal": {"type": "boolean", "description": "pattern is plain text, not a regex (default false)"},
-	    "context": {"type": "integer", "description": "lines of context around each match (default 0, max %d)"},
-	    "limit": {"type": "integer", "description": "max matches, or max files in the summary modes (default %d, max %d)"}
+	    "pattern": {"type": "string", "description": "regex, or plain text with literal=true"},
+	    "path": {"type": "string", "description": "file or directory"},
+	    "glob": {"type": "string", "description": "only files matching, e.g. *.go"},
+	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"]},
+	    "ignore_case": {"type": "boolean"},
+	    "literal": {"type": "boolean"},
+	    "context": {"type": "integer", "description": "lines around each match (max %d)"},
+	    "limit": {"type": "integer", "description": "max results (default %d)"}
 	  },
 	  "required": ["pattern"]
-	}`, maxSearchContext, defaultSearchMatches, maxSearchMatches))
+	}`, maxSearchContext, defaultSearchMatches))
 }
 
 func (t SearchText) Targets(args json.RawMessage) ([]Target, error) {

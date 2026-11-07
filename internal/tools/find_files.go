@@ -41,7 +41,7 @@ func NewFindFiles(root *os.Root, dir string) *FindFiles {
 func (FindFiles) Name() string { return "find_files" }
 
 func (FindFiles) Description() string {
-	return "Find files by glob: '*.go', 'internal/**/*.go'. To list a directory, use pattern '*' with depth 1; directories end in '/'. Sorted project-relative paths; .git and .gitignore entries are skipped."
+	return "Find files by glob, e.g. '*.go', 'internal/**/*.go'. List one directory with pattern '*' and depth 1 (directories end in '/'). Skips .git and .gitignore entries."
 }
 
 func (FindFiles) NeedsConfirm() bool { return false }
@@ -50,13 +50,13 @@ func (FindFiles) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "pattern": {"type": "string", "description": "glob to match, e.g. *.go"},
+	    "pattern": {"type": "string", "description": "glob, e.g. *.go"},
 	    "path": {"type": "string", "description": "directory to search"},
-	    "limit": {"type": "integer", "description": "max paths (default %d, max %d)"},
-	    "depth": {"type": "integer", "description": "1 lists one directory; 0 or absent is unlimited"}
+	    "limit": {"type": "integer", "description": "max paths (default %d)"},
+	    "depth": {"type": "integer", "description": "1 = one directory; default unlimited"}
 	  },
 	  "required": ["pattern"]
-	}`, defaultFindResults, maxFindResults))
+	}`, defaultFindResults))
 }
 
 func (t FindFiles) Targets(args json.RawMessage) ([]Target, error) {

@@ -92,3 +92,18 @@ func TestThinkingOffTurnsThePhaseOffWithoutNamingABudget(t *testing.T) {
 		t.Errorf("thinking_budget_tokens = %v with thinking off: the field must be left out", got)
 	}
 }
+
+// a reply too small to spare the answer its share must still cap thinking: a budget of 0 is left off
+// the wire, and a request with no budget lets the thinking phase take the whole reply
+func TestASmallReplyStillCapsTheThinking(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "medium", MaxTokens: 512, CtxSize: 16000}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := stub.lastRequest(t)["thinking_budget_tokens"]; got != float64(256) {
+		t.Errorf("thinking_budget_tokens = %v, want half of the 512 token reply", got)
+	}
+}
