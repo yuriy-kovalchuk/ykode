@@ -47,14 +47,24 @@ type fileSettings struct {
 // builtinSettings are the defaults ykode ships with, in the shape of the file, so the
 // settings.json a first run writes cannot disagree with what the code would have done.
 func builtinSettings() fileSettings {
+	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
-	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p("http://127.0.0.1:8080/v1"), p("default"), p(25), p(4096)
-	s.Thinking, s.Verify, s.AssumeYes = p(true), p(true), p(false)
-	s.Audit, s.Retain = p(true), p(180)
-	s.Context.SafetyMargin = p(512)
-	s.Tools.ReadLines, s.Tools.SearchLimit = p(150), p(100)
-	s.Tools.ExecTimeoutSec, s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(60), p(""), p("24h")
+	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p(d.BaseURL), p("default"), p(d.MaxTurns), p(d.MaxTokens)
+	s.Thinking, s.Verify, s.AssumeYes = p(d.Think), p(!d.NoVerify), p(d.AssumeYes)
+	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
+	s.Context.SafetyMargin = p(d.SafetyMargin)
+	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
+	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
+	s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(""), p(hours(d.KeepCommandLogs))
 	return s
+}
+
+// hours writes a duration the way the settings file spells it: 24h, not 24h0m0s.
+func hours(d time.Duration) string {
+	if h := int(d / time.Hour); time.Duration(h)*time.Hour == d {
+		return fmt.Sprintf("%dh", h)
+	}
+	return d.String()
 }
 
 // p keeps a default addressable: a non-nil pointer is what tells the layers "this was set".

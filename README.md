@@ -134,6 +134,9 @@ already used. In order, cheapest first:
    `~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
    newest results are never shortened, and a `read_file` of a window the model
    already has, of a file that has not changed, comes back as one line.
+   The same pass drops the text an older `write_file` or `edit_file` sent: the
+   history keeps one line saying how much went where, because the file on disk has
+   the rest. A call that failed keeps its arguments, so a retry still has them.
 2. If that was not enough, the older turns are folded into a summary the **model**
    writes (goal, files touched, decisions, next step) and the turns it summarised
    are dropped. This happens once per session, and `/compact` asks for it directly.
@@ -234,7 +237,7 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
   "context": { "reserve_output": 4096, "safety_margin": 256 },
   "tools": {
     "read_lines": 150,
-    "search_limit": 100,
+    "search_limit": 50,
     "exec_timeout_sec": 60,
     "command_log_dir": "",
     "keep_command_logs": "24h"

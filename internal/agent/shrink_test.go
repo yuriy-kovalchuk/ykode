@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,31 +105,6 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	}
 }
 
-func TestCompactShortensTheRestAndSaysHowMuch(t *testing.T) {
-	dir := t.TempDir()
-	name := writeLines(t, dir, "first.txt", 60)
-	stub := &stubServer{scripts: []string{
-		sse("", "", "read_file", []string{`{"path":"` + name + `"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
-	defer done()
-
-	if err := a.Ask(context.Background(), "read it"); err != nil {
-		t.Fatal(err)
-	}
-	before := a.estimateTokens()
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("Compact freed %d tokens with a multi-kilobyte result in the history", freed)
-	}
-	if after := a.estimateTokens(); after >= before {
-		t.Errorf("the conversation is %d tokens after Compact and %d before", after, before)
-	}
-	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); err != nil {
-		t.Errorf("Compact dropped the result without keeping it: %v", err)
-	}
-}
-
 func brief(s string) string {
 	if len(s) > 160 {
 		return s[:160] + "…"
@@ -173,137 +150,180 @@ func toolNames(req map[string]any) map[string]bool {
 	return names
 }
 
-func TestCompactReplacesOlderTurnsWithTheModelSummary(t *testing.T) {
-	dir := t.TempDir()
-	names := make([]string, 3)
-	for i := range names {
-		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
-	}
-	read := func(i int) string {
-		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
-	}
-	stub := &stubServer{scripts: []string{
-		read(0), read(1), read(2),
-		sse("", "all read", "", nil, "stop"),
-		sse("", "Goal: rename the helper. Files: file0.go. Decisions: none. Next: run the tests", "", nil, "stop"),
-	}}
-	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
-	defer done()
-
-	if err := a.Ask(context.Background(), "read them all"); err != nil {
+// callArguments lists the tool calls the server was asked for, oldest first.
+func callArguments(t *testing.T, req map[string]any) []llm.FunctionCall {
+	t.Helper()
+	raw, err := json.Marshal(req["messages"])
+	if err != nil {
 		t.Fatal(err)
 	}
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("compaction freed %d tokens with three results in the history", freed)
-	}
-	summary := a.history[1]
-	if summary.Role != "user" || !strings.Contains(summary.Content, "Goal: rename the helper") {
-		t.Fatalf("the summary did not land where the model will see it: %+v", summary)
-	}
-	if !strings.Contains(summary.Content, "compact") {
-		t.Errorf("the summary is not marked as something ykode wrote: %q", summary.Content)
-	}
-	if blocks := callBlocks(a.history); blocks != compactKeep {
-		t.Errorf("%d tool calls left, want the newest %d kept", blocks, compactKeep)
-	}
-	if !paired(a.history) {
-		t.Fatalf("compaction broke call pairing:\n%s", dump(a.history))
-	}
-	if len(stub.requests) < 5 {
-		t.Fatal("no summariser request was made")
-	}
-	if tools, ok := stub.requests[4]["tools"].([]any); ok && len(tools) > 0 {
-		t.Errorf("the summariser was offered %d tools; it only writes text", len(tools))
-	}
-}
-
-func TestCompactStillFreesRoomWhenTheSummariserFails(t *testing.T) {
-	dir := t.TempDir()
-	names := make([]string, 3)
-	for i := range names {
-		names[i] = writeLines(t, dir, fmt.Sprintf("big%d.txt", i), 40)
-	}
-	read := func(i int) string {
-		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
-	}
-	stub := &stubServer{scripts: []string{
-		read(0), read(1), read(2),
-		sse("", "all read", "", nil, "stop"),
-		sse("", "", "", nil, "stop"), // the summariser answers with nothing
-	}}
-	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
-	defer done()
-
-	if err := a.Ask(context.Background(), "read them all"); err != nil {
+	var msgs []llm.Message
+	if err := json.Unmarshal(raw, &msgs); err != nil {
 		t.Fatal(err)
 	}
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("compaction freed %d tokens after the summariser failed", freed)
-	}
-	var shortened bool
-	for _, m := range a.history {
-		if m.Role == "tool" && strings.HasPrefix(m.Content, shrinkMark) {
-			shortened = true
+	var out []llm.FunctionCall
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			out = append(out, c.Function)
 		}
 	}
-	if !shortened {
-		t.Error("the fallback left the tool results untouched")
-	}
-	if strings.HasPrefix(a.history[1].Content, compactMessage) {
-		t.Error("a summary was inserted even though the summariser answered with nothing")
-	}
-	for _, ev := range sink.events {
-		if ev.Kind == Notice && strings.Contains(ev.Text, "shortening tool results") {
-			return
-		}
-	}
-	t.Error("the fallback happened silently")
+	return out
 }
 
-func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
+func TestAnOldWriteKeepsItsIntentNotItsText(t *testing.T) {
 	dir := t.TempDir()
-	names := make([]string, 4)
-	for i := range names {
-		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 40)
+	body := strings.Repeat("a line of the file that is not worth resending every turn ", 60)
+	write := func(i int) string {
+		args := `{"path":"out` + strconv.Itoa(i) + `.txt","content":"` + body + `"}`
+		return sse("", "", "write_file", []string{args}, "tool_calls")
 	}
-	read := func(i int) string {
-		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
-	}
-	stub := &stubServer{scripts: []string{
-		read(0), read(1), read(2), read(3),
-		sse("", "Goal: read them all. Files: file0-3. Decisions: none. Next: answer", "", nil, "stop"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64, CtxSize: 2600}, sink, dir)
+	stub := &stubServer{scripts: []string{write(0), write(1), write(2), write(3), sse("", "done", "", nil, "stop")}}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 8000}, &captureSink{decision: Allow}, dir)
 	defer done()
 
-	if err := a.Ask(context.Background(), "read them all then answer"); err != nil {
+	if err := a.Ask(context.Background(), "write them"); err != nil {
 		t.Fatal(err)
 	}
-	var summarised, notices bool
-	for _, req := range stub.requests {
-		if _, hasTools := req["tools"]; hasTools {
+	calls := callArguments(t, stub.requests[len(stub.requests)-1])
+	if len(calls) < 4 {
+		t.Fatalf("%d calls in the last request, want at least four", len(calls))
+	}
+	var dropped, whole int
+	for _, c := range calls {
+		var shrunk struct {
+			Ykode string `json:"_ykode"`
+		}
+		if json.Unmarshal(c.Arguments, &shrunk) == nil && shrunk.Ykode != "" {
+			dropped++
+			if !strings.Contains(shrunk.Ykode, "wrote ") || !strings.Contains(shrunk.Ykode, "KB") ||
+				!strings.Contains(shrunk.Ykode, ".txt") {
+				t.Errorf("the summary does not say what was written where: %s", shrunk.Ykode)
+			}
+			if !regexp.MustCompile(`r[0-9]+ was the reply`).MatchString(shrunk.Ykode) {
+				t.Errorf("the summary does not point at the result: %s", shrunk.Ykode)
+			}
 			continue
 		}
-		if first, ok := req["messages"].([]any)[0].(map[string]any); ok && strings.Contains(first["content"].(string), "Summarise the earlier part") {
-			summarised = true
+		whole++
+		if !strings.Contains(string(c.Arguments), body) {
+			t.Errorf("a call left whole lost its text: %s", brief(string(c.Arguments)))
 		}
 	}
-	for _, ev := range sink.events {
-		if ev.Kind == Notice && strings.Contains(ev.Text, "summarise the older turns") {
-			notices = true
-		}
+	if dropped == 0 {
+		t.Error("every write is still carrying the whole file it wrote")
 	}
-	if !summarised {
-		t.Error("no tool-free summariser request was made while the conversation was out of room")
+	if whole < keepResults {
+		t.Errorf("only %d of the newest writes kept their text, want %d", whole, keepResults)
 	}
-	if !notices {
-		t.Error("the run paid for a summary without telling the user")
+	if _, err := os.Stat(filepath.Join(dir, "out0.txt")); err != nil {
+		t.Errorf("the file itself went missing: %v", err)
 	}
 	if !paired(a.history) {
-		t.Errorf("auto-compaction left the history unpaired:\n%s", dump(a.history))
+		t.Errorf("shrinking arguments broke the pairing:\n%s", dump(a.history))
+	}
+}
+
+func TestTheNewestWritesAndTheFailedOnesKeepTheirText(t *testing.T) {
+	a := New(nil, nil, "m", Options{}, nil)
+	body := strings.Repeat("text the model has already paid to send once ", 40)
+	write := `{"path":"%s","content":"` + body + `"}`
+	edit := `{"path":"%s","edits":[{"old":"one","new":"` + body + `"}]}`
+	for n, spec := range []struct{ tool, args, reply string }{
+		{"write_file", fmt.Sprintf(write, "a.txt"), "wrote it"},
+		{"write_file", fmt.Sprintf(write, "b.txt"), "error: path is required"}, // a retry may need this one
+		{"edit_file", fmt.Sprintf(edit, "c.txt"), "changed c.txt"},
+		{"write_file", fmt.Sprintf(write, "d.txt"), "wrote it"},
+		{"write_file", fmt.Sprintf(write, "e.txt"), "wrote it"},
+	} {
+		id := fmt.Sprintf("call%d", n+1)
+		a.history = append(a.history,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
+				ID:       id,
+				Type:     "function",
+				Function: llm.FunctionCall{Name: spec.tool, Arguments: json.RawMessage(spec.args)},
+			}}},
+			llm.Message{Role: "tool", Name: spec.tool, ToolCallID: id, CallID: fmt.Sprintf("r%d", n+1), Content: spec.reply},
+		)
+	}
+
+	if freed := a.shrinkOldEdits(keepResults); freed <= 0 {
+		t.Fatalf("shrinkOldEdits freed %d bytes", freed)
+	}
+	var got []string
+	for _, m := range a.history {
+		for _, c := range m.ToolCalls {
+			got = append(got, string(c.Function.Arguments))
+		}
+	}
+	if len(got) != 5 {
+		t.Fatalf("%d calls in the history, want 5", len(got))
+	}
+	// a.txt worked and is old enough to reduce; b.txt failed, so it stays whole
+	if !strings.Contains(got[0], `"_ykode"`) || !strings.Contains(got[0], "a.txt") || !strings.Contains(got[0], "r1") {
+		t.Errorf("the oldest working write is still whole: %s", brief(got[0]))
+	}
+	if !strings.Contains(got[1], body) {
+		t.Errorf("the failed write lost the text a retry would need: %s", brief(got[1]))
+	}
+	if !strings.Contains(got[2], "changed c.txt") || !strings.Contains(got[2], "1 replacement") ||
+		!strings.Contains(got[2], "r3") {
+		t.Errorf("an edit is summarised like a write, or not at all: %s", brief(got[2]))
+	}
+	for _, args := range got[len(got)-keepResults:] {
+		if !strings.Contains(args, body) {
+			t.Errorf("a write the model may still act on was reduced: %s", brief(args))
+		}
+	}
+	for _, args := range got {
+		if !json.Valid([]byte(args)) {
+			t.Errorf("the history now carries arguments a server cannot parse: %s", brief(args))
+		}
+	}
+	if again := a.shrinkOldEdits(keepResults); again != 0 {
+		t.Errorf("shrinking a second time freed %d more bytes: it ran over text it had already replaced", again)
+	}
+	if !paired(a.history) {
+		t.Errorf("reducing arguments broke the pairing:\n%s", dump(a.history))
+	}
+}
+
+func TestTwoCallsWithTheSameServerIDPointAtTheirOwnReply(t *testing.T) {
+	a := New(nil, nil, "m", Options{}, nil)
+	body := strings.Repeat("enough text that shrinking is worth doing at all ", 40)
+	// llama.cpp repeats one id across calls, so matching by id would point every summary at r1
+	for n := range 3 {
+		a.history = append(a.history,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
+				ID:   "call",
+				Type: "function",
+				Function: llm.FunctionCall{
+					Name:      "write_file",
+					Arguments: json.RawMessage(`{"path":"f` + strconv.Itoa(n) + `.txt","content":"` + body + `"}`),
+				},
+			}}},
+			llm.Message{Role: "tool", Name: "write_file", ToolCallID: "call", CallID: fmt.Sprintf("r%d", n+1), Content: "wrote it"},
+		)
+	}
+	if freed := a.shrinkOldEdits(1); freed <= 0 {
+		t.Fatalf("shrinkOldEdits freed %d bytes", freed)
+	}
+	var ids []string
+	for _, m := range a.history {
+		for _, c := range m.ToolCalls {
+			var shrunk struct {
+				Ykode string `json:"_ykode"`
+			}
+			if json.Unmarshal(c.Function.Arguments, &shrunk) == nil && shrunk.Ykode != "" {
+				ids = append(ids, shrunk.Ykode)
+			}
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("%d calls were reduced, want 2: %v", len(ids), ids)
+	}
+	for want, got := range ids {
+		if !strings.Contains(got, fmt.Sprintf("r%d was the reply", want+1)) {
+			t.Errorf("the %d oldest summary does not name its own reply: %s", want+1, got)
+		}
 	}
 }

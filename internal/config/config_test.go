@@ -12,6 +12,21 @@ import (
 	"testing"
 )
 
+// TestMain keeps the package away from the developer's own ~/.ykode: a settings file that is
+// really there would answer for every test below.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "ykode-config-home")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("YKODE_HOME", dir)
+	home.Reset()
+	code := m.Run()
+	os.RemoveAll(dir)
+	home.Reset()
+	os.Exit(code)
+}
+
 func TestLoadDefaults(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

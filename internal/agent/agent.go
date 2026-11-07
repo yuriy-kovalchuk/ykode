@@ -105,7 +105,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
 		if a.underPressure() {
-			a.shrinkOldResults(keepResults)
+			a.shrinkWhatAged(keepResults)
 		}
 		if a.stillTight() && !a.compacted && a.canCompact() {
 			// shortening the results was not enough: pay one request to fold the older turns into a summary

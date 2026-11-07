@@ -25,14 +25,14 @@ func (a *Agent) Compact(ctx context.Context) int {
 	before := a.estimateTokens()
 	start, transcript := a.compactCut()
 	if start < 2 {
-		a.shrinkOldResults(0)
+		a.shrinkForCompaction()
 		a.trimHistory()
 		return before - a.estimateTokens()
 	}
 	summary, err := a.summariseWithModel(ctx, transcript)
 	if err != nil {
 		a.tell("the model could not summarise the older turns; shortening tool results instead")
-		a.shrinkOldResults(0)
+		a.shrinkForCompaction()
 		a.trimHistory()
 		return before - a.estimateTokens()
 	}
@@ -42,6 +42,13 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}}, a.history[start:]...)...)
 	a.shortened = true
 	return before - a.estimateTokens()
+}
+
+// shrinkForCompaction shortens every old result but leaves the newest calls whole: those turns
+// survive the summary, and the model still needs what they said and what they wrote.
+func (a *Agent) shrinkForCompaction() {
+	a.shrinkOldResults(0)
+	a.shrinkOldEdits(compactKeep)
 }
 
 // canCompact says there are enough tool calls to fold into a summary.
