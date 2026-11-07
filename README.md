@@ -203,7 +203,7 @@ rather than inheriting ykode's.
 A confirmation is `[y/N/a]`. `a` means yes, and stop asking about **that tool**
 (`edit_file`) or **that command prefix** (`exec:go test` covers `go test ./...`
 but not `go mod tidy`) for the rest of the run. The same entries in
-`settings.json` are allowed from the start:
+`settings.yaml` are allowed from the start:
 
 ```json
 { "permissions": { "allow": ["edit_file", "exec:go test"] } }
@@ -228,15 +228,17 @@ with `--add-to-path` appends it to your startup file once, instead of just showi
 sh scripts/install.sh --add-to-path
 ```
 
-The first run creates `~/.ykode` (mode `0700`) and writes `~/.ykode/settings.json` (mode
+The first run creates `~/.ykode` (mode `0700`) and writes `~/.ykode/settings.yaml` (mode
 `0600`) holding every setting at its default, so the file you would edit is already there.
 
 ## Settings
 
-Settings resolve in this order, later winning: built-in defaults, `~/.ykode/settings.json`,
-`<root>/.ykode/settings.json`, environment variables, flags.
+Settings resolve in this order, later winning: built-in defaults, `~/.ykode/settings.yaml`,
+`<root>/.ykode/settings.yaml`, environment variables, flags. Both are YAML and meant to be edited by
+hand; a folder that still holds the old `settings.json` is read for one more release, and the YAML file
+wins when both are there.
 
-A project's file is not trusted just because it is there. `<root>/.ykode/settings.json` may set
+A project's file is not trusted just because it is there. `<root>/.ykode/settings.yaml` may set
 `max_turns`, `max_tokens`, `thinking_level`, `verify`, `context.*`, `tools.read_lines`,
 `tools.search_limit`, `tools.exec_timeout_sec` and `models.*` — how the project is read and what a
 turn costs. Everything else waits until you trust the project: the server it talks to, any key,
@@ -244,37 +246,32 @@ turn costs. Everything else waits until you trust the project: the server it tal
 what it held back, asks once when someone is at the keyboard, and records the answer in
 `~/.ykode/trusted.json` as project root → the hash of that file, so editing it asks again.
 
-```json
-{
-  "base_url": "http://127.0.0.1:8080/v1",
-  "api_key_env": "LOCAL_LLM_API_KEY",
-  "model": "Qwen3.6-35B-A3B-GSQ-hybrid",
-  "max_turns": 25,
-  "thinking": true,
-  "verify": true,
-  "assume_yes": false,
-  "audit": true,
-  "audit_retention_days": 180,
-  "keep_sessions": "720h",
-  "max_tokens": 0,
-  "thinking_level": "medium",
-  "stream_idle_sec": 120,
-  "context": { "safety_margin": 4096 },
-  "tools": {
-    "read_lines": 150,
-    "search_limit": 50,
-    "exec_timeout_sec": 60,
-    "command_log_dir": "",
-    "keep_command_logs": "24h"
-  },
-  "models": {
-    "Qwen3.6-35B-A3B-GSQ-hybrid": {
-      "send_reasoning": false,
-      "thinking": { "temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0 },
-      "no_think": { "temperature": 0.7, "top_p": 0.8, "top_k": 20, "presence_penalty": 1.5 }
-    }
-  }
-}
+```yaml
+base_url: http://127.0.0.1:8080/v1
+api_key_env: LOCAL_LLM_API_KEY
+model: Qwen3.6-35B-A3B-GSQ-hybrid
+max_turns: 25
+verify: true
+assume_yes: false
+audit: true
+audit_retention_days: 180
+keep_sessions: 720h
+max_tokens: 0
+thinking_level: medium
+stream_idle_sec: 120
+context:
+  safety_margin: 4096
+tools:
+  read_lines: 150
+  search_limit: 50
+  exec_timeout_sec: 60
+  command_log_dir: ""
+  keep_command_logs: 24h
+models:
+  Qwen3.6-35B-A3B-GSQ-hybrid:
+    send_reasoning: false
+    thinking: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0 }
+    no_think: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 }
 ```
 
 `stream_idle_sec` is how long a stream may stay silent before ykode gives up on it (raise it
@@ -316,7 +313,7 @@ scrubbed to `PATH`, `HOME`, `TERM` and `LANG`, so a command run by the model can
 `LOCAL_LLM_API_KEY` or anything else from the environment ykode was started with, but it can
 still read and write anywhere your user can. `--yes` skips the confirmation for it too.
 
-`"sandbox": true` in `~/.ykode/settings.json` closes that gap: every command then runs under
+`sandbox: true` in `~/.ykode/settings.yaml` closes that gap: every command then runs under
 `sandbox-exec` (macOS) or `bwrap` (Linux) with no network and write access only to the
 project, the temp folder and your cache folder (where build tools keep theirs). If the
 sandbox tool is missing, the command is refused rather than run unconfined. A project's own
@@ -334,7 +331,7 @@ make eval ARGS="--baseline last"            # mark what got worse since the prev
 make eval ARGS="--new-prompt --baseline last" # try the candidate system prompt
 ```
 
-The tasks run with built-in defaults, not your `settings.json` (`--use-settings` opts back in).
+The tasks run with built-in defaults, not your `settings.yaml` (`--use-settings` opts back in).
 Each line reports the pass rate, median turns and tokens, and counters for what the prompt work
 targets: tool calls written as text, unchanged re-reads, recalls and re-run commands, verify
 nudges, compactions, long answers.

@@ -68,11 +68,11 @@ type ChatRequest struct {
 
 // Sampling is what a model card recommends; a nil field leaves the server's default.
 type Sampling struct {
-	Temperature     *float64 `json:"temperature,omitempty"`
-	TopP            *float64 `json:"top_p,omitempty"`
-	TopK            *int     `json:"top_k,omitempty"`
-	MinP            *float64 `json:"min_p,omitempty"`
-	PresencePenalty *float64 `json:"presence_penalty,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+	TopP            *float64 `json:"top_p,omitempty" yaml:"top_p,omitempty"`
+	TopK            *int     `json:"top_k,omitempty" yaml:"top_k,omitempty"`
+	MinP            *float64 `json:"min_p,omitempty" yaml:"min_p,omitempty"`
+	PresencePenalty *float64 `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
 }
 
 // ToolSpec advertises one tool to the model.

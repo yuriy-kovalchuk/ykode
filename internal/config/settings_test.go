@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"gopkg.in/yaml.v3"
 )
 
 // fakeHome points $YKODE_HOME at a scratch directory for one test.
@@ -259,15 +259,15 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm() != 0o600 {
-		t.Errorf("settings.json holds a key one day: mode %v", info.Mode().Perm())
+		t.Errorf("settings.yaml holds a key one day: mode %v", info.Mode().Perm())
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var seeded map[string]any
-	if err := json.Unmarshal(raw, &seeded); err != nil {
-		t.Fatalf("the file written is not valid json: %v", err)
+	if err := yaml.Unmarshal(raw, &seeded); err != nil {
+		t.Fatalf("the file written is not valid yaml: %v", err)
 	}
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
@@ -595,5 +595,57 @@ func TestACountThatIsNotAboveZeroIsNamed(t *testing.T) {
 		if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "settings.json") {
 			t.Errorf("%s: %v", body, err)
 		}
+	}
+}
+
+// settings are YAML now: the file is meant to be edited by hand, and YAML says what a key means with
+// far less punctuation than JSON
+func TestTheSettingsFileIsYaml(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), "max_turns: 7\nthinking_level: low\ntools:\n  read_lines: 20\n")
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTurns != 7 || cfg.ThinkingLevel != "low" || cfg.ReadLines != 20 {
+		t.Fatalf("yaml settings did not land: %+v", cfg)
+	}
+}
+
+// one release of the old name: a project that still ships settings.json keeps working, and when a folder
+// somehow holds both, the YAML one is what ykode reads
+func TestTheOldJsonNameStillWorksUntilItIsRetired(t *testing.T) {
+	root := t.TempDir()
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"max_turns": 4}`)
+	cfg, err := Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTurns != 4 {
+		t.Fatalf("max_turns = %d, want the json file to be read for one more release", cfg.MaxTurns)
+	}
+
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), "max_turns: 9\n")
+	cfg, err = Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTurns != 9 {
+		t.Errorf("max_turns = %d, want the yaml file to win over the old json one", cfg.MaxTurns)
+	}
+}
+
+func TestAnUnknownYamlKeyNamesTheFileAndTheKey(t *testing.T) {
+	user := fakeHome(t)
+	path := filepath.Join(user, "settings.yaml")
+	writeSettings(t, path, "thinking_level: medium\nthinking_leve: medium\n")
+
+	_, err := Load(nil)
+	if err == nil {
+		t.Fatal("a mistyped key was accepted")
+	}
+	if !strings.Contains(err.Error(), "thinking_leve") || !strings.Contains(err.Error(), "settings.yaml") {
+		t.Errorf("error = %v, want it to name the file and the key", err)
 	}
 }

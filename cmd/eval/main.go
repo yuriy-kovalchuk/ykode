@@ -100,7 +100,7 @@ func parseArgs(args []string) (options, []string, error) {
 	fs.StringVar(&o.baseline, "baseline", "", "compare with a saved run: a path, or last")
 	fs.BoolVar(&o.keep, "keep", false, "keep the fixture directories and print their paths")
 	fs.BoolVar(&o.verbose, "verbose", false, "print what the model did for every run, not only the failures")
-	fs.BoolVar(&o.useSet, "use-settings", false, "apply ~/.ykode/settings.json instead of built-in defaults")
+	fs.BoolVar(&o.useSet, "use-settings", false, "apply ~/.ykode/settings.yaml instead of built-in defaults")
 	fs.IntVar(&o.repeat, "repeat", 3, "runs per task; one run at temperature 0.7 is not a measurement")
 
 	var own, rest []string
@@ -126,7 +126,7 @@ func parseArgs(args []string) (options, []string, error) {
 	return o, rest, nil
 }
 
-// isolateSettings points ykode at an empty home, so the user's settings.json and AGENTS.md cannot
+// isolateSettings points ykode at an empty home, so the user's settings.yaml and AGENTS.md cannot
 // change what a task measures. Flags and LOCAL_LLM_* variables still apply.
 func isolateSettings() {
 	dir, err := os.MkdirTemp("", "ykode-eval-home-")

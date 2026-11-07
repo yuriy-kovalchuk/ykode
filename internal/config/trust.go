@@ -15,7 +15,7 @@ import (
 const trustRecord = "trusted.json"
 
 // projectSettingsPath is where a project keeps its own ykode settings.
-func projectSettingsPath(root string) string { return filepath.Join(root, ".ykode", "settings.json") }
+func projectSettingsPath(root string) string { return settingsIn(filepath.Join(root, ".ykode")) }
 
 // acceptedProject says whether the project's settings file is still the one that was accepted:
 // any edit changes the hash, and the run asks about it again.

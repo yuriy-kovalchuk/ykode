@@ -109,6 +109,11 @@ sometimes (BASELINE.md rounds 3–4). V3 and V4 do not depend on the model obeyi
   asked about once. `SeedSettings` (`settings.go:82`) and the README's six mentions (205, 230, 235-236,
   238, 313, 331) move too. Tests: YAML fixtures across `settings_test.go` (599 lines) and
   `config_test.go` (354); one per case — legacy read, new wins over old, unknown key named.
+  → **done**: both layers are YAML (`settings.yaml`), decoded by `yaml.v3` with `KnownFields(true)`, so an
+  unknown key still names the file and the key. A folder holding only the old `settings.json` is read for
+  one more release; when both are there, YAML wins. Machine records (sessions, audit, `trusted.json`, eval
+  records) stay JSONL/JSON — they are ykode's, not yours. Seeded defaults and the README example are YAML;
+  `~/.ykode/settings.json` was converted to `settings.yaml` (`.bak` left beside it).
 - **Later:** explore sub-agent, MCP, goreleaser/Homebrew, hash-chained audit log. Image input
   and the rest are in `ideas.md`.
 

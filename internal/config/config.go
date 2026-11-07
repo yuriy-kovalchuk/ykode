@@ -1,4 +1,4 @@
-// Package config resolves ykode's settings: built-in defaults, then settings.json, then env, then flags.
+// Package config resolves ykode's settings: built-in defaults, then settings.yaml, then env, then flags.
 package config
 
 import (
@@ -65,7 +65,7 @@ type Config struct {
 	Allow           []string                   // never ask about these: a tool name, or "exec:go test"
 	Continue        string                     // resume a saved conversation: "last" or its id
 	SessionDir      string                     // where conversations are saved
-	ProjectSettings string                     // <root>/.ykode/settings.json, when the project ships one
+	ProjectSettings string                     // <root>/.ykode/settings.yaml, when the project ships one
 	HeldKeys        []string                   // what that file sets that only applies to a trusted project
 	HeldValues      []string                   // the same keys with what they ask for, secrets masked
 	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown

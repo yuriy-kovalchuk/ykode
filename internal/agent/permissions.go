@@ -7,7 +7,7 @@ import (
 )
 
 // permissions remembers what the user agreed to keep allowing. It is per run unless the same
-// entries are put in settings.json, and it is deliberately narrow: a tool, or a command's words.
+// entries are put in settings.yaml, and it is deliberately narrow: a tool, or a command's words.
 type permissions struct {
 	mu      sync.Mutex // an "always" answered by one parallel call is read by the others
 	allowed map[string]bool
@@ -117,7 +117,7 @@ func startsWithWords(words, want []string) bool {
 }
 
 // add remembers a call for the rest of the run. What is remembered is the whole line the user
-// was shown, never a shortened verb: only settings.json may write a broad entry on purpose.
+// was shown, never a shortened verb: only settings.yaml may write a broad entry on purpose.
 func (p *permissions) add(name, args string) {
 	if p == nil {
 		return

@@ -44,4 +44,4 @@ func Ensure(sub string) (string, error) {
 }
 
 // Settings is the path of the per-user settings file; it may not exist.
-func Settings() string { return filepath.Join(Dir(), "settings.json") }
+func Settings() string { return filepath.Join(Dir(), "settings.yaml") }

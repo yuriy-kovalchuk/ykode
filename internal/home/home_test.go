@@ -25,7 +25,7 @@ func TestTheDefaultIsADotYkodeInTheUserHome(t *testing.T) {
 	if Dir() != filepath.Join("/tmp/fake-home", ".ykode") {
 		t.Fatalf("Dir() = %q", Dir())
 	}
-	if Settings() != filepath.Join("/tmp/fake-home", ".ykode", "settings.json") {
+	if Settings() != filepath.Join("/tmp/fake-home", ".ykode", "settings.yaml") {
 		t.Fatalf("Settings() = %q", Settings())
 	}
 }

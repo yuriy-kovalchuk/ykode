@@ -98,7 +98,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 		decision = "yes_flag"
 	}
 	asked := (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0
-	// an "always" from earlier in this run, or an entry from settings.json, answers for us
+	// an "always" from earlier in this run, or an entry from settings.yaml, answers for us
 	if asked && !(len(outside) > 0) && a.perms.allows(name, string(args)) {
 		asked, decision = false, "allowlist"
 	}

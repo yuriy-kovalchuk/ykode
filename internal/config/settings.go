@@ -7,52 +7,54 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"gopkg.in/yaml.v3"
 )
 
-// fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
+// fileSettings mirrors settings.yaml; a non-nil pointer means the file set that key.
 type fileSettings struct {
-	BaseURL       *string `json:"base_url,omitempty"`
-	APIKey        *string `json:"api_key,omitempty"`
-	APIKeyEnv     *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
-	Audit         *bool   `json:"audit,omitempty"`
-	Retain        *int    `json:"audit_retention_days,omitempty"`
-	KeepSessions  *string `json:"keep_sessions,omitempty"`
-	Model         *string `json:"model,omitempty"`
-	MaxTurns      *int    `json:"max_turns,omitempty"`
-	MaxTokens     *int    `json:"max_tokens,omitempty"`
-	ThinkingLevel *string `json:"thinking_level,omitempty"`
-	AssumeYes     *bool   `json:"assume_yes,omitempty"`
-	Sandbox       *bool   `json:"sandbox,omitempty"`
-	Verify        *bool   `json:"verify,omitempty"`
-	StreamIdle    *int    `json:"stream_idle_sec,omitempty"`
+	BaseURL       *string `yaml:"base_url,omitempty"`
+	APIKey        *string `yaml:"api_key,omitempty"`
+	APIKeyEnv     *string `yaml:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
+	Audit         *bool   `yaml:"audit,omitempty"`
+	Retain        *int    `yaml:"audit_retention_days,omitempty"`
+	KeepSessions  *string `yaml:"keep_sessions,omitempty"`
+	Model         *string `yaml:"model,omitempty"`
+	MaxTurns      *int    `yaml:"max_turns,omitempty"`
+	MaxTokens     *int    `yaml:"max_tokens,omitempty"`
+	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
+	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
+	Sandbox       *bool   `yaml:"sandbox,omitempty"`
+	Verify        *bool   `yaml:"verify,omitempty"`
+	StreamIdle    *int    `yaml:"stream_idle_sec,omitempty"`
 	Context       struct {
-		SafetyMargin *int `json:"safety_margin,omitempty"`
-	} `json:"context,omitempty"`
+		SafetyMargin *int `yaml:"safety_margin,omitempty"`
+	} `yaml:"context,omitempty"`
 	Tools struct {
-		ReadLines       *int    `json:"read_lines,omitempty"`
-		SearchLimit     *int    `json:"search_limit,omitempty"`
-		ExecTimeoutSec  *int    `json:"exec_timeout_sec,omitempty"`
-		CommandLogDir   *string `json:"command_log_dir,omitempty"`
-		KeepCommandLogs *string `json:"keep_command_logs,omitempty"`
-	} `json:"tools,omitempty"`
+		ReadLines       *int    `yaml:"read_lines,omitempty"`
+		SearchLimit     *int    `yaml:"search_limit,omitempty"`
+		ExecTimeoutSec  *int    `yaml:"exec_timeout_sec,omitempty"`
+		CommandLogDir   *string `yaml:"command_log_dir,omitempty"`
+		KeepCommandLogs *string `yaml:"keep_command_logs,omitempty"`
+	} `yaml:"tools,omitempty"`
 	Permissions struct {
-		Allow []string `json:"allow,omitempty"`
-	} `json:"permissions,omitempty"`
+		Allow []string `yaml:"allow,omitempty"`
+	} `yaml:"permissions,omitempty"`
 	Models map[string]struct {
-		SendReasoning *bool         `json:"send_reasoning,omitempty"`
-		Thinking      *llm.Sampling `json:"thinking,omitempty"`
-		NoThink       *llm.Sampling `json:"no_think,omitempty"`
-	} `json:"models,omitempty"`
+		SendReasoning *bool         `yaml:"send_reasoning,omitempty"`
+		Thinking      *llm.Sampling `yaml:"thinking,omitempty"`
+		NoThink       *llm.Sampling `yaml:"no_think,omitempty"`
+	} `yaml:"models,omitempty"`
 }
 
 // builtinSettings are the defaults ykode ships with, in the shape of the file, so the
-// settings.json a first run writes cannot disagree with what the code would have done.
+// settings.yaml a first run writes cannot disagree with what the code would have done.
 func builtinSettings() fileSettings {
 	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
@@ -79,17 +81,27 @@ func hours(d time.Duration) string {
 // p keeps a default addressable: a non-nil pointer is what tells the layers "this was set".
 func p[T any](v T) *T { return &v }
 
-// SeedSettings writes the defaults to $YKODE_HOME/settings.json when nothing is there yet, so
+// settingsIn is the settings file a directory holds: the YAML one, or the JSON name for a file written
+// before settings moved to YAML.
+func settingsIn(dir string) string {
+	yamlPath := filepath.Join(dir, "settings.yaml")
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath
+	}
+	return filepath.Join(dir, "settings.json")
+}
+
+// SeedSettings writes the defaults to $YKODE_HOME/settings.yaml when nothing is there yet, so
 // the file a user might edit exists and shows every key. An existing file is never touched.
 func SeedSettings() error {
 	path := home.Settings()
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Stat(settingsIn(home.Dir())); err == nil {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-	raw, err := json.MarshalIndent(builtinSettings(), "", "  ")
+	raw, err := yaml.Marshal(builtinSettings())
 	if err != nil {
 		return err
 	}
@@ -99,9 +111,9 @@ func SeedSettings() error {
 	return nil
 }
 
-// readSettings layers ~/.ykode/settings.json under the project's own settings file.
+// readSettings layers ~/.ykode/settings.yaml under the project's own settings file.
 func (c *Config) readSettings() error {
-	if err := c.applyFile(home.Settings(), false); err != nil {
+	if err := c.applyFile(settingsIn(home.Dir()), false); err != nil {
 		return err
 	}
 	return c.applyFile(projectSettingsPath(c.Root), true)
@@ -118,9 +130,9 @@ func (c *Config) applyFile(path string, project bool) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	var s fileSettings
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(&s); err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	if project {
