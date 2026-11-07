@@ -19,6 +19,7 @@ type confirmMsg struct {
 	reply chan agent.Decision
 }
 type runDoneMsg struct{ err error }
+type compactDoneMsg struct{ freed int } // the summary the model wrote for /compact
 
 // question is a confirmation waiting for an answer; the run is blocked until it gets one.
 type question struct {
@@ -92,6 +93,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case confirmMsg:
 		m.pending = &question{text: msg.ev.Text, target: msg.ev.Target, reply: msg.reply}
+		m.refresh()
+		return m, nil
+	case compactDoneMsg:
+		m.running = false
+		m.cancel = nil
+		m.log.notice(strings.TrimSuffix(agent.CompactReport(msg.freed), "\n"))
 		m.refresh()
 		return m, nil
 	case runDoneMsg:
@@ -198,6 +205,18 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	m.histIdx = len(m.history)
 
 	if strings.HasPrefix(text, "/") {
+		if strings.HasPrefix(text, "/compact") && !m.running {
+			m.compact()
+			return m, nil
+		}
+		if m.running && !agent.CommandIsSafeDuringATurn(text) {
+			m.log.notice("that waits for the turn to finish: press esc to stop the turn first")
+			m.refresh()
+			return m, nil
+		}
+		if m.running && strings.HasPrefix(text, "/ex") {
+			m.cancelRun() // leaving cancels the turn rather than racing it
+		}
 		out, quit, err := m.agent.Command(text)
 		if line := strings.TrimRight(out, "\n"); line != "" {
 			m.log.notice(line)
@@ -232,6 +251,19 @@ func (m *model) start(prompt string) {
 	m.refresh()
 	go func() {
 		m.hub.post(runDoneMsg{err: m.agent.Ask(turnCtx, prompt)})
+	}()
+}
+
+// compact folds the older turns on its own goroutine: the model writes the summary, which is
+// the slowest thing in a session, and the screen must keep drawing and answering questions.
+func (m *model) compact() {
+	turnCtx, cancel := context.WithCancel(m.ctx)
+	m.cancel = cancel
+	m.running = true
+	m.log.notice("compacting: the model is writing a summary of the older turns")
+	m.refresh()
+	go func() {
+		m.hub.post(compactDoneMsg{freed: m.agent.Compact(turnCtx)})
 	}()
 }
 

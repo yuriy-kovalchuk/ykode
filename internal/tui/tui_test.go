@@ -415,3 +415,100 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 		t.Fatal("the session would not exit")
 	}
 }
+
+func TestACommandThatChangesTheConversationWaitsForTheTurn(t *testing.T) {
+	m := newTestModel()
+	m.running = true
+	m.input.SetValue("/reset")
+	m.submit()
+	out := m.log.render(80, false)
+	if strings.Contains(out, "history cleared") {
+		t.Error("/reset cut the conversation out from under the turn")
+	}
+	if !strings.Contains(out, "waits for the turn") {
+		t.Errorf("the screen never said why it refused:\n%s", out)
+	}
+}
+
+func TestAReadOnlyCommandAnswersDuringATurn(t *testing.T) {
+	m := newTestModel()
+	m.running = true
+	m.input.SetValue("/usage")
+	m.submit()
+	if !strings.Contains(m.log.render(80, false), "nothing asked yet") {
+		t.Errorf("/usage was held up by the turn:\n%s", m.log.render(80, false))
+	}
+}
+
+func TestLeavingCancelsTheTurnInsteadOfRacingIt(t *testing.T) {
+	m := newTestModel()
+	m.running = true
+	var cancelled bool
+	m.cancel = func() { cancelled = true }
+	m.input.SetValue("/exit")
+	if _, cmd := m.submit(); cmd == nil {
+		t.Fatal("/exit did not stop the program")
+	}
+	if !cancelled {
+		t.Error("leaving left the turn running")
+	}
+}
+
+// newWiredModel is a session whose run reports back to a queue the test feeds to Update,
+// the way a running program's event loop would.
+// wired is a session plus the queue its run reports into, so a test can be the event loop.
+type wired struct {
+	m    *model
+	msgs chan tea.Msg
+}
+
+func newWiredModel(t *testing.T, answers ...string) *wired {
+	t.Helper()
+	server := httptest.NewServer(&stubAnswers{answers: answers})
+	t.Cleanup(server.Close)
+	hub := NewHub()
+	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
+	m := newModel(context.Background(), a, hub)
+	msgs := make(chan tea.Msg, 32)
+	hub.send = func(msg tea.Msg) { msgs <- msg }
+	return &wired{m: m, msgs: msgs}
+}
+
+// feed runs whatever the session reported, the way a running program would.
+func (w *wired) feed() {
+	for {
+		select {
+		case msg := <-w.msgs:
+			w.m.Update(msg)
+		default:
+			return
+		}
+	}
+}
+
+func TestCompactingDoesNotStopTheScreen(t *testing.T) {
+	w := newWiredModel(t, "goal: fix the timeout\nfiles: src/a.go\nnext: run the tests")
+	w.m.input.SetValue("/compact")
+	if _, cmd := w.m.submit(); cmd != nil {
+		t.Fatal("compacting should not end the session")
+	}
+	if !w.m.running {
+		t.Error("the screen thinks nothing is happening while the summary is being written")
+	}
+	if !strings.Contains(w.m.log.render(80, false), "compacting") {
+		t.Error("the screen does not say what it is doing")
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for w.m.running && time.Now().Before(deadline) {
+		w.feed()
+		time.Sleep(50 * time.Millisecond)
+	}
+	if w.m.running {
+		t.Fatal("the summary never reported back")
+	}
+	if !strings.Contains(w.m.log.render(80, false), "tokens smaller") {
+		t.Errorf("no report of what compaction saved:\n%s", w.m.log.render(80, false))
+	}
+}

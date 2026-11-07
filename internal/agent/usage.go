@@ -47,17 +47,28 @@ func (m *meter) observe(stats Stats, sentBytes int) {
 	}
 }
 
-// Usage reports the cost of the conversation and the size of the next request.
-func (a *Agent) Usage() Usage {
-	return Usage{
+// publishUsage writes down what the conversation costs, once, at the end of a turn. A front
+// end reading it while the next turn runs on another goroutine never walks the history.
+func (a *Agent) publishUsage() {
+	est := a.estimateTokens()
+	a.usageMu.Lock()
+	defer a.usageMu.Unlock()
+	a.report = Usage{
 		Turns:       a.meter.turns,
 		PromptTok:   a.meter.prompt,
 		CachedTok:   a.meter.cached,
 		GenTok:      a.meter.generated,
 		TotalPrompt: a.meter.totalPrompt,
-		EstTok:      a.estimateTokens(),
+		EstTok:      est,
 		BytesPerTok: a.meter.bytesPerTok,
 	}
+}
+
+// Usage reports the numbers as of the last finished turn.
+func (a *Agent) Usage() Usage {
+	a.usageMu.Lock()
+	defer a.usageMu.Unlock()
+	return a.report
 }
 
 // CtxSize is the context window the budget is measured against; 0 when the server never reported one.

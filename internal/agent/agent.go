@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -61,6 +62,8 @@ type Agent struct {
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	meter         meter
+	usageMu       sync.Mutex // the numbers a front end reads while a turn runs elsewhere
+	report        Usage      // what the conversation cost as of the last finished turn
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
@@ -69,6 +72,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
 	a.meter = newMeter()
+	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
 	a.Reset()
 	return a
@@ -79,6 +83,7 @@ func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
 	a.compacted, a.shortened = false, false
+	a.publishUsage()
 }
 
 const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with find_files, search_text or read_file, then answer again."
@@ -176,6 +181,7 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		DecodeTokSec:  turn.Timings.PredictedPerSecond,
 	}
 	a.meter.observe(stats, a.sendingBytes())
+	a.publishUsage()
 	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
 	msg := repair(turn.Message)
 	if a.opts.SendReasoning {
@@ -242,6 +248,7 @@ func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
 	a.sanitizeHistory()
 	a.trimHistory()
+	a.publishUsage()
 }
 
 func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turn, Text: text}) }

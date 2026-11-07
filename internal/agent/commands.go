@@ -38,10 +38,35 @@ func UsageLine(u Usage, ctxSize int) string {
 		u.Turns, u.PromptTok, u.CachedTok, u.GenTok, u.TotalPrompt, room, u.BytesPerTok)
 }
 
+// A turn uses the conversation and the files, so a command that changes them waits its turn.
+var waitsForTheTurn = map[string]bool{"/reset": true, "/compact": true, "/undo": true}
+
+// CommandIsSafeDuringATurn says whether a command only reads: /help, /usage and /history can
+// answer while a turn works; /reset, /compact and /undo would cut the ground from under it.
+func CommandIsSafeDuringATurn(line string) bool {
+	name := commandName(line)
+	if name == "/exit" || name == "/quit" {
+		return true // quitting cancels the turn rather than fighting it
+	}
+	return !waitsForTheTurn[name]
+}
+
+// CompactReport is what /compact says when it is done.
+func CompactReport(freed int) string {
+	return fmt.Sprintf("older tool results shortened; the conversation is about %d tokens smaller\n", freed)
+}
+
+func commandName(line string) string {
+	if fields := strings.Fields(line); len(fields) > 0 {
+		return fields[0]
+	}
+	return line
+}
+
 // Command runs a slash command and returns the text a front end should show.
 // quit says the session is over; err is the caller's to report, never a reason to stop.
 func (a *Agent) Command(line string) (text string, quit bool, err error) {
-	name, arg := strings.Fields(line)[0], strings.TrimSpace(strings.TrimPrefix(line, strings.Fields(line)[0]))
+	name, arg := commandName(line), strings.TrimSpace(strings.TrimPrefix(line, commandName(line)))
 	switch name {
 	case "/exit", "/quit":
 		return "", true, nil
@@ -53,8 +78,7 @@ func (a *Agent) Command(line string) (text string, quit bool, err error) {
 	case "/usage":
 		return UsageLine(a.Usage(), a.CtxSize()) + "\n", false, nil
 	case "/compact":
-		freed := a.Compact(context.Background())
-		return fmt.Sprintf("older tool results shortened; the conversation is about %d tokens smaller\n", freed), false, nil
+		return CompactReport(a.Compact(context.Background())), false, nil
 	case "/history":
 		return a.History(arg, historyLimit), false, nil
 	case "/undo":
