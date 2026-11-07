@@ -128,6 +128,30 @@ sometimes (BASELINE.md rounds 3–4). V3 and V4 do not depend on the model obeyi
 - **Later:** explore sub-agent, MCP, goreleaser/Homebrew, hash-chained audit log. Image input
   and the rest are in `ideas.md`.
 
+
+- **B3 · S · A build is not a test.** Round 7 and round 8, `testing-ykode` task 10
+  (`go-feature-two-files`): ykode edited `model/user.go`, ran `go build ./...`, saw exit 0, and
+  answered **"Build passes"**, while the hidden `go test ./...` failed both times on the same written
+  line (`+ ""` where `+ ">"` was meant). The prompt already says "Run the project's own tests when
+  there are any"; a Go edit gets the `go vet ./...` nudge (`internal/tools/edit_write.go:129`), but
+  nothing points at the project's test command, so the cheapest check was the one it ran.
+  *Do:* after an edit or write in a language that has test files in the project, name the command that
+  would check it - `go test ./...` when a `*_test.go` exists, `pytest` when a `test_*.py` does - the
+  way the vet line is named today. *Test:* a fixture with `model/user.go` + `model/user_test.go`;
+  editing the first gets a reply naming `go test ./...`. Then measure task 10 with `--baseline last`:
+  it should stop answering "Build passes" over a failing test.
+- **B4 · S · A small window blames the prompt for the margin.** `--ctx 6000` with T1's default 4096
+  safety margin fails with "conversation is about 2146 tokens but the server context is 6000", which
+  reads as though room were spare. What ran out is the reply: 6000 - 2146 - 4096 is negative, and the
+  margin ate it. Same reason a stub at `n_ctx = 8192` gives every thinking level from `minimal` to
+  `max` the same 926-token thinking budget - on a small window the margin, not the level, decides how
+  much thinking fits. *Do:* name what ran out and what would help (`--ctx`, a smaller `safety_margin`,
+  `/compact`). Whether the margin should scale with a small window (`min(4096, ctx/4)`) is an open
+  question, not a decision; measure it on a small model first. *Test:* the error names the margin and
+  the options; a `--ctx` just above prompt+margin still sends a request with `minAnswerTok` left for
+  the answer.
+
+
 ## Measured, do not retry blindly
 
 - Narrowing the verify-nudge words (old C14: drop `add`, `read`, `file`…) made
