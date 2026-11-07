@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
@@ -13,21 +16,23 @@ import (
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	for _, call := range calls {
 		a.callSeq++
+		id := fmt.Sprintf("r%d", a.callSeq)
 		a.history = append(a.history, llm.Message{
 			Role:       "tool",
-			Content:    a.runTool(ctx, call),
+			Content:    a.runTool(ctx, call, id),
 			ToolCallID: call.ID,
 			Name:       call.Function.Name,
-			CallID:     fmt.Sprintf("r%d", a.callSeq),
+			CallID:     id,
 		})
 	}
 }
 
 // runTool never returns an error: whatever went wrong becomes result text the model can act on.
-func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
+func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) string {
 	name, args := call.Function.Name, call.Function.Arguments
 	argsText := oneLine(string(args), 200)
 	a.emit(Event{Kind: ToolStart, Tool: name, Args: argsText})
+	start := time.Now()
 	if ctx.Err() != nil {
 		return a.failTool(name, "cancelled before this tool ran")
 	}
@@ -41,25 +46,42 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall) string {
 	}
 	targets, err := tool.Targets(args)
 	if err != nil {
+		a.record(id, name, argsText, nil, nil, "auto", "error", "", tools.Detail{}, start)
 		return a.failTool(name, err.Error())
 	}
 	outside := outsidePaths(targets)
+	decision := "auto"
+	if a.opts.AssumeYes && tool.NeedsConfirm() {
+		decision = "yes_flag"
+	}
 	// outside-root access is asked about even under --yes, which only skips routine confirmations
 	if (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0 {
-		decision := a.emit(Event{Kind: Confirm, Tool: name, Args: argsText, Text: describe(name, argsText, outside), Target: outside})
-		if decision == Refuse {
+		verdict := a.emit(Event{Kind: Confirm, Tool: name, Args: argsText, Text: describe(name, argsText, outside), Target: outside})
+		if verdict == Refuse {
+			a.record(id, name, argsText, targets, outside, "user_no", "refused", "", tools.Detail{}, start)
 			return a.failTool(name, "the user refused this tool call")
 		}
+		decision = "user_yes"
 	}
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)
 	}
+	a.record(id, name, argsText, targets, outside, decision, "started", "", tools.Detail{}, start)
 
 	out, err := tool.Run(ctx, args)
 	if err != nil {
+		a.record(id, name, argsText, targets, outside, decision, "error", "", tools.Detail{}, start)
 		return a.failTool(name, err.Error())
 	}
 	result := tools.FormatResult(out, a.opts.MaxResult)
+	status := "ok"
+	switch {
+	case ctx.Err() != nil:
+		status = "cancelled"
+	case detailOf(tool).TimedOut:
+		status = "timeout"
+	}
+	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
 	a.emit(Event{Kind: ToolEnd, Tool: name, Args: argsText, Text: oneLine(result, 200)})
 	return result
 }
@@ -94,4 +116,53 @@ func oneLine(s string, max int) string {
 		return string(r[:max]) + "..."
 	}
 	return s
+}
+
+// record appends one line to the audit log. A broken log never stops a run: it is reported once.
+func (a *Agent) record(id, name, argsText string, targets []tools.Target, outside []string, decision, status, result string, detail tools.Detail, start time.Time) {
+	if a.opts.Audit == nil {
+		return
+	}
+	entry := audit.Entry{
+		ID:          id,
+		Turn:        a.turn,
+		Root:        a.opts.Root,
+		Model:       a.model,
+		Tool:        name,
+		Args:        argsText,
+		Paths:       targetPaths(targets),
+		OutsideRoot: outside,
+		Decision:    decision,
+		Status:      status,
+		ExitCode:    detail.ExitCode,
+		DurationMS:  time.Since(start).Milliseconds(),
+		OutputPath:  detail.LogPath,
+		Diff:        detail.Diff,
+	}
+	if result != "" {
+		entry.ResultBytes = len(result)
+		sum := sha256.Sum256([]byte(result))
+		entry.ResultSHA = fmt.Sprintf("%x", sum[:8])
+	}
+	if err := a.opts.Audit.Append(entry); err != nil && !a.auditBroken {
+		a.auditBroken = true // a log that will not write is reported once, not per call
+		a.tell(err.Error())
+	}
+}
+
+// targetPaths lists what a call touches, for the log.
+func targetPaths(targets []tools.Target) []string {
+	paths := make([]string, 0, len(targets))
+	for _, t := range targets {
+		paths = append(paths, t.Resolved)
+	}
+	return paths
+}
+
+// detailOf asks a tool what its last result says beyond the text.
+func detailOf(tool tools.Tool) tools.Detail {
+	if d, ok := tool.(tools.Detailed); ok {
+		return d.LastDetail()
+	}
+	return tools.Detail{}
 }

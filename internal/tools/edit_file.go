@@ -11,7 +11,10 @@ import (
 )
 
 // EditFile replaces exact text, checking every edit against the original before anything is written.
-type EditFile struct{ scope }
+type EditFile struct {
+	scope
+	last Detail // the diff of the edit that just ran, for the audit log
+}
 
 type editInput struct {
 	Path  string          `json:"path"`
@@ -32,18 +35,18 @@ type editPair struct {
 }
 
 func NewEditFile(root *os.Root, dir string) *EditFile {
-	return &EditFile{scope{root: root, dir: dir}}
+	return &EditFile{scope: scope{root: root, dir: dir}}
 }
 
-func (EditFile) Name() string { return "edit_file" }
+func (*EditFile) Name() string { return "edit_file" }
 
-func (EditFile) Description() string {
+func (*EditFile) Description() string {
 	return "Replace exact text: old_string -> new_string. Pairs default to style all, so every match is replaced and one call renames a call site everywhere; count=true reports matches without changing the file. A pair that matches nothing, or several times when expected is 1, fails and says how many - re-read the file to get the text exact. All pairs apply, or none."
 }
 
-func (EditFile) NeedsConfirm() bool { return true }
+func (*EditFile) NeedsConfirm() bool { return true }
 
-func (EditFile) Schema() json.RawMessage {
+func (*EditFile) Schema() json.RawMessage {
 	return json.RawMessage(`{
 	  "type": "object",
 	  "properties": {
@@ -65,7 +68,7 @@ func (EditFile) Schema() json.RawMessage {
 	}`)
 }
 
-func (t EditFile) Targets(args json.RawMessage) ([]Target, error) {
+func (t *EditFile) Targets(args json.RawMessage) ([]Target, error) {
 	var in editInput
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
@@ -74,7 +77,7 @@ func (t EditFile) Targets(args json.RawMessage) ([]Target, error) {
 	return []Target{target}, err
 }
 
-func (t EditFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
+func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -149,10 +152,14 @@ func (t EditFile) Run(ctx context.Context, args json.RawMessage) (string, error)
 	result := fmt.Sprintf("edited %s (%d -> %d bytes, %d replacement%s%s)",
 		h.shown(), len(current), len(updated), len(planned), plural(len(planned)), note)
 	if diff := diffText(current, updated); diff != "" {
+		t.last.Diff = diff
 		result += "\n" + diff
 	}
 	return result, nil
 }
+
+// LastDetail returns the diff of the edit that just ran.
+func (t *EditFile) LastDetail() Detail { return t.last }
 
 // editPairs accepts the shapes models actually send: an array, one object, a JSON string, or flat keys.
 func editPairs(in editInput) ([]editPair, error) {

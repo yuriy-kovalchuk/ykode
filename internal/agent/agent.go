@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
@@ -27,6 +28,8 @@ type Options struct {
 	SendReasoning bool              // repeat earlier thinking to templates that expect it back
 	MaxResult     int               // byte cap on one tool result; 0 means the tools' own default
 	Store         tools.ResultStore // where shortened tool results are kept for recall
+	Audit         *audit.Logger     // append-only record of every tool call; nil turns it off
+	Root          string            // the project root, recorded with every call
 }
 
 // Stats summarises one model round-trip for the user.
@@ -40,17 +43,18 @@ type Stats struct {
 }
 
 type Agent struct {
-	client    *llm.Client
-	tools     *tools.Registry
-	model     string
-	opts      Options
-	sink      Sink
-	shortened bool // a tool result has been shortened, so recall is worth describing
-	callSeq   int  // numbers the r1, r2... ids that recall and the audit log share
-	compacted bool // the older turns were folded into a summary once already
-	turn      int  // the round-trip currently running, carried on every event
-	history   []llm.Message
-	meter     meter
+	client      *llm.Client
+	tools       *tools.Registry
+	model       string
+	opts        Options
+	sink        Sink
+	shortened   bool // a tool result has been shortened, so recall is worth describing
+	callSeq     int  // numbers the r1, r2... ids that recall and the audit log share
+	compacted   bool // the older turns were folded into a summary once already
+	auditBroken bool // the audit log failed once: say so once, not per call
+	turn        int  // the round-trip currently running, carried on every event
+	history     []llm.Message
+	meter       meter
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {

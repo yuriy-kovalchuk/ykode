@@ -38,6 +38,7 @@ func commandEnv() []string {
 // Exec runs sh -c in the project root: confined by the working directory, not by the file sandbox.
 type Exec struct {
 	dir      string
+	last     Detail        // what the last command exited with and where its full output went
 	Timeout  time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
 	LogDir   string        // where a cut command's full output is saved; empty means os.TempDir()
 	MaxBytes int           // bytes the result may use; 0 means defaultResultBytes
@@ -72,6 +73,18 @@ func (Exec) Description() string {
 
 func (Exec) NeedsConfirm() bool { return true }
 
+// LastDetail reports the exit code and saved log of the command that just ran.
+func (t *Exec) LastDetail() Detail { return t.last }
+
+// exitCode reads the exit status of a finished command, if it reports one.
+func exitCode(err error) (int, bool) {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode(), true
+	}
+	return 0, false
+}
+
 // Targets reports no paths: a shell command has no single path to confirm.
 func (Exec) Targets(json.RawMessage) ([]Target, error) { return nil, nil }
 
@@ -86,7 +99,7 @@ func (Exec) Schema() json.RawMessage {
 	}`, int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Seconds())))
 }
 
-func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
+func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	var in struct {
 		Command string `json:"command"`
 		Timeout int    `json:"timeout"`
@@ -106,12 +119,17 @@ func (t Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	cmd.Env = commandEnv()
 	out, err := cmd.CombinedOutput()
 	result := cleanOutput(string(out))
+	t.last = Detail{}
+	if code, ok := exitCode(err); ok {
+		t.last.ExitCode = &code
+	}
 	if err == nil {
 		return t.fit(result), nil
 	}
 	// a non-zero exit is a normal result: the model needs the command's own output to fix it
 	switch {
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+		t.last.TimedOut = true
 		result += fmt.Sprintf("\n[command killed after its %s timeout; pass a larger timeout if this is expected work]", timeout)
 	case runCtx.Err() != nil:
 		result += "\n[cancelled]"
@@ -160,7 +178,7 @@ func (t Exec) aim() int {
 	return cap - budgetSlack
 }
 
-func (t Exec) fit(out string) string {
+func (t *Exec) fit(out string) string {
 	budget := t.aim()
 	if len(out) <= budget {
 		return out
@@ -173,6 +191,7 @@ func (t Exec) fit(out string) string {
 	if err != nil {
 		fmt.Fprintf(&b, " (could not save the full output: %v]", err)
 	} else {
+		t.last.LogPath = path
 		fmt.Fprintf(&b, " full output: %s (read it with exec_command, e.g. sed -n '1,80p' FILE)]", path)
 	}
 	b.WriteString("\n\n")

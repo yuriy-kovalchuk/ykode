@@ -44,6 +44,8 @@ type Config struct {
 	ExecTimeout     time.Duration
 	CommandLogDir   string // where a cut command's full output is saved
 	ResultDir       string // one run's shortened tool results, kept so recall can hand them back
+	AuditDir        string // append-only tool-call log, one file per month
+	Session         string // this run's id, shared by the results, the audit log and sessions
 	KeepCommandLogs time.Duration
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
@@ -220,7 +222,9 @@ func (c *Config) normalize() error {
 	if c.CommandLogDir == "" {
 		c.CommandLogDir = filepath.Join(home.Dir(), "logs")
 	}
-	c.ResultDir = filepath.Join(home.Dir(), "results", "s"+time.Now().Format(sessionStamp))
+	c.Session = "s" + time.Now().Format(sessionStamp)
+	c.ResultDir = filepath.Join(home.Dir(), "results", c.Session)
+	c.AuditDir = filepath.Join(home.Dir(), "audit")
 	return nil
 }
 

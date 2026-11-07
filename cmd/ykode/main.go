@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/cli"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -125,6 +126,8 @@ func run() error {
 		SendReasoning: cfg.SendReasoningFor(model.ID),
 		MaxResult:     resultBytes,
 		Store:         store,
+		Audit:         audit.New(cfg.AuditDir, cfg.Session),
+		Root:          cfg.Root,
 	}, view)
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 

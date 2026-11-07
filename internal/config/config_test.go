@@ -35,6 +35,8 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
 	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time
+	cfg.AuditDir = ""      // derived from $YKODE_HOME
+	cfg.Session = ""       // derived from the run time
 	cfg.modelReasoning = nil
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg = %+v, want %+v", cfg, want)

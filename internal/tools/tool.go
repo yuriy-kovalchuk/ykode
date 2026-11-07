@@ -57,6 +57,20 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	return NewRegistry(built...)
 }
 
+// Detail is what a tool can say about its last result beyond the text, for the audit log.
+type Detail struct {
+	ExitCode *int   // for a command: what it exited with
+	TimedOut bool   // for a command: it was killed for taking too long
+	Diff     string // for a change: what it did to the file
+	LogPath  string // where the full output went when the result was cut
+}
+
+// Detailed is a tool that keeps a little structure about the result it just returned.
+// One agent uses a tool at a time, so remembering the last call is enough.
+type Detailed interface {
+	LastDetail() Detail
+}
+
 // Registry keeps tools in registration order so the list the model sees stays stable.
 type Registry struct {
 	byName  map[string]Tool

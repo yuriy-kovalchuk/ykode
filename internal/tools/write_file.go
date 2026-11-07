@@ -9,7 +9,10 @@ import (
 )
 
 // WriteFile creates or replaces a whole file, making parent directories.
-type WriteFile struct{ scope }
+type WriteFile struct {
+	scope
+	last Detail // the diff of the write that just ran, for the audit log
+}
 
 type writeInput struct {
 	Path    string `json:"path"`
@@ -17,18 +20,18 @@ type writeInput struct {
 }
 
 func NewWriteFile(root *os.Root, dir string) *WriteFile {
-	return &WriteFile{scope{root: root, dir: dir}}
+	return &WriteFile{scope: scope{root: root, dir: dir}}
 }
 
-func (WriteFile) Name() string { return "write_file" }
+func (*WriteFile) Name() string { return "write_file" }
 
-func (WriteFile) Description() string {
+func (*WriteFile) Description() string {
 	return "Write a file inside the project root, replacing it if it exists. Parent directories are created. Prefer edit_file for small changes to an existing file. Paths outside the root are allowed but need approval."
 }
 
-func (WriteFile) NeedsConfirm() bool { return true }
+func (*WriteFile) NeedsConfirm() bool { return true }
 
-func (WriteFile) Schema() json.RawMessage {
+func (*WriteFile) Schema() json.RawMessage {
 	return json.RawMessage(`{
 	  "type": "object",
 	  "properties": {
@@ -39,7 +42,7 @@ func (WriteFile) Schema() json.RawMessage {
 	}`)
 }
 
-func (t WriteFile) Targets(args json.RawMessage) ([]Target, error) {
+func (t *WriteFile) Targets(args json.RawMessage) ([]Target, error) {
 	var in writeInput
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
@@ -48,7 +51,7 @@ func (t WriteFile) Targets(args json.RawMessage) ([]Target, error) {
 	return []Target{target}, err
 }
 
-func (t WriteFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
+func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -80,7 +83,11 @@ func (t WriteFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	}
 	result := fmt.Sprintf("wrote %s (%d bytes)", h.shown(), len(in.Content))
 	if diff := diffText(string(before), in.Content); diff != "" {
+		t.last.Diff = diff
 		result += "\n" + diff
 	}
 	return result, nil
 }
+
+// LastDetail returns the diff of the write that just ran.
+func (t *WriteFile) LastDetail() Detail { return t.last }
