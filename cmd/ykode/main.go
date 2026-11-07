@@ -154,7 +154,8 @@ func run() error {
 		a.Resume(messages)
 		fmt.Fprintf(os.Stderr, "ykode: resumed %s (%d messages)\n", cfg.Session, len(messages))
 	}
-	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
+	// what actually goes out each turn: a tool that is not offered yet is not paid for
+	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(a.Specs()), a.SpecBytes())
 
 	if cfg.Prompt == "" {
 		if cfg.TUI {
