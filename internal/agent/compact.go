@@ -23,25 +23,38 @@ Only state what the transcript shows. Under 150 words.`
 // It returns the tokens freed; if the summary cannot be made, it falls back to shortening tool results.
 func (a *Agent) Compact(ctx context.Context) int {
 	before := a.estimateTokens()
-	start, transcript := a.compactCut()
+	start, task := a.compactCut()
 	if start < 2 {
 		a.shrinkForCompaction()
 		a.trimHistory()
 		return before - a.estimateTokens()
 	}
-	summary, err := a.summariseWithModel(ctx, transcript)
+	summary, err := a.summariseWithModel(ctx, a.transcriptOf(a.dropping(start, task)))
 	if err != nil {
 		a.tell("the model could not summarise the older turns; shortening tool results instead")
 		a.shrinkForCompaction()
 		a.trimHistory()
 		return before - a.estimateTokens()
 	}
-	a.forget(a.history[1:start]...)
-	a.history = append(a.history[:1], append([]llm.Message{{
-		Role:    "user",
-		Content: compactMessage + "\n" + summary,
-	}}, a.history[start:]...)...)
+	dropped := a.dropping(start, task)
+	a.forget(dropped...)
+	kept := []llm.Message{{Role: "user", Content: compactMessage + "\n" + summary}}
+	if task > 0 {
+		// the job in hand is kept word for word: a summary is for what happened, and a model
+		// working from a paraphrase of the request starts answering a question nobody asked
+		kept = append(kept, a.history[task])
+	}
+	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
 	return before - a.estimateTokens()
+}
+
+// dropping is what the summary replaces: everything before the kept calls except the message
+// compactCut picked out to survive in its own words.
+func (a *Agent) dropping(start, task int) []llm.Message {
+	if task <= 0 {
+		return a.history[1:start]
+	}
+	return append(append([]llm.Message{}, a.history[1:task]...), a.history[task+1:start]...)
 }
 
 // shrinkForCompaction shortens every old result but leaves the newest calls whole: those turns
@@ -63,8 +76,10 @@ func (a *Agent) canCompact() bool {
 }
 
 // compactCut picks where the kept part starts: the beginning of the second newest tool call, so a
-// call and its replies always move together. It also returns the transcript of what is being dropped.
-func (a *Agent) compactCut() (int, string) {
+// call and its replies always move together. It also picks the newest user message in the part being
+// folded away, which is kept for its wording rather than summarised.
+// The second value is the index of that message, or 0 when the folded part holds none.
+func (a *Agent) compactCut() (start, task int) {
 	var blocks []int
 	for i, m := range a.history {
 		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
@@ -72,13 +87,18 @@ func (a *Agent) compactCut() (int, string) {
 		}
 	}
 	if len(blocks) <= compactKeep {
-		return 0, ""
+		return 0, 0
 	}
-	start := blocks[len(blocks)-compactKeep]
+	start = blocks[len(blocks)-compactKeep]
 	if first := blocks[0]; first < 2 {
-		return 0, ""
+		return 0, 0
 	}
-	return start, a.transcriptOf(a.history[1:start])
+	for i := start - 1; i > 0; i-- {
+		if a.history[i].Role == "user" {
+			return start, i
+		}
+	}
+	return start, 0
 }
 
 // transcriptOf flattens messages into the text the summariser is asked about.

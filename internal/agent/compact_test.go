@@ -208,3 +208,50 @@ func TestCompactionWithoutASummaryStillKeepsTheNewestWriteWhole(t *testing.T) {
 		t.Error("the older writes are still carrying the whole file they wrote")
 	}
 }
+
+// The summary is for what happened, not for the words of the job in hand: a model that has to
+// work from a paraphrase of the request starts answering a question nobody asked.
+func TestCompactionKeepsTheWordingOfTheCurrentTask(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	ask := "rename helper1_0 to keepThisName and do not touch the other helpers"
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		sse("", "Goal: rename a helper. Files: three. Decisions: none. Next: edit", "", nil, "stop"),
+	}}
+	sink := &captureSink{decision: Allow}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), ask); err != nil {
+		t.Fatal(err)
+	}
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatalf("compaction freed %d tokens", freed)
+	}
+	var kept bool
+	for _, m := range a.history {
+		if m.Role == "user" && strings.Contains(m.Content, ask) {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Errorf("the task's own words were paraphrased away; history now reads:\n%s", historyText(a))
+	}
+}
+
+// historyText is a readable dump of the conversation, for failure messages.
+func historyText(a *Agent) string {
+	var b strings.Builder
+	for _, m := range a.history {
+		fmt.Fprintf(&b, "  %s: %s\n", m.Role, oneLine(m.Content, 80))
+	}
+	return b.String()
+}
