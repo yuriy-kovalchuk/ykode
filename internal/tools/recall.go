@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 // Recall hands back tool output that was shortened out of the conversation.
 type Recall struct {
 	scope
 	store  ResultStore
+	mu     sync.Mutex      // read-only calls can overlap, and this map decides what they are told
 	served map[string]bool // ids already handed over, so a second one costs a line
 }
 
@@ -53,10 +55,14 @@ func (t *Recall) Run(_ context.Context, args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	t.mu.Lock()
 	if t.served == nil {
 		t.served = map[string]bool{}
 	}
-	if t.served[in.ID] {
+	already := t.served[in.ID]
+	t.served[in.ID] = true
+	t.mu.Unlock()
+	if already {
 		return fmt.Sprintf("%s was already handed over whole; it has not changed since. work from what you have", in.ID), nil
 	}
 	t.served[in.ID] = true

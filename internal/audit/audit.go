@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,7 +41,8 @@ type Entry struct {
 
 // Logger appends entries for one run into one monthly file.
 type Logger struct {
-	dir     string // $YKODE_HOME/audit
+	mu      sync.Mutex // overlapping tool calls write one line each, never half a line
+	dir     string     // $YKODE_HOME/audit
 	session string
 }
 
@@ -57,6 +59,8 @@ func (l *Logger) Append(e Entry) error {
 	if l == nil {
 		return nil
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	e.Session = l.session
 	if e.Time.IsZero() {
 		e.Time = time.Now()

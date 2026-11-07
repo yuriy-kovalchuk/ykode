@@ -67,6 +67,11 @@ inside the root, absolute only for an approved outside path.
 (matches per file) and `mode="files_with_matches"` (names only). The two summaries
 cost a fraction of the tokens when the question is *where*, not *what*.
 
+When a turn asks for several reads at once, `find_files`, `search_text`, `read_file`
+and `recall` run at the same time and their replies still come back in the order the
+model asked for. Anything that changes something — a write, an edit, a command —
+still runs one at a time, in order.
+
 ## Context and cost
 
 Each turn's timing line reports the server's own prompt, cached and generated

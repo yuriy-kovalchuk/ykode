@@ -3,12 +3,14 @@ package cli
 import (
 	"encoding/json"
 	"io"
+	"sync"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
 // JSONWriter is a Sink that prints one JSON object per event, for scripts and the eval harness.
 type JSONWriter struct {
+	mu  sync.Mutex // read-only tools can run at once, and one line each must stay one line
 	enc *json.Encoder
 }
 
@@ -27,6 +29,8 @@ type jsonEvent struct {
 
 // Emit writes the event; a script has nobody to answer a Confirm, so it refuses.
 func (j *JSONWriter) Emit(ev agent.Event) agent.Decision {
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	rec := jsonEvent{Kind: ev.Kind.String(), Turn: ev.Turn, Tool: ev.Tool, Args: ev.Args, Text: ev.Text, Target: ev.Target}
 	if ev.Stats != (agent.Stats{}) {
 		rec.Stats = &ev.Stats

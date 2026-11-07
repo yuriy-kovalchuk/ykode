@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -23,10 +24,11 @@ const (
 type ReadFile struct {
 	scope
 	Lines  int             // window when the model omits limit; 0 means defaultReadLimit
+	mu     sync.Mutex      // read-only calls can overlap, and this map decides what they are told
 	served map[string]bool // windows already handed over, so a repeat costs one line
 }
 
-func (r ReadFile) window() int {
+func (r *ReadFile) window() int {
 	if r.Lines > 0 {
 		return r.Lines
 	}
@@ -178,6 +180,8 @@ func splitLines(data []byte) []string {
 
 // seen records a window of a file the model has been shown, and says whether this exact one went by before.
 func (t *ReadFile) seen(name string, data []byte, window string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.served == nil {
 		t.served = map[string]bool{}
 	}

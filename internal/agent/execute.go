@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
@@ -12,19 +13,61 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
+// readOnlyTools change nothing, so several of them in one turn can run at the same time.
+// Anything else (a write, an edit, a command) waits its turn and keeps the order the model asked for.
+var readOnlyTools = map[string]bool{"find_files": true, "search_text": true, "read_file": true, "recall": true}
+
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
-	for _, call := range calls {
-		a.callSeq++
-		id := fmt.Sprintf("r%d", a.callSeq)
-		a.add(llm.Message{
-			Role:       "tool",
-			Content:    a.runTool(ctx, call, id),
-			ToolCallID: call.ID,
-			Name:       call.Function.Name,
-			CallID:     id,
-		})
+	ids := a.nextCallIDs(len(calls)) // numbered in call order whether the work overlaps or not
+	if allReadOnly(calls) && len(calls) > 1 {
+		a.runAtOnce(ctx, calls, ids)
+		return
 	}
+	for i, call := range calls {
+		a.add(a.toolMessage(call, a.runTool(ctx, call, ids[i]), ids[i]))
+	}
+}
+
+// runAtOnce runs a batch of read-only calls together and keeps their replies in call order.
+func (a *Agent) runAtOnce(ctx context.Context, calls []llm.ToolCall, ids []string) {
+	results := make([]string, len(calls))
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		wg.Add(1)
+		go func(i int, call llm.ToolCall) {
+			defer wg.Done()
+			results[i] = a.runTool(ctx, call, ids[i])
+		}(i, call)
+	}
+	wg.Wait()
+	for i, call := range calls {
+		a.add(a.toolMessage(call, results[i], ids[i]))
+	}
+}
+
+func (a *Agent) toolMessage(call llm.ToolCall, content, id string) llm.Message {
+	return llm.Message{Role: "tool", Content: content, ToolCallID: call.ID, Name: call.Function.Name, CallID: id}
+}
+
+// allReadOnly says every call in the batch is a tool that changes nothing.
+func allReadOnly(calls []llm.ToolCall) bool {
+	for _, call := range calls {
+		if !readOnlyTools[call.Function.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+// nextCallIDs takes the next n result ids, the same r1, r2... the recall and audit log share.
+func (a *Agent) nextCallIDs(n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		a.callSeq++
+		ids[i] = fmt.Sprintf("r%d", a.callSeq)
+	}
+	return ids
 }
 
 // runTool never returns an error: whatever went wrong becomes result text the model can act on.

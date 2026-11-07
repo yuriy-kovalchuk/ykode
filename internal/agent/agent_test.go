@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -77,6 +78,7 @@ func sse(reasoning, content string, tool string, argsParts []string, finish stri
 // captureSink records what the renderer was given.
 // captureSink collects the event stream so tests can assert on what a consumer would see.
 type captureSink struct {
+	mu        sync.Mutex // tools can run at the same time, so the sink sees them concurrently
 	events    []Event
 	reasoning strings.Builder
 	content   strings.Builder
@@ -86,6 +88,8 @@ type captureSink struct {
 }
 
 func (c *captureSink) Emit(ev Event) Decision {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.events = append(c.events, ev)
 	switch ev.Kind {
 	case Thinking:
