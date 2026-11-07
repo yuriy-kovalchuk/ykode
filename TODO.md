@@ -17,7 +17,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 ## Order
 
 
-5. B12, B13, then the rest of the cleanup
+5. B13, then the rest of the cleanup
 6. Evals E1–E7, then F1 (new system prompt), then F2, F3
 
 ## Security
@@ -25,10 +25,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Bugs
 
-- **B12 · S · Secret masking leaks.** `secretRe`: `Authorization: Bearer x` masks only
-  `Bearer`, and quoted JSON keys, `--password x`, `sk-`/`ghp_`/`xox?-`/`AKIA` tokens and PEM
-  blocks pass through. → A list of patterns with a table test; plain words that contain
-  "key" stay readable.
 - **B13 · S · `/undo` destroys manual edits.** `internal/tools/undo.go` writes the old bytes
   back without checking the file and with `0644`. → Store the hash of what the tool wrote;
   refuse when the file differs (`/undo force` overrides); keep the file's mode.
