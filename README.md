@@ -100,7 +100,9 @@ stdout.
 
 `find_files`, `search_text`, `read_file`, `write_file`, `edit_file`,
 `exec_command`, and `recall` — which only appears once a result has actually been
-shortened, because a tool description costs tokens in every request.
+shortened, because a tool description costs tokens in every request. A whole result comes
+back once; after that `recall {"id":"r7","pattern":"FAIL"}` (or `offset` and `limit`)
+brings back one part of it, which is what keeps a second look cheap.
 `find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`
@@ -203,7 +205,7 @@ but not `go mod tidy`) for the rest of the run. The same entries in
 
 ```sh
 make install                      # builds and copies to ~/.local/bin
-make install INSTALL_DIR=/usr/local/bin
+make install PREFIX=/usr/local    # or INSTALL_DIR=... for the exact directory
 sh scripts/install.sh             # clone-and-build installer, same destination
 make uninstall                    # remove the binary; keeps ~/.ykode
 make uninstall PURGE=1            # also removes ~/.ykode

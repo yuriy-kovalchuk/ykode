@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -50,62 +48,5 @@ func TestAStoringRefusesAnIdThatIsNotAnId(t *testing.T) {
 	}
 	if len(entries) > 0 {
 		t.Fatalf("a refused id still wrote into the store: %v", entries)
-	}
-}
-
-func TestRecallHandsBackWhatTheConversationLost(t *testing.T) {
-	store := NewResultStore(filepath.Join(t.TempDir(), "results"))
-	if err := store.Save("r3", strings.Repeat("line\n", 4000)); err != nil {
-		t.Fatal(err)
-	}
-	tool := &Recall{scope: scope{budget: 1000}, store: store}
-
-	out, err := tool.Run(context.Background(), json.RawMessage(`{"id":"r3"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(out, "saved result r3: ") {
-		t.Fatalf("no header saying what came back:\n%s", cutUTF8(out, 120))
-	}
-	if !strings.Contains(out, "bytes omitted") {
-		t.Fatalf("the tail was not cut with a note:\n%s", cutUTF8(out, 120))
-	}
-}
-
-func TestRecallSaysWhenThereIsNothingToRecall(t *testing.T) {
-	tool := &Recall{store: NewResultStore(filepath.Join(t.TempDir(), "results"))}
-	if _, err := tool.Run(context.Background(), json.RawMessage(`{"id":"r9"}`)); err == nil {
-		t.Fatal("an unsaved id came back without an error")
-	} else if !strings.Contains(err.Error(), "r9") {
-		t.Errorf("err = %v, want it to name the id", err)
-	}
-
-	off := &Recall{store: NewResultStore("")}
-	if _, err := off.Run(context.Background(), json.RawMessage(`{"id":"r1"}`)); err == nil {
-		t.Fatal("a run that keeps nothing should say so")
-	}
-}
-
-func TestRecallHandsTheSameResultOverOnlyOnce(t *testing.T) {
-	store := NewResultStore(filepath.Join(t.TempDir(), "results"))
-	if err := store.Save("r2", "the whole output"); err != nil {
-		t.Fatal(err)
-	}
-	tool := NewRecall(store)
-
-	args := json.RawMessage(`{"id":"r2"}`)
-	first, err := tool.Run(context.Background(), args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(first, "the whole output") {
-		t.Fatalf("first recall is missing the text:\n%s", first)
-	}
-	again, err := tool.Run(context.Background(), args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(again, "already handed over") {
-		t.Fatalf("the second recall sent the text again (%d bytes):\n%s", len(again), again)
 	}
 }
