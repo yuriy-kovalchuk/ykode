@@ -163,3 +163,20 @@ func TestChatStreamWorksWithoutADeltaCallback(t *testing.T) {
 		t.Fatalf("content = %q, want the turn even with nobody watching the deltas", turn.Message.Content)
 	}
 }
+
+// a stream accepted without [DONE] or a finish reason says so, because a dropped connection looks the same
+func TestAStreamWithNoEndIsMarkedUnfinished(t *testing.T) {
+	c, _ := streamServer(t, frame(`{"choices":[{"delta":{"content":"half"}}]}`))
+	turn, _, err := collect(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !turn.Unfinished {
+		t.Error("a reply with no [DONE] and no finish reason was taken as complete")
+	}
+
+	c, _ = streamServer(t, frame(`{"choices":[{"delta":{"content":"whole"},"finish_reason":"stop"}]}`))
+	if turn, _, err = collect(t, c); err != nil || turn.Unfinished {
+		t.Errorf("a reply with a finish reason was marked unfinished (err %v)", err)
+	}
+}

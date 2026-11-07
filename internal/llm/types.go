@@ -114,6 +114,7 @@ type Turn struct {
 	Message      Message
 	FinishReason string // "stop", "tool_calls" or "length"
 	Timings      Timings
+	Unfinished   bool // the stream ended with no [DONE] and no finish reason: the reply may be cut short
 }
 
 // ModelInfo is one entry from GET /models.

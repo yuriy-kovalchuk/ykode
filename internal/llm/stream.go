@@ -21,6 +21,7 @@ func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error 
 	}
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	done := false
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if !bytes.HasPrefix(line, sseDataPrefix) {
@@ -28,6 +29,7 @@ func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error 
 		}
 		data := bytes.TrimSpace(line[len(sseDataPrefix):])
 		if bytes.Equal(data, sseDone) {
+			done = true
 			break
 		}
 		var chunk chatChunk
@@ -42,6 +44,7 @@ func readSSE(body io.Reader, acc *streamAccumulator, onDelta func(Delta)) error 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read stream: %w", err)
 	}
+	acc.done = done
 	return nil
 }
 
@@ -50,6 +53,7 @@ type streamAccumulator struct {
 	content   strings.Builder
 	reasoning strings.Builder
 	finish    string
+	done      bool // the server sent [DONE]
 	timings   Timings
 	calls     map[int]*callAccumulator
 	order     []int
@@ -98,6 +102,7 @@ func (a *streamAccumulator) turn() Turn {
 		},
 		FinishReason: a.finish,
 		Timings:      a.timings,
+		Unfinished:   !a.done && a.finish == "",
 	}
 	for _, index := range a.order {
 		turn.Message.ToolCalls = append(turn.Message.ToolCalls, a.calls[index].call())
