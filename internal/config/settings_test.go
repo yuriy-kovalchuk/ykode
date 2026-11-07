@@ -127,3 +127,26 @@ func TestABrokenSettingsFileNamesItself(t *testing.T) {
 		t.Fatalf("Load() error = %v, want the bad duration named", err)
 	}
 }
+
+func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
+	homeDir := fakeHome(t)
+	write := func(path, text string) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(homeDir, "settings.json"), `{"permissions":{"allow":["edit_file","exec:go test"]}}`)
+	write(filepath.Join(homeDir, "project", ".ykode", "settings.json"), `{"permissions":{"allow":["exec:make"]}}`)
+
+	cfg, err := Load([]string{"--root", filepath.Join(homeDir, "project")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(cfg.Allow, ",")
+	if !strings.Contains(got, "edit_file") || !strings.Contains(got, "exec:go test") || !strings.Contains(got, "exec:make") {
+		t.Errorf("allow list = %q, want both files' entries", got)
+	}
+}

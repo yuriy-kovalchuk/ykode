@@ -66,10 +66,7 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 		if v.confirm == nil {
 			return agent.Refuse
 		}
-		if v.confirm.Ask(ev.Text) {
-			return agent.Allow
-		}
-		return agent.Refuse
+		return v.confirm.Ask(ev.Text)
 	}
 	return agent.Allow
 }

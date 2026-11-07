@@ -133,6 +133,7 @@ func run() error {
 		Store:         store,
 		Audit:         audit.New(cfg.AuditDir, cfg.Session),
 		Session:       session.New(cfg.SessionDir, cfg.Session),
+		Allow:         cfg.Allow,
 		Root:          cfg.Root,
 	}, view)
 

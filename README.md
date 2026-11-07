@@ -109,8 +109,18 @@ conversation bigger than the window sheds its oldest turns and keeps the newest.
 
 File tools go through a single `*os.Root` opened at `--root`. A path outside it
 is possible but asked about, per call, showing the resolved absolute path —
-`--yes` does not skip that. `exec_command` runs `sh -c` in the root with a minimal
-environment (`PATH`, `HOME`, `TERM`, `LANG`) rather than inheriting ykode's.
+`--yes` does not skip that, and neither does an "always". `exec_command` runs
+`sh -c` in the root with a minimal environment (`PATH`, `HOME`, `TERM`, `LANG`)
+rather than inheriting ykode's.
+
+A confirmation is `[y/N/a]`. `a` means yes, and stop asking about **that tool**
+(`edit_file`) or **that command prefix** (`exec:go test` covers `go test ./...`
+but not `go mod tidy`) for the rest of the run. The same entries in
+`settings.json` are allowed from the start:
+
+```json
+{ "permissions": { "allow": ["edit_file", "exec:go test"] } }
+```
 
 ## Install
 

@@ -32,6 +32,7 @@ type Options struct {
 	Audit         *audit.Logger     // append-only record of every tool call; nil turns it off
 	Session       *session.Log      // append-only copy of the conversation, for --continue
 	Root          string            // the project root, recorded with every call
+	Allow         []string          // what never to ask about: a tool name, or "exec:go test"
 }
 
 // Stats summarises one model round-trip for the user.
@@ -50,12 +51,13 @@ type Agent struct {
 	model         string
 	opts          Options
 	sink          Sink
-	shortened     bool // a tool result has been shortened, so recall is worth describing
-	callSeq       int  // numbers the r1, r2... ids that recall and the audit log share
-	compacted     bool // the older turns were folded into a summary once already
-	auditBroken   bool // the audit log failed once: say so once, not per call
-	sessionBroken bool // the session log failed once: say so once, not per message
-	turn          int  // the round-trip currently running, carried on every event
+	shortened     bool         // a tool result has been shortened, so recall is worth describing
+	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
+	compacted     bool         // the older turns were folded into a summary once already
+	auditBroken   bool         // the audit log failed once: say so once, not per call
+	perms         *permissions // what the user has already agreed to keep allowing
+	sessionBroken bool         // the session log failed once: say so once, not per message
+	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	meter         meter
 }
@@ -66,6 +68,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
 	a.meter = newMeter()
+	a.perms = newPermissions(opts.Allow)
 	a.Reset()
 	return a
 }

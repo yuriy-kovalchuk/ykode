@@ -54,14 +54,23 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	if a.opts.AssumeYes && tool.NeedsConfirm() {
 		decision = "yes_flag"
 	}
-	// outside-root access is asked about even under --yes, which only skips routine confirmations
-	if (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0 {
+	asked := (tool.NeedsConfirm() && !a.opts.AssumeYes) || len(outside) > 0
+	// an "always" from earlier in this run, or an entry from settings.json, answers for us
+	if asked && !(len(outside) > 0) && a.perms.allows(name, string(args)) {
+		asked, decision = false, "allowlist"
+	}
+	// outside-root access is asked about even under --yes, and an "always" never covers it
+	if asked {
 		verdict := a.emit(Event{Kind: Confirm, Tool: name, Args: argsText, Text: describe(name, argsText, outside), Target: outside})
 		if verdict == Refuse {
 			a.record(id, name, argsText, targets, outside, "user_no", "refused", "", tools.Detail{}, start)
 			return a.failTool(name, "the user refused this tool call")
 		}
 		decision = "user_yes"
+		if verdict == AllowAlways {
+			a.perms.add(name, string(args))
+			decision = "allowlist"
+		}
 	}
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)

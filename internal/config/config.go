@@ -53,6 +53,7 @@ type Config struct {
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
 	Audit           bool            // print what the last run did and exit
+	Allow           []string        // never ask about these: a tool name, or "exec:go test"
 	Continue        string          // resume a saved conversation: "last" or its id
 	SessionDir      string          // where conversations are saved
 	SessionFile     string          // the conversation this run reads and writes

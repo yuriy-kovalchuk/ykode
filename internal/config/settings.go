@@ -31,6 +31,9 @@ type fileSettings struct {
 		CommandLogDir   *string `json:"command_log_dir"`
 		KeepCommandLogs *string `json:"keep_command_logs"`
 	} `json:"tools"`
+	Permissions struct {
+		Allow []string `json:"allow"`
+	} `json:"permissions"`
 	Models map[string]struct {
 		SendReasoning *bool `json:"send_reasoning"`
 	} `json:"models"`
@@ -88,6 +91,9 @@ func (c *Config) applyFile(path string) error {
 			return fmt.Errorf("%s: keep_command_logs %q is not a duration like \"24h\"", path, *s.Tools.KeepCommandLogs)
 		}
 		c.KeepCommandLogs = d
+	}
+	if len(s.Permissions.Allow) > 0 {
+		c.Allow = append(c.Allow, s.Permissions.Allow...)
 	}
 	for model, ms := range s.Models {
 		c.modelReasoning[model] = ms.SendReasoning != nil && *ms.SendReasoning

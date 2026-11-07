@@ -57,6 +57,7 @@ type Decision int
 const (
 	Refuse Decision = iota
 	Allow
+	AllowAlways // yes, and remember it: the same tool or command prefix goes unasked from now on
 )
 
 // Sink receives every event of a run; the agent prints nothing itself. Its reply is used for Confirm only.
