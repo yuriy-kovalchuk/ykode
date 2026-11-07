@@ -39,6 +39,17 @@ func (t *transcript) sawDiff() bool {
 	return false
 }
 
+// countTool is how often a tool ran, which is what tells a re-read from a recall.
+func (t *transcript) countTool(name string) int {
+	n := 0
+	for _, tool := range t.tools {
+		if tool == name {
+			n++
+		}
+	}
+	return n
+}
+
 func (t *transcript) ranTool(name string) bool {
 	for _, tool := range t.tools {
 		if tool == name {
@@ -156,7 +167,13 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 	defer root.Close()
 
 	store := tools.NewResultStore(filepath.Join(base, "results"))
-	resultBytes := tools.ResultBytesFor(model.CtxSize)
+	// a task can ask for a smaller window than the server offers, which is how the pressure
+	// paths (shortening, recall) get exercised at all
+	ctxSize := model.CtxSize
+	if t.ctx > 0 {
+		ctxSize = t.ctx
+	}
+	resultBytes := tools.ResultBytesFor(ctxSize)
 	instructions, _ := agent.LoadInstructions("", project)
 	rec := newRecorder()
 	maxTurns := t.maxTurns
@@ -166,7 +183,7 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 	a := agent.New(client, registryFor(root, project, cfg, resultBytes), model.ID, agent.Options{
 		MaxTurns:     maxTurns,
 		MaxTokens:    cfg.MaxTokens,
-		CtxSize:      model.CtxSize,
+		CtxSize:      ctxSize,
 		Think:        cfg.Think,
 		AssumeYes:    true, // the harness has nobody to ask, so in-project work runs and outside work is refused
 		Instructions: instructions,

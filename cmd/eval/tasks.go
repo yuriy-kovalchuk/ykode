@@ -13,6 +13,7 @@ type task struct {
 	fixture  map[string]string
 	outside  map[string]string // files one level above the project, meant to be unreachable
 	maxTurns int
+	ctx      int // window to pretend the server has, to put a run under context pressure
 	check    func(project string, ran *transcript, askErr error) (bool, string)
 }
 
@@ -200,6 +201,33 @@ func main() { fmt.Println("hello") }
 			},
 		},
 		{
+			// what this measures, rather than judges: once an old result has been shortened,
+			// does the model call recall for it or read the file again?
+			name:   "get-the-old-result-back",
+			prompt: "read src/big.go until you find helper180, then read src/a.go, src/b.go and src/c.go, and say in one line what helper180 returns",
+			fixture: map[string]string{
+				"src/big.go": bigGo(220),
+				"src/a.go":   "package src\n\nconst aValue = 1\n",
+				"src/b.go":   "package src\n\nconst bValue = 2\n",
+				"src/c.go":   "package src\n\nconst cValue = 3\n",
+			},
+			ctx:      4000, // small enough that the first big read is shortened by the next turns
+			maxTurns: 8,
+			check: func(_ string, ran *transcript, _ error) (bool, string) {
+				if !ran.contains("180") {
+					return false, "lost the answer that was in its first read: " + quote(ran.answer)
+				}
+				route := "answered from what it still had"
+				switch {
+				case ran.ranTool("recall"):
+					route = "recall"
+				case ran.countTool("read_file") > 1:
+					route = fmt.Sprintf("read the file again (%d reads)", ran.countTool("read_file"))
+				}
+				return true, route
+			},
+		},
+		{
 			name:   "two-changes-one-file",
 			prompt: "set maxRetries to 5 and timeout to 45 in src/config.go",
 			fixture: map[string]string{"src/config.go": `package src
@@ -218,6 +246,16 @@ const (
 			},
 		},
 	}
+}
+
+// bigGo is a file long enough that a read of it is worth shortening once other turns arrive.
+func bigGo(functions int) string {
+	var b strings.Builder
+	b.WriteString("package src\n\nfunc helperZero() int { return 0 }\n\n")
+	for i := 1; i <= functions; i++ {
+		fmt.Fprintf(&b, "func helper%d() int { return %d } // a line of padding to make this file worth cutting\n", i, i)
+	}
+	return b.String()
 }
 
 func goMain(adder string) map[string]string {
