@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -325,5 +326,36 @@ func TestChatStreamTakesAsLongAsItNeedsBetweenChunks(t *testing.T) {
 	}
 	if turn.Message.Content != "xxxx" {
 		t.Fatalf("content = %q", turn.Message.Content)
+	}
+}
+
+func TestTheWireNeverCarriesYkodeOwnResultIds(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	if _, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{
+		Messages: []Message{{Role: "tool", Name: "read_file", ToolCallID: "c1", CallID: "r1", Content: "the text"}},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var sent struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Messages) != 1 {
+		t.Fatalf("the request carried %d messages", len(sent.Messages))
+	}
+	if _, ok := sent.Messages[0]["call_id"]; ok {
+		t.Errorf("ykode's own result id went to the server: %s", body)
+	}
+	if _, ok := sent.Messages[0]["tool_call_id"]; !ok {
+		t.Errorf("the server's own id went missing from the request: %s", body)
 	}
 }

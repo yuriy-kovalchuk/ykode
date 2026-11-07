@@ -14,7 +14,7 @@ type Message struct {
 	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID    string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
 	Name          string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
-	CallID        string     `json:"-"`                      // ykode's own id for this result: r1, r2, ...
+	CallID        string     `json:"call_id,omitempty"`      // ykode's own id for this result: r1, r2, ...
 	Reasoning     string     `json:"-"`
 	WireReasoning string     `json:"reasoning_content,omitempty"` // only sent when SendReasoning is on
 }
@@ -182,4 +182,16 @@ func preview(s string) string {
 		return s[:120] + "..."
 	}
 	return s
+}
+
+// offTheWire is a conversation as the server should see it: r1, r2... are ykode's own ids for a
+// tool result, kept in the session file so recall can still name one after a resume, and a chat
+// API that has never heard of them should not be sent them.
+func offTheWire(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	for i, m := range messages {
+		m.CallID = ""
+		out[i] = m
+	}
+	return out
 }

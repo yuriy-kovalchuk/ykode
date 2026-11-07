@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-4. B4 + B5 + B6 together (resume and the result store share the cause)
+4. B5 + B6 (the result store and the session share the cause)
 5. B8, B9, B12, B13, then the rest of the cleanup
 6. Evals E1–E7, then F1 (new system prompt), then F2, F3
 
@@ -25,9 +25,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Bugs
 
-- **B4 · XS · `CallID` is lost on resume.** `json:"-"` (`internal/llm/types.go`) keeps it
-  out of the session file, so resumed results are blanked without `recall`. → Persist it in
-  the session only, never on the wire.
 - **B5 · S · A resumed run restarts at r1.** `Resume` leaves `callSeq` at 0, and
   `ResultStore.Save` overwrites, so `recall r3` can return another command's output.
   → Set `callSeq` to the highest `rN` in the history (needs B4); save with `O_EXCL`.

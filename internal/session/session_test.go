@@ -112,3 +112,35 @@ func TestASessionWithNoIDWritesNothing(t *testing.T) {
 		t.Errorf("nothing should exist in %s: %v", dir, entries)
 	}
 }
+
+// The result ids are how recall names a saved result, so a resumed conversation has to keep them:
+// without them every old result is blanked for good.
+func TestASavedConversationKeepsItsResultIds(t *testing.T) {
+	dir := t.TempDir()
+	log := New(dir, "s20260101-000000")
+	messages := []llm.Message{
+		{Role: "user", Content: "read it"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID:       "c1",
+			Type:     "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.txt"}`)},
+		}}},
+		{Role: "tool", Name: "read_file", ToolCallID: "c1", CallID: "r1", Content: "the text"},
+	}
+	for _, m := range messages {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := Load(filepath.Join(dir, "s20260101-000000.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("loaded %d messages", len(got))
+	}
+	if got[2].CallID != "r1" {
+		t.Errorf("the result id did not survive the session file: %+v", got[2])
+	}
+}

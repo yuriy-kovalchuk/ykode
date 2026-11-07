@@ -126,6 +126,7 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(Delta)) (Turn, error) {
 	var empty Turn
 	body.Stream = true
+	body.Messages = offTheWire(body.Messages)
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return empty, fmt.Errorf("encode request: %w", err)
