@@ -139,7 +139,9 @@ already used. In order, cheapest first:
    was, how big it was, how it began — and the full text is kept in
    `~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
    newest results are never shortened, and a `read_file` of a window the model
-   already has, of a file that has not changed, comes back as one line.
+   already has, of a file that has not changed, comes back as one line. That
+   pointer lasts only while the text is still in front of the model: once a result
+   has been shortened, trimmed or dropped away, the same read sends the text again.
    An old `read_file` is the exception: it is replaced by a pointer to read the range
    again, never stored for `recall`, because the file on disk is the source of truth and
    a stored copy goes stale the moment the model edits it.

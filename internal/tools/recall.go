@@ -107,6 +107,21 @@ func (t *Recall) Run(_ context.Context, args json.RawMessage) (string, error) {
 	return header + FormatResult(text, t.aim()-len(header)), nil
 }
 
+// Forget drops one result from the memory of what was handed over whole, so a summary that aged
+// out of the conversation can be recalled again.
+func (t *Recall) Forget(shown Shown) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.served, shown.CallID)
+}
+
+// ForgetAll empties the memory, which is what a reset does to the conversation.
+func (t *Recall) ForgetAll() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.served = map[string]bool{}
+}
+
 // part answers with a slice of a stored result, which is what keeps a recall cheap.
 func (t *Recall) part(id, text string, in recallInput) (string, error) {
 	// a file ends with a newline; that is not an extra empty line to count

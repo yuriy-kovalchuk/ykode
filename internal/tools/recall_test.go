@@ -168,3 +168,35 @@ func TestRecallComplainsAboutAPatternItCannotUse(t *testing.T) {
 		t.Errorf("a pattern with no match: %v", err)
 	}
 }
+
+func TestAForgottenResultIsHandedOverWholeAgain(t *testing.T) {
+	dir := t.TempDir()
+	store := NewResultStore(filepath.Join(dir, "results"))
+	if err := store.Save("r3", "the text that the conversation lost\n"); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewRecall(store)
+	args := json.RawMessage(`{"id":"r3"}`)
+	ctx := context.Background()
+
+	first, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second, "already handed over") {
+		t.Fatalf("the second recall came back as: %q", second)
+	}
+
+	tool.Forget(Shown{CallID: "r3", Text: first})
+	after, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after, "already handed over") {
+		t.Errorf("a forgotten recall stayed refused: %q", after)
+	}
+}

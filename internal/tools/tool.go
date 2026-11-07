@@ -3,6 +3,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,6 +68,26 @@ type Detail struct {
 	TimedOut bool   // for a command: it was killed for taking too long
 	Diff     string // for a change: what it did to the file
 	LogPath  string // where the full output went when the result was cut
+}
+
+// Shown is one result a tool handed the model: the call it answered and the text it was given.
+type Shown struct {
+	CallID string // the run's result id, e.g. r7
+	Text   string
+}
+
+// Forgetter is a tool that remembers what it already showed the model, so a repeat costs one line
+// instead of the whole text again. The agent says when the conversation stops holding that text -
+// shortened, trimmed, dropped, or reset - and then the next ask must bring the text back.
+type Forgetter interface {
+	Forget(shown Shown)
+	ForgetAll()
+}
+
+// resultKey fingerprints a result, which is what a tool keys its memory of showing it on.
+func resultKey(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 // Detailed is a tool that keeps a little structure about the result it just returned, for the

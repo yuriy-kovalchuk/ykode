@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-2. B1, B10
+2. B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
 5. B8, B9, B12, B13, then the rest of the cleanup
@@ -35,11 +35,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Bugs
 
-- **B1 · M · The "already read" answers outlive the text.** `ReadFile.served`
-  (`internal/tools/read_file.go`) and `Recall.served` are never cleared. After a shrink, a
-  trim, compaction or `/reset`, a re-read gets one line instead of text the model no longer
-  has. → Add `Forget(ids)` / `ForgetAll()` to both, called wherever the history drops or
-  replaces results. Test: read, shrink, read → full text.
 - **B4 · XS · `CallID` is lost on resume.** `json:"-"` (`internal/llm/types.go`) keeps it
   out of the session file, so resumed results are blanked without `recall`. → Persist it in
   the session only, never on the wire.

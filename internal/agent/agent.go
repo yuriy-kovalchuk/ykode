@@ -83,7 +83,40 @@ func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
 	a.compacted = false
+	a.forgetAll() // the tools forget what they handed over too: there is nothing in front of the model
 	a.publishUsage()
+}
+
+// forget tells the tools that these results are no longer in front of the model, so their memory
+// of having shown them must go with them: the next ask brings the text back, not a pointer to it.
+func (a *Agent) forget(messages ...llm.Message) {
+	if a.tools == nil {
+		return
+	}
+	for _, m := range messages {
+		if m.Role != "tool" {
+			continue
+		}
+		tool, ok := a.tools.Get(m.Name)
+		if !ok {
+			continue
+		}
+		if f, ok := tool.(tools.Forgetter); ok {
+			f.Forget(tools.Shown{CallID: m.CallID, Text: m.Content})
+		}
+	}
+}
+
+// forgetAll clears every tool's memory, which is what a reset does to the conversation.
+func (a *Agent) forgetAll() {
+	if a.tools == nil {
+		return
+	}
+	for _, tool := range a.tools.All() {
+		if f, ok := tool.(tools.Forgetter); ok {
+			f.ForgetAll()
+		}
+	}
 }
 
 const verifyNote = "You answered without calling any tool. If your answer depends on this project's files, verify it now with find_files, search_text or read_file, then answer again."

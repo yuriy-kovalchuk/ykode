@@ -3,14 +3,11 @@ package tools
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -117,10 +114,11 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		return "(empty file)", nil
 	}
 	if in.Outline {
-		if t.seen(h.name, data, "outline") {
+		outline := fmt.Sprintf("%s: %d lines\n%s", h.shown(), len(lines), outlineText(h.name, lines))
+		if t.alreadyShown(outline) {
 			return fmt.Sprintf("%s: you already have this outline of %d lines and the file has not changed; read a range or search_text for a line", h.shown(), len(lines)), nil
 		}
-		return fmt.Sprintf("%s: %d lines\n%s", h.shown(), len(lines), outlineText(h.name, lines)), nil
+		return outline, nil
 	}
 	first := in.Offset
 	if first < 1 {
@@ -132,11 +130,6 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	last := first - 1 + clampLimit(in.Limit, t.window(), maxReadLimit)
 	if last > len(lines) {
 		last = len(lines)
-	}
-
-	if t.seen(h.name, data, strconv.Itoa(first)+"-"+strconv.Itoa(last)) {
-		return fmt.Sprintf("%s: unchanged since you read lines %d-%d; that window is already in front of you, so read another range or search_text for a line",
-			h.shown(), first, last), nil
 	}
 
 	var b strings.Builder
@@ -162,7 +155,12 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		}
 		fmt.Fprintf(&b, "\n[%d of %d lines shown (%s); continue with offset=%d]\n", shown-first+1, len(lines), reason, shown+1)
 	}
-	return b.String(), nil
+	text := b.String()
+	if t.alreadyShown(text) {
+		return fmt.Sprintf("%s: unchanged since you read lines %d-%d; that window is already in front of you, so read another range or search_text for a line",
+			h.shown(), first, last), nil
+	}
+	return text, nil
 }
 
 // splitLines drops the empty element a trailing newline gives and CRLF's \r, matching edit_file's text.
@@ -178,18 +176,33 @@ func splitLines(data []byte) []string {
 	return parts
 }
 
-// seen records a window of a file the model has been shown, and says whether this exact one went by before.
-func (t *ReadFile) seen(name string, data []byte, window string) bool {
+// alreadyShown records one result and says whether that exact text went to the model before. The
+// text is the key, so a different window, an edited file or a different cut is a different result.
+func (t *ReadFile) alreadyShown(text string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.served == nil {
 		t.served = map[string]bool{}
 	}
-	sum := sha256.Sum256(data)
-	key := name + "|" + hex.EncodeToString(sum[:8]) + "|" + window
+	key := resultKey(text)
 	if t.served[key] {
 		return true
 	}
 	t.served[key] = true
 	return false
+}
+
+// Forget drops one result from the memory: the conversation no longer holds that text, so reading
+// the same window again has to bring the text back rather than a pointer to it.
+func (t *ReadFile) Forget(shown Shown) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.served, resultKey(shown.Text))
+}
+
+// ForgetAll empties the memory, which is what a reset does to the conversation.
+func (t *ReadFile) ForgetAll() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.served = map[string]bool{}
 }

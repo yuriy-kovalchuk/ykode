@@ -248,3 +248,50 @@ func TestAnOutlineIsNotSentTwice(t *testing.T) {
 		t.Fatalf("the second outline came back in full:\n%s", again)
 	}
 }
+
+func TestAReReadOfAForgottenResultBringsTheTextBack(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"a.txt": "one\ntwo\nthree\n"})
+	tool := NewReadFile(root, dir)
+	args := json.RawMessage(`{"path":"a.txt","limit":2}`)
+	ctx := context.Background()
+
+	first, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second, "unchanged since you read") {
+		t.Fatalf("the second read did not point at the first: %q", second)
+	}
+
+	tool.Forget(Shown{CallID: "r1", Text: first})
+	after, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(after, "one") {
+		t.Errorf("a forgotten read came back as: %q", after)
+	}
+}
+
+func TestAResetClearsWhatTheReaderRemembers(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"a.txt": "one\ntwo\nthree\n"})
+	tool := NewReadFile(root, dir)
+	args := json.RawMessage(`{"path":"a.txt","limit":2}`)
+	ctx := context.Background()
+
+	if _, err := tool.Run(ctx, args); err != nil {
+		t.Fatal(err)
+	}
+	tool.ForgetAll()
+	after, err := tool.Run(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after, "unchanged since you read") {
+		t.Errorf("after a reset the reader still pointed at a window the conversation lost: %q", after)
+	}
+}

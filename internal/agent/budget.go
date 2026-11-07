@@ -99,6 +99,7 @@ func (a *Agent) trimHistory() {
 	target := a.opts.CtxSize / 2
 	for i := 1; i < len(a.history) && a.estimateTokens() > target; i++ {
 		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 {
+			a.forget(*m)
 			m.Content = trimMarker
 			a.tell("trimmed an old tool result to fit the context")
 		}
@@ -134,6 +135,7 @@ func (a *Agent) dropOldestToolCall() bool {
 	if end-i-1 < len(a.history[i].ToolCalls) {
 		return false // a call whose replies are still owed must stay: the API pairs them
 	}
+	a.forget(a.history[i:end]...)
 	a.history = append(a.history[:i], a.history[end:]...)
 	return true
 }

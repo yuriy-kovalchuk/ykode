@@ -382,3 +382,40 @@ func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
 		t.Errorf("a file read was stored for recall: %v", err)
 	}
 }
+
+func TestAReReadAfterShorteningBringsTheTextBack(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	dir := t.TempDir()
+	name := writeLines(t, dir, "big.txt", 40)
+	a, done := newStoringAgent(t, stub, Options{CtxSize: 8000}, &captureSink{}, dir)
+	defer done()
+
+	reader, ok := a.tools.Get("read_file")
+	if !ok {
+		t.Fatal("the registry has no read_file")
+	}
+	args := json.RawMessage(`{"path":"` + name + `"}`)
+	first, err := reader.Run(context.Background(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.history = append(a.history,
+		llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID:       "call1",
+			Type:     "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: args},
+		}}},
+		llm.Message{Role: "tool", Name: "read_file", ToolCallID: "call1", CallID: "r1", Content: first},
+	)
+	if freed := a.shrinkOldResults(0); freed == 0 {
+		t.Fatal("the read was not shortened, so there was nothing to test")
+	}
+
+	again, err := reader.Run(context.Background(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(again, "unchanged since you read") {
+		t.Errorf("the text was shortened out of the conversation and the tool still refused to send it: %q", again)
+	}
+}

@@ -36,6 +36,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 		a.trimHistory()
 		return before - a.estimateTokens()
 	}
+	a.forget(a.history[1:start]...)
 	a.history = append(a.history[:1], append([]llm.Message{{
 		Role:    "user",
 		Content: compactMessage + "\n" + summary,
