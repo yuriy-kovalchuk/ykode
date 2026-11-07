@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ctxSafetyTok   = 256 // slack for chat-template overhead
+	ctxSafetyTok   = 256 // the least to leave free when the caller named no margin
 	minResponseTok = 64  // a response budget smaller than this is useless
 	trimMarker     = "(older tool output trimmed to fit the server context)"
 )
@@ -42,7 +42,8 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 			return llm.ChatRequest{}, fmt.Errorf(
 				"conversation is about %d tokens but the server context is %d; use /reset or raise --ctx", used, a.opts.CtxSize)
 		}
-		if room < req.MaxTokens {
+		// no cap asked for: the room the window has left is the cap, so a reply cannot run past the prompt
+		if req.MaxTokens == 0 || room < req.MaxTokens {
 			req.MaxTokens = room
 		}
 	}

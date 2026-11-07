@@ -41,6 +41,9 @@ after each item.
   window can still cut a reply. Tests: 0 omits the field; an over-large value clamps to the room; a cut
   call is never run. Benchmark note: until T1–T3 land, the pi columns are not like-for-like — pi had a
   real thinking budget and effectively no output ceiling.
+  → **done**: the default is no cap (`max_tokens: 0`); a known window clamps every reply to
+  `ctx − used − margin`, and `defaultSafety` went 256 → 4096 so an uncapped reply has room for a whole
+  answer. With no cap and no known window the field is omitted. `internal/agent/budget_test.go` pins both.
 - **T2 · S · Thinking gets its own budget.** ykode's only control is thinking on/off (`--no-think`);
   reasoning arrives in the same response (`internal/llm/types.go:18`) and shares `max_tokens`.
   llama-server takes `thinking_budget_tokens` per request (alias `reasoning_budget_tokens`) — checked on
@@ -63,6 +66,10 @@ after each item.
   unexpected end of JSON input` (enriched task-11 run, turn 4). The agent refuses to run the call
   (`internal/agent/agent.go:182-188`) but appends the message with truncated raw arguments anyway. Record
   cut-off arguments as text; test that a truncated call survives both recording and replay.
+  → **done**: `storable()` (`internal/agent/repair.go`) replaces a cut call's arguments with `{}` on the
+  copy that goes into history and the session log, before either encoder sees the broken bytes; the
+  original still reaches `toolCallsRunnable`, so a cut call is still never run. Pinned by
+  `TestACutOffToolCallIsStillSaved`.
 
 V1 and V2 are done: Flash-Next on Strata follows "verify once" every time, Qwen3.6 on CUDA only
 sometimes (BASELINE.md rounds 3–4). V3 and V4 do not depend on the model obeying.

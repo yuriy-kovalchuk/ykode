@@ -20,15 +20,14 @@ import (
 const (
 	defaultBaseURL     = "http://127.0.0.1:8080/v1"
 	defaultMaxTurns    = 25
-	defaultMaxTokens   = 4096
 	defaultReadLines   = 150
 	defaultSearchLimit = 50
 	defaultExecTimeout = 60 * time.Second
 	defaultStreamIdle  = 2 * time.Minute // silence before a stream counts as dead; a cold prompt may need more
 	defaultLogKeep     = 24 * time.Hour
-	defaultSessionKeep = 30 * 24 * time.Hour  // a conversation, and the results recall can still name
-	defaultAuditKeep   = 180 * 24 * time.Hour // six months of tool calls
-	defaultSafety      = 256
+	defaultSessionKeep = 30 * 24 * time.Hour   // a conversation, and the results recall can still name
+	defaultAuditKeep   = 180 * 24 * time.Hour  // six months of tool calls
+	defaultSafety      = 4096                  // room left free for one reply when no cap was asked for
 	sessionStamp       = "20060102-150405.000" // milliseconds, so two runs started together do not share one
 )
 
@@ -39,7 +38,7 @@ type Config struct {
 	Model           string // empty means "whatever the server lists first"
 	Root            string // absolute project root
 	MaxTurns        int
-	MaxTokens       int // cap on one model response
+	MaxTokens       int // tokens per model response; 0 asks for no cap and leaves it to the window
 	CtxSize         int // server context window; 0 = read it from the server
 	SafetyMargin    int // tokens kept free for the reply
 	Think           bool
@@ -111,7 +110,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.Model, "model", "", "model id; default is the first from /models ($LOCAL_LLM_MODEL)")
 	fs.StringVar(&f.Root, "root", ".", "project root; every file tool is confined to it")
 	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request (default 25)")
-	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "max tokens per model response (default 4096)")
+	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "tokens per model response; 0 leaves the reply the room the window has left (default)")
 	fs.IntVar(&f.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
 	fs.BoolVar(&f.NoThink, "no-think", false, "skip the model's thinking phase")
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
@@ -149,7 +148,7 @@ func defaults() Config {
 	return Config{
 		BaseURL:         defaultBaseURL,
 		MaxTurns:        defaultMaxTurns,
-		MaxTokens:       defaultMaxTokens,
+		MaxTokens:       0, // no cap: the context window decides
 		SafetyMargin:    defaultSafety,
 		Think:           true,
 		ReadLines:       defaultReadLines,
@@ -216,8 +215,8 @@ func (c *Config) normalize() error {
 	if c.MaxTurns < 1 {
 		return fmt.Errorf("--max-turns must be at least 1, got %d", c.MaxTurns)
 	}
-	if c.MaxTokens < 1 {
-		return fmt.Errorf("--max-tokens must be at least 1, got %d", c.MaxTokens)
+	if c.MaxTokens < 0 {
+		return fmt.Errorf("--max-tokens must be 0 (no cap) or a positive token count, got %d", c.MaxTokens)
 	}
 	if c.TUI && (c.JSON || c.Prompt != "") {
 		return fmt.Errorf("--tui draws the session; --json and -p write to stdout instead: pick one")

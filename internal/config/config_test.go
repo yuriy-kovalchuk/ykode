@@ -40,7 +40,7 @@ func TestLoadDefaults(t *testing.T) {
 		BaseURL:         defaultBaseURL,
 		Root:            cwd,
 		MaxTurns:        defaultMaxTurns,
-		MaxTokens:       defaultMaxTokens,
+		MaxTokens:       0, // no cap: the window decides
 		SafetyMargin:    defaultSafety,
 		Think:           true,
 		ReadLines:       defaultReadLines,
@@ -100,6 +100,17 @@ func TestLoadFlagsOverrideEnv(t *testing.T) {
 	}
 }
 
+// a cap of zero is the default and means the window decides where a reply ends
+func TestZeroMaxTokensMeansNoCap(t *testing.T) {
+	cfg, err := Load([]string{"--root", t.TempDir(), "--max-tokens", "0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTokens != 0 {
+		t.Errorf("max_tokens = %d, want no cap", cfg.MaxTokens)
+	}
+}
+
 func TestLoadEnvFallbacks(t *testing.T) {
 	t.Setenv("LOCAL_LLM_URL", "http://env-url/v1")
 	t.Setenv("LOCAL_LLM_MODEL", "env-model")
@@ -152,7 +163,7 @@ func TestLoadRejectsBadSettings(t *testing.T) {
 		want string
 	}{
 		{"no turns", []string{"--max-turns", "0"}, "--max-turns must be at least 1"},
-		{"no tokens", []string{"--max-tokens", "-1"}, "--max-tokens must be at least 1"},
+		{"negative cap", []string{"--max-tokens", "-1"}, "--max-tokens must be 0 (no cap)"},
 		{"negative ctx", []string{"--ctx", "-5"}, "--ctx must be 0 (auto) or a positive token count"},
 		{"missing root", []string{"--root", filepath.Join(t.TempDir(), "nope")}, "nope"},
 		{"root is a file", []string{"--root", file}, "not a directory"},

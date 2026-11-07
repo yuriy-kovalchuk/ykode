@@ -32,7 +32,7 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--model` | `LOCAL_LLM_MODEL` | first id from `/models` | model id |
 | `--root` | — | current directory | project root the file tools live inside |
 | `--ctx` | — | read from the server | context window in tokens |
-| `--max-tokens` | — | `4096` | per-response cap, shrunk to fit the window |
+| `--max-tokens` | — | no cap | tokens per reply; with no cap it gets the room the window has left |
 | `--max-turns` | — | `25` | tool rounds per request |
 | `--no-think` | — | thinking on | skips the thinking phase (`chat_template_kwargs`) |
 | `--yes` | — | off | skip in-project confirmations |
@@ -129,8 +129,8 @@ still runs one at a time, in order.
 
 Each turn's timing line reports the server's own prompt, cached and generated
 token counts, and `/usage` adds them up. Those numbers also calibrate the
-estimate used to shrink `max_tokens` and trim old tool output, so the context
-budget stops guessing.
+estimate used to set each reply's `max_tokens` (when no cap was asked for) and to
+trim old tool output, so the context budget stops guessing.
 
 Past 3/4 of the server's window, ykode stops paying for output the model has
 already used. In order, cheapest first:
@@ -255,9 +255,9 @@ what it held back, asks once when someone is at the keyboard, and records the an
   "audit": true,
   "audit_retention_days": 180,
   "keep_sessions": "720h",
-  "max_tokens": 4096,
+  "max_tokens": 0,
   "stream_idle_sec": 120,
-  "context": { "safety_margin": 256 },
+  "context": { "safety_margin": 4096 },
   "tools": {
     "read_lines": 150,
     "search_limit": 50,
@@ -276,7 +276,9 @@ what it held back, asks once when someone is at the keyboard, and records the an
 ```
 
 `stream_idle_sec` is how long a stream may stay silent before ykode gives up on it (raise it
-when a server sends nothing while it reads a long cold prompt), `max_tokens` is the token budget for one reply, `safety_margin` what is kept free beside
+when a server sends nothing while it reads a long cold prompt), `max_tokens` is the token budget for one reply
+(0, the default, asks for no cap: the server's own context decides where the reply ends, and ykode never asks
+for more than the window has left), `safety_margin` what is kept free beside
 it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
 expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
 gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,
