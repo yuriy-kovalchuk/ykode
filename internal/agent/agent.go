@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -56,9 +57,9 @@ type Agent struct {
 	sink          Sink
 	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
 	compacted     bool         // the older turns were folded into a summary once already
-	auditBroken   bool         // the audit log failed once: say so once, not per call
+	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
-	sessionBroken bool         // the session log failed once: say so once, not per message
+	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	meter         meter
@@ -279,8 +280,8 @@ func (a *Agent) Thinking() bool { return a.opts.Think }
 
 func (a *Agent) add(m llm.Message) {
 	a.history = append(a.history, m)
-	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken {
-		a.sessionBroken = true // a session that will not save is reported once, not per message
+	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken.Swap(true) {
+		// a session that will not save is reported once, not per message
 		a.tell(err.Error())
 	}
 }

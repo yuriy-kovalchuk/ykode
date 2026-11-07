@@ -110,7 +110,9 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 			return a.failTool(name, "the user refused this tool call")
 		}
 		decision = "user_yes"
-		if verdict == AllowAlways {
+		// an outside-root path is asked about every time, so remembering this "always" would only
+		// spread it over the same tool inside the project, where nobody was asked
+		if verdict == AllowAlways && len(outside) == 0 {
 			a.perms.add(name, string(args))
 			decision = "allowlist"
 		}
@@ -196,8 +198,8 @@ func (a *Agent) record(id, name, argsText string, targets []tools.Target, outsid
 		sum := sha256.Sum256([]byte(result))
 		entry.ResultSHA = fmt.Sprintf("%x", sum[:8])
 	}
-	if err := a.opts.Audit.Append(entry); err != nil && !a.auditBroken {
-		a.auditBroken = true // a log that will not write is reported once, not per call
+	if err := a.opts.Audit.Append(entry); err != nil && !a.auditBroken.Swap(true) {
+		// a log that will not write is reported once, not per call
 		a.tell(err.Error())
 	}
 }

@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-2. B10
+
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
 5. B8, B9, B12, B13, then the rest of the cleanup
@@ -51,10 +51,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 - **B9 · S · Automatic compaction runs only once.** `a.compacted` is cleared only by
   `Reset`. → Compact again once N more tool calls have piled up, and include the previous
   summary in the transcript.
-- **B10 · S · Parallel tools race on shared state.** `runAtOnce` goroutines can call
-  `a.perms.add` (a map without a lock) when outside-root reads are answered "always", and
-  they write `auditBroken` / `sessionBroken`. → A mutex in `permissions`, atomic flags, and
-  no "always" for outside-root calls (it is ignored for them anyway).
 - **B12 · S · Secret masking leaks.** `secretRe`: `Authorization: Bearer x` masks only
   `Bearer`, and quoted JSON keys, `--password x`, `sk-`/`ghp_`/`xox?-`/`AKIA` tokens and PEM
   blocks pass through. → A list of patterns with a table test; plain words that contain

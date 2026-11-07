@@ -166,3 +166,46 @@ func TestHistoryCanWidenToEveryRunOfTheRootAndAnswerOneID(t *testing.T) {
 		t.Errorf("a tool filter should narrow: %s", got)
 	}
 }
+
+func TestAParallelBatchReportsABrokenAuditLogOnce(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		twoCalls("read_file", `{"path":"a.txt"}`, "read_file", `{"path":"b.txt"}`),
+		sse("", "read both", "", nil, "stop"),
+	}}
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("some text\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a file where the audit directory wants to be: every append fails
+	if err := os.WriteFile(filepath.Join(dir, "audit"), []byte("in the way"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(stub)
+	defer server.Close()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	logger := audit.New(filepath.Join(dir, "audit"), "stest")
+	registry := tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000})
+	sink := &captureSink{}
+	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model",
+		Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000, Audit: logger, Root: dir}, sink)
+
+	if err := a.Ask(context.Background(), "read both at once"); err != nil {
+		t.Fatal(err)
+	}
+	var reported int
+	for _, ev := range sink.events {
+		if ev.Kind == Notice && strings.Contains(ev.Text, "audit:") {
+			reported++
+		}
+	}
+	if reported != 1 {
+		t.Errorf("a log that cannot write was reported %d times: it is meant to be said once per run", reported)
+	}
+}

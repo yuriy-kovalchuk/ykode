@@ -3,11 +3,13 @@ package agent
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 )
 
 // permissions remembers what the user agreed to keep allowing. It is per run unless the same
 // entries are put in settings.json, and it is deliberately narrow: a tool, or a command's words.
 type permissions struct {
+	mu      sync.Mutex // an "always" answered by one parallel call is read by the others
 	allowed map[string]bool
 }
 
@@ -79,6 +81,8 @@ func (p *permissions) allows(name, args string) bool {
 	if p == nil {
 		return false
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if name != "exec_command" {
 		return p.allowed[name]
 	}
@@ -118,6 +122,8 @@ func (p *permissions) add(name, args string) {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if k := callKey(name, args); k != "" {
 		p.allowed[k] = true
 	}

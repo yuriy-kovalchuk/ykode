@@ -148,3 +148,28 @@ func TestAnsweringAlwaysRemembersTheWholeCommandLine(t *testing.T) {
 		t.Error("answering always widened the allowance to a package the user never saw")
 	}
 }
+
+func TestAnAlwaysAnsweredOnAnOutsideCallIsNotRemembered(t *testing.T) {
+	outside := t.TempDir()
+	stub := &stubServer{scripts: []string{
+		sse("", "", "write_file", []string{`{"path":"` + filepath.Join(outside, "note.txt") + `","content":"1"}`}, "tool_calls"),
+		sse("", "", "write_file", []string{`{"path":"inside.txt","content":"2"}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	sink := &captureSink{decision: AllowAlways}
+	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "write outside then inside"); err != nil {
+		t.Fatal(err)
+	}
+	var asked int
+	for _, ev := range sink.events {
+		if ev.Kind == Confirm {
+			asked++
+		}
+	}
+	if asked != 2 {
+		t.Errorf("answering always for a path outside the project also allowed the write inside it: asked %d times, want 2", asked)
+	}
+}
