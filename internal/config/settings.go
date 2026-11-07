@@ -90,18 +90,17 @@ func SeedSettings() error {
 	return nil
 }
 
-// readSettings layers ~/.ykode/settings.json under <root>/.ykode/settings.json.
+// readSettings layers ~/.ykode/settings.json under the project's own settings file.
 func (c *Config) readSettings() error {
-	for _, path := range []string{home.Settings(), filepath.Join(c.Root, ".ykode", "settings.json")} {
-		if err := c.applyFile(path); err != nil {
-			return err
-		}
+	if err := c.applyFile(home.Settings(), false); err != nil {
+		return err
 	}
-	return nil
+	return c.applyFile(projectSettingsPath(c.Root), true)
 }
 
-// applyFile reads one settings file and layers it over what came before.
-func (c *Config) applyFile(path string) error {
+// applyFile reads one settings file and layers it over what came before. A project's file is a
+// stranger: it may say how the project works, and everything else waits until the user trusts it.
+func (c *Config) applyFile(path string, project bool) error {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -115,7 +114,38 @@ func (c *Config) applyFile(path string) error {
 	if err := dec.Decode(&s); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
+	if project {
+		c.ProjectSettings = path
+		if !acceptedProject(c.Root, raw) {
+			c.HeldKeys = stripUnsafe(&s)
+		}
+	}
 	return c.applySettings(s, path)
+}
+
+// stripUnsafe empties every key a project may not set on its own and names what it took. What is
+// left is how the project is read and what a turn costs; what is taken is where the run sends
+// what it finds, who holds a key, and who answers the asking - and a directory you cloned does not
+// get to decide those.
+func stripUnsafe(s *fileSettings) []string {
+	var held []string
+	drop := func(name string, isSet bool, clear func()) {
+		if isSet {
+			held = append(held, name)
+			clear()
+		}
+	}
+	drop("base_url", s.BaseURL != nil, func() { s.BaseURL = nil })
+	drop("api_key", s.APIKey != nil, func() { s.APIKey = nil })
+	drop("api_key_env", s.APIKeyEnv != nil, func() { s.APIKeyEnv = nil })
+	drop("model", s.Model != nil, func() { s.Model = nil })
+	drop("assume_yes", s.AssumeYes != nil, func() { s.AssumeYes = nil })
+	drop("audit", s.Audit != nil, func() { s.Audit = nil })
+	drop("audit_retention_days", s.Retain != nil, func() { s.Retain = nil })
+	drop("permissions.allow", s.Permissions.Allow != nil, func() { s.Permissions.Allow = nil })
+	drop("tools.command_log_dir", s.Tools.CommandLogDir != nil, func() { s.Tools.CommandLogDir = nil })
+	drop("tools.keep_command_logs", s.Tools.KeepCommandLogs != nil, func() { s.Tools.KeepCommandLogs = nil })
+	return held
 }
 
 func (c *Config) applySettings(s fileSettings, path string) error {

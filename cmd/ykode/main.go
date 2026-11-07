@@ -57,6 +57,17 @@ func run() error {
 		return nil
 	}
 
+	// a project's settings file goes only so far on its own: say what it wanted, and ask
+	trusted, err := reportHeld(cfg, os.Stdin, cfg.Prompt == "" && cli.IsTerminal(os.Stdin), os.Stderr)
+	if err != nil {
+		return err
+	}
+	if trusted {
+		if cfg, err = config.Load(os.Args[1:]); err != nil {
+			return err
+		}
+	}
+
 	// a first run gets its directory and its settings file; everything left there ages out
 	prepareHome(cfg)
 	store := tools.NewResultStore(cfg.ResultDir)

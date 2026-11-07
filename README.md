@@ -234,6 +234,14 @@ The first run creates `~/.ykode` (mode `0700`) and writes `~/.ykode/settings.jso
 Settings resolve in this order, later winning: built-in defaults, `~/.ykode/settings.json`,
 `<root>/.ykode/settings.json`, environment variables, flags.
 
+A project's file is not trusted just because it is there. `<root>/.ykode/settings.json` may set
+`max_turns`, `max_tokens`, `thinking`, `verify`, `context.*`, `tools.read_lines`,
+`tools.search_limit`, `tools.exec_timeout_sec` and `models.*` — how the project is read and what a
+turn costs. Everything else waits until you trust the project: the server it talks to, any key,
+`assume_yes`, `permissions.allow`, the audit log, and where command output is written. ykode names
+what it held back, asks once when someone is at the keyboard, and records the answer in
+`~/.ykode/trusted.json` as project root → the hash of that file, so editing it asks again.
+
 ```json
 {
   "base_url": "http://127.0.0.1:8080/v1",

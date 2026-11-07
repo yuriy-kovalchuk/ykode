@@ -16,22 +16,12 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-
-3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
 5. B8, B9, B12, B13, then the rest of the cleanup
 6. Evals E1–E7, then F1 (new system prompt), then F2, F3
 
 ## Security
 
-- **S1 · M · Project settings are trusted fully.** `readSettings` (`internal/config/settings.go`)
-  gives `<root>/.ykode/settings.json` the same power as the user's file, so a cloned repo can
-  set `assume_yes`, `permissions.allow`, `base_url`, `api_key` or `command_log_dir`.
-  → The project file sets only harmless keys (`max_turns`, `max_tokens`, `thinking`,
-  `verify`, `context.*`, `tools.read_lines`, `tools.search_limit`, `tools.exec_timeout_sec`,
-  `models.*`). All other keys apply only once the project is trusted, recorded in
-  `~/.ykode/trusted.json` as root → sha256 of the file. Any change to the file asks again;
-  print a warning that names the ignored keys.
 
 ## Bugs
 

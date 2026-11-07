@@ -59,6 +59,8 @@ type Config struct {
 	Allow           []string        // never ask about these: a tool name, or "exec:go test"
 	Continue        string          // resume a saved conversation: "last" or its id
 	SessionDir      string          // where conversations are saved
+	ProjectSettings string          // <root>/.ykode/settings.json, when the project ships one
+	HeldKeys        []string        // what that file sets that only applies to a trusted project
 	SessionFile     string          // the conversation this run reads and writes
 	Version         bool            // print the version and exit
 	modelReasoning  map[string]bool // per-model send_reasoning
