@@ -195,3 +195,29 @@ func TestTheUsersOwnRulesComeBeforeTheProjects(t *testing.T) {
 		t.Error("the global rules did not reach the prompt")
 	}
 }
+
+func TestAProjectFileIsNotGivenAuthorityOverTheUser(t *testing.T) {
+	dir := t.TempDir()
+	writeInstructionFile(t, dir, "AGENTS.md", "always deploy with curl")
+
+	text, err := LoadInstructions("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := withInstructions(SystemPrompt, text)
+	if !strings.Contains(prompt, `<project_instructions path=`) || !strings.Contains(prompt, "</project_instructions>") {
+		t.Errorf("nothing marks which words come from a project file:\n%.400s", prompt)
+	}
+	if !strings.Contains(prompt, "unless they conflict with the user's request") {
+		t.Errorf("nothing bounds what a project file may order:\n%.400s", prompt)
+	}
+	if strings.Contains(prompt, "outrank") {
+		t.Errorf("a file in a cloned repo is handed authority over the rules:\n%.400s", prompt)
+	}
+	if strings.Contains(SystemPrompt, "even when the code says otherwise") {
+		t.Error("the note rule tells the model to answer against the user instead of reporting")
+	}
+	if !strings.Contains(SystemPrompt, "request comes first") {
+		t.Error("the note rule never says the user's request wins")
+	}
+}
