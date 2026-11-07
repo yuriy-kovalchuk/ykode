@@ -37,7 +37,7 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--no-think` | — | thinking on | skips the thinking phase (`chat_template_kwargs`) |
 | `--yes` | — | off | skip in-project confirmations |
 | `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
-| `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405` |
+| `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405.123` |
 | `--tui` | — | off | full-screen session: scrolling transcript, input box, status bar |
 | `--version` | — | — | print the version and exit |
 
@@ -184,7 +184,8 @@ Flags come first, then what to look for.
 `/undo` takes the most recent change off a small stack of snapshots that
 `write_file` and `edit_file` leave behind: a file that was edited goes back to the
 exact bytes it held, and a file that was created is removed. It is a stack, so a
-second `/undo` undoes the change before that.
+second `/undo` undoes the change before that. If the file was changed after ykode wrote it, `/undo` refuses
+rather than lose that work; `/undo force` puts the old text back anyway.
 
 `--continue last` (or an id) starts where a previous run stopped, and the resumed
 run keeps the same id, so its results and its log stay with its conversation. A
@@ -254,7 +255,9 @@ what it held back, asks once when someone is at the keyboard, and records the an
   "audit": true,
   "audit_retention_days": 180,
   "keep_sessions": "720h",
-  "context": { "reserve_output": 4096, "safety_margin": 256 },
+  "max_tokens": 4096,
+  "stream_idle_sec": 120,
+  "context": { "safety_margin": 256 },
   "tools": {
     "read_lines": 150,
     "search_limit": 50,
@@ -262,13 +265,22 @@ what it held back, asks once when someone is at the keyboard, and records the an
     "command_log_dir": "",
     "keep_command_logs": "24h"
   },
-  "models": { "Qwen3.6-35B-A3B-GSQ-hybrid": { "send_reasoning": false } }
+  "models": {
+    "Qwen3.6-35B-A3B-GSQ-hybrid": {
+      "send_reasoning": false,
+      "thinking": { "temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0 },
+      "no_think": { "temperature": 0.7, "top_p": 0.8, "top_k": 20, "presence_penalty": 1.5 }
+    }
+  }
 }
 ```
 
-`reserve_output` is the token budget for one reply, `safety_margin` what is kept free beside
-it, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
-expects it back from tool-calling turns. A server that wants a bearer token takes it from
+`stream_idle_sec` is how long a stream may stay silent before ykode gives up on it (raise it
+when a server sends nothing while it reads a long cold prompt), `max_tokens` is the token budget for one reply, `safety_margin` what is kept free beside
+it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
+expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
+gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,
+`presence_penalty`); anything left out is the server's default. A server that wants a bearer token takes it from
 `api_key`, or from the variable `api_key_env` names — the second keeps the secret out of
 the file, and an unset variable is no error.
 
@@ -298,9 +310,28 @@ scrubbed to `PATH`, `HOME`, `TERM` and `LANG`, so a command run by the model can
 `LOCAL_LLM_API_KEY` or anything else from the environment ykode was started with, but it can
 still read and write anywhere your user can. `--yes` skips the confirmation for it too.
 
-So: run ykode as a user with access only to what you are willing to let a shell touch, or in
-a container. Closing this gap means an OS-level sandbox (`sandbox-exec` on macOS, `bwrap` on
-Linux), which is on the roadmap.
+`"sandbox": true` in `~/.ykode/settings.json` closes that gap: every command then runs under
+`sandbox-exec` (macOS) or `bwrap` (Linux) with no network and write access only to the
+project, the temp folder and your cache folder (where build tools keep theirs). If the
+sandbox tool is missing, the command is refused rather than run unconfined. A project's own
+settings file cannot turn it off. Without it, run ykode as a user with access only to what
+you are willing to let a shell touch, or in a container.
+
+## Evals
+
+`make eval` runs scripted tasks against a real server, three times each, and saves the run to
+`~/.ykode/evals/`. Its own flags and ykode's mix freely:
+
+```sh
+make eval ARGS="--base-url https://host/v1 --only fix --repeat 5"
+make eval ARGS="--baseline last"            # mark what got worse since the previous run
+make eval ARGS="--new-prompt --baseline last" # try the candidate system prompt
+```
+
+The tasks run with built-in defaults, not your `settings.json` (`--use-settings` opts back in).
+Each line reports the pass rate, median turns and tokens, and counters for what the prompt work
+targets: tool calls written as text, unchanged re-reads, recalls and re-run commands, verify
+nudges, compactions, long answers.
 
 ## Development
 

@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
@@ -25,10 +28,11 @@ type fileSettings struct {
 	MaxTokens    *int    `json:"max_tokens,omitempty"`
 	Thinking     *bool   `json:"thinking,omitempty"`
 	AssumeYes    *bool   `json:"assume_yes,omitempty"`
+	Sandbox      *bool   `json:"sandbox,omitempty"`
 	Verify       *bool   `json:"verify,omitempty"`
+	StreamIdle   *int    `json:"stream_idle_sec,omitempty"`
 	Context      struct {
-		ReserveOutput *int `json:"reserve_output,omitempty"`
-		SafetyMargin  *int `json:"safety_margin,omitempty"`
+		SafetyMargin *int `json:"safety_margin,omitempty"`
 	} `json:"context,omitempty"`
 	Tools struct {
 		ReadLines       *int    `json:"read_lines,omitempty"`
@@ -41,7 +45,9 @@ type fileSettings struct {
 		Allow []string `json:"allow,omitempty"`
 	} `json:"permissions,omitempty"`
 	Models map[string]struct {
-		SendReasoning *bool `json:"send_reasoning,omitempty"`
+		SendReasoning *bool         `json:"send_reasoning,omitempty"`
+		Thinking      *llm.Sampling `json:"thinking,omitempty"`
+		NoThink       *llm.Sampling `json:"no_think,omitempty"`
 	} `json:"models,omitempty"`
 }
 
@@ -51,12 +57,13 @@ func builtinSettings() fileSettings {
 	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
 	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p(d.BaseURL), p("default"), p(d.MaxTurns), p(d.MaxTokens)
-	s.Thinking, s.Verify, s.AssumeYes = p(d.Think), p(!d.NoVerify), p(d.AssumeYes)
+	s.Thinking, s.Verify, s.AssumeYes, s.Sandbox = p(d.Think), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
 	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
 	s.Context.SafetyMargin = p(d.SafetyMargin)
 	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
 	s.KeepSessions = p(hours(d.KeepSessions))
 	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
+	s.StreamIdle = p(int(d.StreamIdle / time.Second))
 	s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(""), p(hours(d.KeepCommandLogs))
 	return s
 }
@@ -119,35 +126,66 @@ func (c *Config) applyFile(path string, project bool) error {
 	if project {
 		c.ProjectSettings = path
 		if !acceptedProject(c.Root, raw) {
-			c.HeldKeys = stripUnsafe(&s)
+			c.HeldKeys, c.HeldValues = stripUnsafe(&s)
 		}
+		sum := sha256.Sum256(raw)
+		c.ProjectHash = hex.EncodeToString(sum[:])
 	}
 	return c.applySettings(s, path)
 }
 
-// stripUnsafe empties every key a project may not set on its own and names what it took. What is
-// left is how the project is read and what a turn costs; what is taken is where the run sends
-// what it finds, who holds a key, and who answers the asking - and a directory you cloned does not
-// get to decide those.
-func stripUnsafe(s *fileSettings) []string {
-	var held []string
-	drop := func(name string, isSet bool, clear func()) {
-		if isSet {
-			held = append(held, name)
-			clear()
+// stripUnsafe holds back what a cloned project must not decide alone, and shows what it asked for.
+func stripUnsafe(s *fileSettings) (names, shown []string) {
+	drop := func(name string, isSet bool, value any, clear func()) {
+		if !isSet {
+			return
 		}
+		raw, _ := json.Marshal(value)
+		names = append(names, name)
+		shown = append(shown, name+" = "+string(raw))
+		clear()
 	}
-	drop("base_url", s.BaseURL != nil, func() { s.BaseURL = nil })
-	drop("api_key", s.APIKey != nil, func() { s.APIKey = nil })
-	drop("api_key_env", s.APIKeyEnv != nil, func() { s.APIKeyEnv = nil })
-	drop("model", s.Model != nil, func() { s.Model = nil })
-	drop("assume_yes", s.AssumeYes != nil, func() { s.AssumeYes = nil })
-	drop("audit", s.Audit != nil, func() { s.Audit = nil })
-	drop("audit_retention_days", s.Retain != nil, func() { s.Retain = nil })
-	drop("permissions.allow", s.Permissions.Allow != nil, func() { s.Permissions.Allow = nil })
-	drop("tools.command_log_dir", s.Tools.CommandLogDir != nil, func() { s.Tools.CommandLogDir = nil })
-	drop("tools.keep_command_logs", s.Tools.KeepCommandLogs != nil, func() { s.Tools.KeepCommandLogs = nil })
-	return held
+	drop("base_url", s.BaseURL != nil, s.BaseURL, func() { s.BaseURL = nil })
+	drop("api_key", s.APIKey != nil, "(not shown)", func() { s.APIKey = nil })
+	drop("api_key_env", s.APIKeyEnv != nil, s.APIKeyEnv, func() { s.APIKeyEnv = nil })
+	drop("model", s.Model != nil, s.Model, func() { s.Model = nil })
+	drop("assume_yes", s.AssumeYes != nil, s.AssumeYes, func() { s.AssumeYes = nil })
+	drop("sandbox", s.Sandbox != nil, s.Sandbox, func() { s.Sandbox = nil })
+	drop("audit", s.Audit != nil, s.Audit, func() { s.Audit = nil })
+	drop("audit_retention_days", s.Retain != nil, s.Retain, func() { s.Retain = nil })
+	drop("keep_sessions", s.KeepSessions != nil, s.KeepSessions, func() { s.KeepSessions = nil }) // every project's conversations share one folder
+	drop("permissions.allow", s.Permissions.Allow != nil, s.Permissions.Allow, func() { s.Permissions.Allow = nil })
+	drop("tools.command_log_dir", s.Tools.CommandLogDir != nil, s.Tools.CommandLogDir, func() { s.Tools.CommandLogDir = nil })
+	drop("tools.keep_command_logs", s.Tools.KeepCommandLogs != nil, s.Tools.KeepCommandLogs, func() { s.Tools.KeepCommandLogs = nil })
+	return names, shown
+}
+
+// keepFor reads a retention setting when it is set; zero or less would delete everything at the next start.
+func keepFor(path, key string, value *string, example string, to *time.Duration) error {
+	if value == nil {
+		return nil
+	}
+	d, err := time.ParseDuration(*value)
+	if err != nil {
+		return fmt.Errorf(`%s: %s %q is not a duration like "%s"`, path, key, *value, example)
+	}
+	if d <= 0 {
+		return fmt.Errorf(`%s: %s %q would delete everything at the next start; use a duration above zero like "%s"`, path, key, *value, example)
+	}
+	*to = d
+	return nil
+}
+
+// countOf reads a whole number of units when it is set; zero or less is refused by name.
+func countOf(path, key string, value *int, unit time.Duration, to *time.Duration) error {
+	if value == nil {
+		return nil
+	}
+	if *value <= 0 {
+		return fmt.Errorf("%s: %s must be a whole number above zero, got %d", path, key, *value)
+	}
+	*to = time.Duration(*value) * unit
+	return nil
 }
 
 func (c *Config) applySettings(s fileSettings, path string) error {
@@ -174,43 +212,35 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	if s.AssumeYes != nil {
 		c.AssumeYes = *s.AssumeYes
 	}
-	if s.Context.ReserveOutput != nil {
-		c.MaxTokens = *s.Context.ReserveOutput
-	}
-	if s.KeepSessions != nil {
-		d, err := time.ParseDuration(*s.KeepSessions)
-		if err != nil {
-			return fmt.Errorf(`%s: keep_sessions %q is not a duration like "720h"`, path, *s.KeepSessions)
-		}
-		c.KeepSessions = d
-	}
-	if s.Tools.ExecTimeoutSec != nil {
-		c.ExecTimeout = time.Duration(*s.Tools.ExecTimeoutSec) * time.Second
-	}
+	pick(s.Sandbox, &c.Sandbox)
 	pick(s.Tools.CommandLogDir, &c.CommandLogDir)
-	if s.Tools.KeepCommandLogs != nil {
-		d, err := time.ParseDuration(*s.Tools.KeepCommandLogs)
-		if err != nil {
-			return fmt.Errorf("%s: keep_command_logs %q is not a duration like \"24h\"", path, *s.Tools.KeepCommandLogs)
-		}
-		c.KeepCommandLogs = d
-	}
 	if s.Audit != nil {
 		c.LogAudit = *s.Audit
 	}
-	if s.Retain != nil {
-		if *s.Retain <= 0 {
-			return fmt.Errorf("%s: audit_retention_days must be a whole number of days above zero", path)
-		}
-		c.KeepAudit = time.Duration(*s.Retain) * 24 * time.Hour
+	if err := errors.Join(
+		keepFor(path, "keep_sessions", s.KeepSessions, "720h", &c.KeepSessions),
+		keepFor(path, "keep_command_logs", s.Tools.KeepCommandLogs, "24h", &c.KeepCommandLogs),
+		countOf(path, "stream_idle_sec", s.StreamIdle, time.Second, &c.StreamIdle),
+		countOf(path, "exec_timeout_sec", s.Tools.ExecTimeoutSec, time.Second, &c.ExecTimeout),
+		countOf(path, "audit_retention_days", s.Retain, 24*time.Hour, &c.KeepAudit),
+	); err != nil {
+		return err
 	}
 	if len(s.Permissions.Allow) > 0 {
 		c.Allow = append(c.Allow, s.Permissions.Allow...)
 	}
 	for model, ms := range s.Models {
 		c.modelReasoning[model] = ms.SendReasoning != nil && *ms.SendReasoning
+		c.modelSampling[model] = [2]llm.Sampling{deref(ms.Thinking), deref(ms.NoThink)}
 	}
 	return nil
+}
+
+func deref[T any](v *T) (zero T) {
+	if v == nil {
+		return zero
+	}
+	return *v
 }
 
 func pick[T any](from, to *T) {

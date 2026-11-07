@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"strings"
 	"time"
@@ -23,11 +24,12 @@ const (
 	defaultReadLines   = 150
 	defaultSearchLimit = 50
 	defaultExecTimeout = 60 * time.Second
+	defaultStreamIdle  = 2 * time.Minute // silence before a stream counts as dead; a cold prompt may need more
 	defaultLogKeep     = 24 * time.Hour
 	defaultSessionKeep = 30 * 24 * time.Hour  // a conversation, and the results recall can still name
 	defaultAuditKeep   = 180 * 24 * time.Hour // six months of tool calls
 	defaultSafety      = 256
-	sessionStamp       = "20060102-150405"
+	sessionStamp       = "20060102-150405.000" // milliseconds, so two runs started together do not share one
 )
 
 // Config is the fully resolved set of settings.
@@ -42,30 +44,36 @@ type Config struct {
 	SafetyMargin    int // tokens kept free for the reply
 	Think           bool
 	AssumeYes       bool
+	Sandbox         bool // exec_command runs confined: writes only in the project, no network
 	NoVerify        bool // do not push a text-only answer back into the tools
 	SendReasoning   bool // repeat earlier thinking back to models whose template expects it
 	ReadLines       int  // read_file window when the model does not ask for one
 	SearchLimit     int  // search_text match limit when the model does not ask for one
 	ExecTimeout     time.Duration
-	CommandLogDir   string // where a cut command's full output is saved
-	ResultDir       string // one run's shortened tool results, kept so recall can hand them back
-	AuditDir        string // append-only tool-call log, one file per month
-	LogAudit        bool   // write that log at all; off only by a setting
-	Session         string // this run's id, shared by the results, the audit log and sessions
+	StreamIdle      time.Duration // how long a stream may stay silent
+	CommandLogDir   string        // where a cut command's full output is saved
+	ResultDir       string        // one run's shortened tool results, kept so recall can hand them back
+	AuditDir        string        // append-only tool-call log, one file per month
+	LogAudit        bool          // write that log at all; off only by a setting
+	Session         string        // this run's id, shared by the results, the audit log and sessions
 	KeepCommandLogs time.Duration
-	KeepSessions    time.Duration   // how long a saved conversation survives, and its saved results
-	KeepAudit       time.Duration   // how long old audit files survive
-	Prompt          string          // one task to answer and exit; empty runs the REPL
-	JSON            bool            // print the event stream as JSON lines
-	TUI             bool            // full-screen session instead of the line prompt
-	Allow           []string        // never ask about these: a tool name, or "exec:go test"
-	Continue        string          // resume a saved conversation: "last" or its id
-	SessionDir      string          // where conversations are saved
-	ProjectSettings string          // <root>/.ykode/settings.json, when the project ships one
-	HeldKeys        []string        // what that file sets that only applies to a trusted project
-	SessionFile     string          // the conversation this run reads and writes
-	Version         bool            // print the version and exit
-	modelReasoning  map[string]bool // per-model send_reasoning
+	KeepSessions    time.Duration              // how long a saved conversation survives, and its saved results
+	KeepAudit       time.Duration              // how long old audit files survive
+	Prompt          string                     // one task to answer and exit; empty runs the REPL
+	JSON            bool                       // print the event stream as JSON lines
+	TUI             bool                       // full-screen session instead of the line prompt
+	Allow           []string                   // never ask about these: a tool name, or "exec:go test"
+	Continue        string                     // resume a saved conversation: "last" or its id
+	SessionDir      string                     // where conversations are saved
+	ProjectSettings string                     // <root>/.ykode/settings.json, when the project ships one
+	HeldKeys        []string                   // what that file sets that only applies to a trusted project
+	HeldValues      []string                   // the same keys with what they ask for, secrets masked
+	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown
+	SessionFile     string                     // the conversation this run reads and writes
+	Version         bool                       // print the version and exit
+	NewPrompt       bool                       // try the candidate system prompt
+	modelReasoning  map[string]bool            // per-model send_reasoning
+	modelSampling   map[string][2]llm.Sampling // per model: with thinking, without
 }
 
 // flagValues carries only what the command line said; unset fields stay zero.
@@ -86,6 +94,7 @@ type flagValues struct {
 	TUI           bool
 	Continue      string
 	Version       bool
+	NewPrompt     bool
 }
 
 // Load parses args (os.Args[1:]). flag.ErrHelp is returned for -h.
@@ -113,6 +122,7 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.TUI, "tui", false, "full-screen session: scrolling transcript, input box, status bar")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
+	fs.BoolVar(&f.NewPrompt, "new-prompt", false, "use the candidate system prompt, to compare it with the evals")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -128,7 +138,6 @@ func Load(args []string) (Config, error) {
 	}
 	cfg.applyEnv()
 	cfg.applyFlags(f, given(fs))
-	cfg.Version = f.Version
 
 	if err := cfg.normalize(); err != nil {
 		return Config{}, err
@@ -146,11 +155,13 @@ func defaults() Config {
 		ReadLines:       defaultReadLines,
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
+		StreamIdle:      defaultStreamIdle,
 		KeepCommandLogs: defaultLogKeep,
 		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
 		LogAudit:        true,
 		modelReasoning:  map[string]bool{},
+		modelSampling:   map[string][2]llm.Sampling{},
 	}
 }
 
@@ -161,48 +172,30 @@ func given(fs *flag.FlagSet) map[string]bool {
 	return set
 }
 
+// applyFlags applies the flags the user typed; a bool flag only ever switches its setting on (or thinking off).
 func (c *Config) applyFlags(f flagValues, set map[string]bool) {
-	if set["base-url"] {
-		c.BaseURL = f.BaseURL
+	setters := map[string]func(){
+		"base-url":       func() { c.BaseURL = f.BaseURL },
+		"api-key":        func() { c.APIKey = f.APIKey },
+		"model":          func() { c.Model = f.Model },
+		"max-turns":      func() { c.MaxTurns = f.MaxTurns },
+		"max-tokens":     func() { c.MaxTokens = f.MaxTokens },
+		"ctx":            func() { c.CtxSize = f.CtxSize },
+		"no-think":       func() { c.Think = c.Think && !f.NoThink },
+		"yes":            func() { c.AssumeYes = c.AssumeYes || f.Yes },
+		"no-verify":      func() { c.NoVerify = c.NoVerify || f.NoVerify },
+		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
+		"p":              func() { c.Prompt = f.Prompt },
+		"json":           func() { c.JSON = c.JSON || f.JSON },
+		"tui":            func() { c.TUI = c.TUI || f.TUI },
+		"continue":       func() { c.Continue = f.Continue },
+		"version":        func() { c.Version = f.Version },
+		"new-prompt":     func() { c.NewPrompt = f.NewPrompt },
 	}
-	if set["api-key"] {
-		c.APIKey = f.APIKey
-	}
-	if set["model"] {
-		c.Model = f.Model
-	}
-	if set["max-turns"] {
-		c.MaxTurns = f.MaxTurns
-	}
-	if set["max-tokens"] {
-		c.MaxTokens = f.MaxTokens
-	}
-	if set["ctx"] {
-		c.CtxSize = f.CtxSize
-	}
-	if set["no-think"] && f.NoThink {
-		c.Think = false
-	}
-	if set["yes"] && f.Yes {
-		c.AssumeYes = true
-	}
-	if set["no-verify"] && f.NoVerify {
-		c.NoVerify = true
-	}
-	if set["send-reasoning"] && f.SendReasoning {
-		c.SendReasoning = true
-	}
-	if set["p"] {
-		c.Prompt = f.Prompt
-	}
-	if set["json"] && f.JSON {
-		c.JSON = true
-	}
-	if set["tui"] && f.TUI {
-		c.TUI = true
-	}
-	if set["continue"] {
-		c.Continue = f.Continue
+	for name := range set {
+		if apply, ok := setters[name]; ok {
+			apply()
+		}
 	}
 }
 
@@ -235,9 +228,6 @@ func (c *Config) normalize() error {
 	if c.ReadLines < 1 || c.SearchLimit < 1 {
 		return fmt.Errorf("read_lines and search_limit must be at least 1, got %d and %d", c.ReadLines, c.SearchLimit)
 	}
-	if c.ExecTimeout <= 0 {
-		return fmt.Errorf("exec_timeout_sec must be positive, got %s", c.ExecTimeout)
-	}
 	root, err := filepath.Abs(c.Root)
 	if err != nil {
 		return fmt.Errorf("--root %q: %w", root, err)
@@ -269,13 +259,19 @@ func (c *Config) normalize() error {
 	return nil
 }
 
+// SamplingFor returns a model's sampling with thinking on and off; unset fields stay nil.
+func (c *Config) SamplingFor(model string) (thinking, noThink llm.Sampling) {
+	s := c.modelSampling[model]
+	return s[0], s[1]
+}
+
 // SendReasoningFor reports a per-model send_reasoning setting.
 func (c *Config) SendReasoningFor(model string) bool {
 	return c.SendReasoning || c.modelReasoning[model]
 }
 
 // sessionIDPattern guards against a --continue argument that is not an id but a path.
-var sessionIDPattern = regexp.MustCompile(`^s[0-9]{8}-[0-9]{6}$`)
+var sessionIDPattern = regexp.MustCompile(`^s[0-9]{8}-[0-9]{6}(\.[0-9]{3})?$`)
 
 // resumeID turns "last" or an id into a conversation that exists on disk.
 func resumeID(homeDir, want string) (string, error) {

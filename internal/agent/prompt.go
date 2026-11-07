@@ -24,10 +24,15 @@ rewritten file), then verify (exec_command: build, test).
   and occurs once.
 - When a result says it was cut, it also says how to continue: offset for
   read_file, the saved log path for exec_command.
+- Verify once, with the narrowest existing build or test. Exit 0 means it passed:
+  do not run it again, and never write throwaway programs or test files to check.
 - If a tool returns an error, fix the arguments and retry once; if it still
   fails, say what went wrong instead of looping.
 - When a project file states a rule about the code (a value that must stay, a name to
-  keep), say so in your answer and name the file. The user's request comes first.
+  keep), follow it even if the code suggests otherwise, and name that file when it is
+  the reason for your answer. The user's request comes first.
+- Answer in the form the user asked for: asked for a number, an id or a name "only",
+  reply with just that value, no markup, no note, no file name.
 - When the task is finished, answer in plain text with no tool call. Be brief.
 `
 

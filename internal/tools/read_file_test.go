@@ -104,7 +104,7 @@ func TestReadStillReadsAFileAtTheSizeCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "continue with offset=151]") {
+	if !strings.Contains(out, "continue with offset=31]") { // a peek: the file is long
 		t.Fatalf("marker wrong:\n%s", cutUTF8(out, 200))
 	}
 }
@@ -293,5 +293,30 @@ func TestAResetClearsWhatTheReaderRemembers(t *testing.T) {
 	}
 	if strings.Contains(after, "unchanged since you read") {
 		t.Errorf("after a reset the reader still pointed at a window the conversation lost: %q", after)
+	}
+}
+
+func TestASmallFileComesBackWhole(t *testing.T) {
+	tool := readToolFixture(t, numbered(300, "line"))
+	tool.Lines = defaultReadLimit // what the settings always pass, so the rule must not depend on it being unset
+	out := runTool(t, tool, `{"path":"f.txt"}`)
+	if !strings.HasPrefix(out, "f.txt: lines 1-300 of 300\n") || strings.Contains(out, "continue with") {
+		t.Errorf("a 300-line file took more than one read:\n%s", cutUTF8(out, 120))
+	}
+	if out := runTool(t, readToolFixture(t, numbered(300, "line")), `{"path":"f.txt","limit":20}`); !strings.HasPrefix(out, "f.txt: lines 1-20 of 300\n") {
+		t.Errorf("an explicit limit was not kept:\n%s", cutUTF8(out, 120))
+	}
+}
+
+func TestABigFileGetsAPeekAndAPointerAtSearch(t *testing.T) {
+	out := runTool(t, readToolFixture(t, numbered(3000, "line")), `{"path":"f.txt"}`)
+	if shown := strings.Count(out, "line "); shown > 30 {
+		t.Errorf("an unasked read of a 3000-line file showed %d lines", shown)
+	}
+	if !strings.Contains(out, "search_text") || !strings.Contains(out, "offset") {
+		t.Errorf("the peek does not say how to get further:\n%s", out)
+	}
+	if out := runTool(t, readToolFixture(t, numbered(3000, "line")), `{"path":"f.txt","offset":100}`); !strings.HasPrefix(out, "f.txt: lines 100-249 of 3000\n") {
+		t.Errorf("an explicit offset no longer gets the normal window:\n%s", cutUTF8(out, 120))
 	}
 }

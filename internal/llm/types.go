@@ -62,6 +62,16 @@ type ChatRequest struct {
 	MaxTokens          int            `json:"max_tokens,omitempty"`
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	Stream             bool           `json:"stream"`
+	Sampling
+}
+
+// Sampling is what a model card recommends; a nil field leaves the server's default.
+type Sampling struct {
+	Temperature     *float64 `json:"temperature,omitempty"`
+	TopP            *float64 `json:"top_p,omitempty"`
+	TopK            *int     `json:"top_k,omitempty"`
+	MinP            *float64 `json:"min_p,omitempty"`
+	PresencePenalty *float64 `json:"presence_penalty,omitempty"`
 }
 
 // ToolSpec advertises one tool to the model.

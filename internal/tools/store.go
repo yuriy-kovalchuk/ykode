@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
-	"time"
 )
 
 // resultIDPattern keeps a recall id from turning into a path.
@@ -61,33 +59,4 @@ func (s ResultStore) Load(id string) (string, error) {
 		return "", fmt.Errorf("read saved result: %w", err)
 	}
 	return string(data), nil
-}
-
-// PruneOldDirs deletes subdirectories of dir older than maxAge, and reports how many went.
-func PruneOldDirs(dir, prefix string, maxAge time.Duration) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil // a first run has nothing to clean
-	}
-	if err != nil {
-		return 0, fmt.Errorf("clean old files in %s: %w", dir, err)
-	}
-	removed := 0
-	for _, e := range entries {
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			return removed, fmt.Errorf("stat %s: %w", e.Name(), err)
-		}
-		if time.Since(info.ModTime()) < maxAge {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-			return removed, fmt.Errorf("remove %s: %w", e.Name(), err)
-		}
-		removed++
-	}
-	return removed, nil
 }

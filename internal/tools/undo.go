@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,11 +10,12 @@ import (
 
 // Change is one file as it was before a tool touched it.
 type Change struct {
-	dir     string // the directory a Root is opened on: the project root, or an outside file's folder
-	name    string // the file inside that directory
-	shown   string // how the tool named it to the model
-	prev    []byte // what it held before
-	existed bool   // false means the change created it, so undoing removes it
+	dir     string   // the directory a Root is opened on: the project root, or an outside file's folder
+	name    string   // the file inside that directory
+	shown   string   // how the tool named it to the model
+	prev    []byte   // what it held before
+	wrote   [32]byte // sha256 of what the tool left there, so a later hand edit is not undone blindly
+	existed bool     // false means the change created it, so undoing removes it
 }
 
 // UndoStack remembers file changes in the order they happened. Writes and edits push onto it;
@@ -33,8 +36,8 @@ func (u *UndoStack) push(c Change) {
 // Empty says there is nothing to put back.
 func (u *UndoStack) Empty() bool { return u == nil || len(u.changes) == 0 }
 
-// Undo puts the most recent change back and says what it did.
-func (u *UndoStack) Undo() (string, error) {
+// Undo puts the newest change back; unless forced, not over an edit made since the tool's.
+func (u *UndoStack) Undo(force bool) (string, error) {
 	if u.Empty() {
 		return "", nil
 	}
@@ -45,18 +48,23 @@ func (u *UndoStack) Undo() (string, error) {
 	}
 	defer root.Close()
 
-	if c.existed {
-		if err := root.WriteFile(c.name, c.prev, 0o644); err != nil {
-			return "", fmt.Errorf("undo %s: %w", c.shown, err)
-		}
-		u.changes = u.changes[:len(u.changes)-1]
-		return fmt.Sprintf("put back %s (%d bytes)", c.shown, len(c.prev)), nil
+	now, _ := root.ReadFile(c.name)
+	if sum := sha256.Sum256(now); !force && !bytes.Equal(sum[:], c.wrote[:]) {
+		return "", fmt.Errorf("undo %s: the file changed after ykode wrote it; /undo force puts the old text back anyway", c.shown)
 	}
-	if err := root.Remove(c.name); err != nil {
+	if c.existed {
+		err = root.WriteFile(c.name, c.prev, 0o644)
+	} else {
+		err = root.Remove(c.name)
+	}
+	if err != nil {
 		return "", fmt.Errorf("undo %s: %w", c.shown, err)
 	}
 	u.changes = u.changes[:len(u.changes)-1]
-	return fmt.Sprintf("removed %s, which did not exist before", c.shown), nil
+	if !c.existed {
+		return fmt.Sprintf("removed %s, which did not exist before", c.shown), nil
+	}
+	return fmt.Sprintf("put back %s (%d bytes)", c.shown, len(c.prev)), nil
 }
 
 // outsideDir splits an absolute path into the directory to open and the file inside it.

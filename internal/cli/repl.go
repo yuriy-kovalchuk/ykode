@@ -84,7 +84,7 @@ func (r *REPL) Run(ctx context.Context) error {
 			continue
 		}
 		if line[0] == '/' {
-			if quit, err := r.command(line); quit {
+			if quit, err := r.command(ctx, sigs, line); quit {
 				return err
 			}
 			continue
@@ -95,15 +95,24 @@ func (r *REPL) Run(ctx context.Context) error {
 	}
 }
 
-// command hands a slash command to the agent and prints what it answers.
-func (r *REPL) command(line string) (quit bool, err error) {
-	text, quit, err := r.agent.Command(line)
-	fmt.Fprint(r.out, text)
+// command hands a slash command to the agent and prints what it answers; Ctrl-C stops /compact.
+func (r *REPL) command(ctx context.Context, sigs chan os.Signal, line string) (quit bool, err error) {
+	err = r.cancellable(ctx, sigs, func(ctx context.Context) error {
+		var text string
+		text, quit, err = r.agent.Command(ctx, line)
+		fmt.Fprint(r.out, text)
+		return err
+	})
 	return quit, err
 }
 
 // ask runs one agent turn, cancelling it if the user presses Ctrl-C.
 func (r *REPL) ask(ctx context.Context, sigs chan os.Signal, prompt string) error {
+	return r.cancellable(ctx, sigs, func(ctx context.Context) error { return r.agent.Ask(ctx, prompt) })
+}
+
+// cancellable runs work under a context that Ctrl-C cancels.
+func (r *REPL) cancellable(ctx context.Context, sigs chan os.Signal, work func(context.Context) error) error {
 	turnCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -122,5 +131,5 @@ func (r *REPL) ask(ctx context.Context, sigs chan os.Signal, prompt string) erro
 			}
 		}
 	}()
-	return r.agent.Ask(turnCtx, prompt)
+	return work(turnCtx)
 }

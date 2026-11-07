@@ -91,8 +91,7 @@ func (t SearchText) Targets(args json.RawMessage) ([]Target, error) {
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(in.Path, t.dir)
-	return []Target{target}, err
+	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
 func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, error) {
@@ -121,6 +120,31 @@ func (t SearchText) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	defer h.close()
 
+	out, err := t.search(ctx, h, in, limit)
+	if err != nil || in.Glob == "" || out != noMatches {
+		return out, err
+	}
+	return t.elsewhere(ctx, h, in), nil
+}
+
+// noMatches is what a search that found nothing answers.
+const noMatches = "(no matches)"
+
+// elsewhere answers a filtered search that found nothing: a guessed glob is the usual reason a
+// model never sees the file it is after, so say where the pattern does occur.
+func (t SearchText) elsewhere(ctx context.Context, h handle, in searchInput) string {
+	glob := in.Glob
+	in.Glob, in.Mode = "", modeFiles
+	other, err := t.summary(ctx, h, in, 5)
+	if err != nil || other == noMatches {
+		return noMatches
+	}
+	return fmt.Sprintf("(no matches in files matching %q, but the pattern occurs in:)\n%s\n[search again without glob, or with one that covers these]",
+		glob, strings.TrimSpace(other))
+}
+
+// search runs one search with the filters as given.
+func (t SearchText) search(ctx context.Context, h handle, in searchInput, limit int) (string, error) {
 	if in.Mode != modeContent {
 		return t.summary(ctx, h, in, limit)
 	}
@@ -470,7 +494,7 @@ func (t SearchText) withGoSummary(ctx context.Context, h handle, in searchInput,
 // formatSummary renders one line per file plus the total the model asked for.
 func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped bool, budget int) string {
 	if len(files) == 0 {
-		return "(no matches)"
+		return noMatches
 	}
 	var b strings.Builder
 	total := 0
@@ -507,7 +531,7 @@ func formatSummary(mode string, files []fileMatch, limit, scanned int, stopped b
 // matches gets one header, which is the path once instead of on every line.
 func formatHits(hits []hit, limit, scanned, budget int) string {
 	if len(hits) == 0 {
-		return "(no matches)"
+		return noMatches
 	}
 	perFile := map[string]int{}
 	for _, h := range hits {
@@ -548,9 +572,9 @@ func formatHits(hits []hit, limit, scanned, budget int) string {
 	return b.String()
 }
 
-// oneLine collapses whitespace and cuts a long line, keeping output scannable.
+// oneLine trims the end of a line and cuts it when long, keeping output scannable.
 func oneLine(s string, maxChars int) string {
-	s = strings.TrimRight(strings.ReplaceAll(s, "\t", "    "), " \r")
+	s = strings.TrimRight(s, " \t\r") // leading tabs stay: a line copied from here becomes edit_file's old_text
 	if len(s) > maxChars {
 		return cutUTF8(s, maxChars) + " […cut]"
 	}

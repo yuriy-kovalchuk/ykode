@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ type Target struct {
 }
 
 // resolveTarget makes a model-supplied path absolute; outside paths are reported to the agent, not rejected.
-func resolveTarget(raw, root string) (Target, error) {
+func resolveTarget(raw, root string) Target {
 	p := strings.TrimSpace(raw)
 	var abs string
 	switch {
@@ -28,7 +29,7 @@ func resolveTarget(raw, root string) (Target, error) {
 	default:
 		abs = filepath.Clean(filepath.Join(root, p))
 	}
-	return Target{Raw: raw, Resolved: abs, Outside: !within(root, abs)}, nil
+	return Target{Raw: raw, Resolved: abs, Outside: !within(root, abs)}
 }
 
 func within(root, path string) bool {
@@ -89,10 +90,7 @@ func (h handle) shown() string { return h.display(h.name) }
 
 // open resolves raw into a Root and a name inside it, giving an approved outside path its own Root.
 func (s scope) open(ctx context.Context, raw string) (handle, error) {
-	t, err := resolveTarget(raw, s.dir)
-	if err != nil {
-		return handle{}, err
-	}
+	t := resolveTarget(raw, s.dir)
 	if !t.Outside {
 		rel, err := filepath.Rel(s.dir, t.Resolved)
 		if err != nil {
@@ -147,7 +145,7 @@ func absolute(dir, rel string) string {
 }
 
 // pushUndo remembers a file as it is now, so /undo can put it back after this call changes it.
-func (s scope) pushUndo(h handle, prev []byte, existed bool) {
+func (s scope) pushUndo(h handle, prev, next []byte, existed bool) {
 	if s.undo == nil {
 		return
 	}
@@ -160,6 +158,7 @@ func (s scope) pushUndo(h handle, prev []byte, existed bool) {
 		name:    h.name,
 		shown:   h.shown(),
 		prev:    prev,
+		wrote:   sha256.Sum256(next),
 		existed: existed,
 	})
 }

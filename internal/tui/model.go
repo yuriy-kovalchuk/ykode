@@ -220,7 +220,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		if m.running && strings.HasPrefix(text, "/ex") {
 			m.cancelRun() // leaving cancels the turn rather than racing it
 		}
-		out, quit, err := m.agent.Command(text)
+		out, quit, err := m.agent.Command(m.ctx, text)
 		if line := strings.TrimRight(out, "\n"); line != "" {
 			m.log.notice(line)
 		}

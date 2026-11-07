@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	// headerTimeout bounds the wait for the server to accept the request at all.
-	headerTimeout = 30 * time.Second
 	// streamIdleTimeout bounds the silence between events: a cold 60k prompt can take minutes,
 	// so only a stream that stops producing altogether counts as dead.
 	streamIdleTimeout = 2 * time.Minute
@@ -31,7 +29,7 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
-	idle    time.Duration
+	Idle    time.Duration // longest silence a stream may keep before it counts as dead
 }
 
 func NewClient(baseURL, apiKey string) *Client {
@@ -40,7 +38,7 @@ func NewClient(baseURL, apiKey string) *Client {
 		apiKey:  apiKey,
 		// no whole-request timeout: a long generation is fine, silence is not
 		http: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
-		idle: streamIdleTimeout,
+		Idle: streamIdleTimeout,
 	}
 }
 
@@ -131,7 +129,7 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	if err != nil {
 		return empty, fmt.Errorf("encode request: %w", err)
 	}
-	watchdog := newIdleWatchdog(ctx, c.idle)
+	watchdog := newIdleWatchdog(ctx, c.Idle)
 	defer watchdog.stop()
 
 	resp, err := c.postChat(watchdog.ctx, payload)
@@ -143,7 +141,7 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	acc := newStreamAccumulator()
 	if err := readSSE(watchdog.wrap(resp.Body), acc, onDelta); err != nil {
 		if ctx.Err() == nil && watchdog.ctx.Err() != nil {
-			return empty, fmt.Errorf("server sent nothing for %s: the model may still be loading, or the connection died", c.idle)
+			return empty, fmt.Errorf("server sent nothing for %s: the model may still be loading, or the connection died", c.Idle)
 		}
 		return empty, err
 	}

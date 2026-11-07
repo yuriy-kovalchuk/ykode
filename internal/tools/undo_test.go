@@ -42,7 +42,7 @@ func TestAWriteCanBePutBack(t *testing.T) {
 		}
 	}
 
-	said, err := stack.Undo()
+	said, err := stack.Undo(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestAWriteCanBePutBack(t *testing.T) {
 	}
 
 	// the second write is still on the stack: undoing again removes the created file
-	if _, err := stack.Undo(); err != nil {
+	if _, err := stack.Undo(false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "a.txt")); !os.IsNotExist(err) {
@@ -85,7 +85,7 @@ func TestAnEditIsUndoneToTheExactEarlierBytes(t *testing.T) {
 	if _, err := edit.Run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stack.Undo(); err != nil {
+	if _, err := stack.Undo(false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)
@@ -99,7 +99,7 @@ func TestAnEditIsUndoneToTheExactEarlierBytes(t *testing.T) {
 
 func TestUndoWithNothingOnTheStackSaysSo(t *testing.T) {
 	stack := &UndoStack{}
-	said, err := stack.Undo()
+	said, err := stack.Undo(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestAnOutsideWriteIsUndoneWhereItLives(t *testing.T) {
 	if _, err := write.Run(ctx, args); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stack.Undo(); err != nil {
+	if _, err := stack.Undo(false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)
@@ -141,5 +141,33 @@ func TestAnOutsideWriteIsUndoneWhereItLives(t *testing.T) {
 	}
 	if string(got) != "before\n" {
 		t.Errorf("the outside file is %q, want what it was", got)
+	}
+}
+
+func TestUndoRefusesToOverwriteAChangeMadeByHandSince(t *testing.T) {
+	registry, dir, stack := undoFixture(t)
+	write := mustTool(t, registry, "write_file")
+	for _, content := range []string{"one\n", "two\n"} {
+		args, _ := json.Marshal(map[string]string{"path": "a.txt", "content": content})
+		if _, err := write.Run(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("my own fix\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := stack.Undo(false); err == nil {
+		t.Fatal("undo wrote over a change made after the tool's")
+	}
+	if got, _ := os.ReadFile(path); string(got) != "my own fix\n" {
+		t.Errorf("a refused undo still changed the file: %q", got)
+	}
+	if _, err := stack.Undo(true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "one\n" {
+		t.Errorf("a forced undo did not put the earlier text back: %q", got)
 	}
 }

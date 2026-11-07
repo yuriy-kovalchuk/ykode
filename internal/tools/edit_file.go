@@ -41,7 +41,7 @@ func NewEditFile(root *os.Root, dir string) *EditFile {
 func (*EditFile) Name() string { return "edit_file" }
 
 func (*EditFile) Description() string {
-	return "Replace exact text: edits is a list of {old_text, new_text}, each matched against the file as it is now. old_text has to land in one place - if it is missing, or appears more than once, the call fails and says how many, so re-read and copy the exact text. All pairs apply, or none."
+	return "Replace exact text: edits is a list of {old_text, new_text}, each matched against the file as it is now. old_text has to land in one place; copy it from read_file or search_text output. If it is missing or appears more than once, the call fails and says how many. All pairs apply, or none."
 }
 
 func (*EditFile) NeedsConfirm() bool { return true }
@@ -73,8 +73,7 @@ func (t *EditFile) Targets(args json.RawMessage) ([]Target, error) {
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(in.Path, t.dir)
-	return []Target{target}, err
+	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
 func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
@@ -144,7 +143,7 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		r := planned[i]
 		updated = updated[:r.start] + r.text + updated[r.end:]
 	}
-	t.pushUndo(h, []byte(current), true)
+	t.pushUndo(h, []byte(current), []byte(updated), true)
 	if err := h.root.WriteFile(h.name, []byte(updated), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}

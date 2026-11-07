@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"errors"
@@ -10,6 +10,16 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
+
+// scratchHome points $YKODE_HOME at a scratch directory and returns it with a project root.
+func scratchHome(t *testing.T) (string, string) {
+	t.Helper()
+	homeDir, root := t.TempDir(), t.TempDir()
+	t.Setenv("YKODE_HOME", homeDir)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	return homeDir, root
+}
 
 func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
 	homeDir, root := scratchHome(t)
@@ -33,7 +43,7 @@ func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prepareHome(cfg)
+	PrepareHome(cfg)
 
 	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("an audit file past retention survived startup: %v", err)
@@ -81,7 +91,7 @@ func TestAnOldConversationTakesItsSavedResultsWithIt(t *testing.T) {
 		}
 	}
 
-	prepareHome(cfg)
+	PrepareHome(cfg)
 
 	if _, err := os.Stat(session); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a conversation past its keep survived: %v", err)
@@ -91,5 +101,34 @@ func TestAnOldConversationTakesItsSavedResultsWithIt(t *testing.T) {
 	}
 	if _, err := os.Stat(young); err != nil {
 		t.Errorf("a conversation still inside its keep was removed: %v", err)
+	}
+}
+
+func TestTheConversationBeingResumedIsNeverAgedOut(t *testing.T) {
+	_, root := scratchHome(t)
+	cfg, err := config.Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cfg.SessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	resumed := filepath.Join(cfg.SessionDir, "s20000101-000000.jsonl")
+	if err := os.WriteFile(resumed, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-400 * 24 * time.Hour)
+	if err := os.Chtimes(resumed, old, old); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load([]string{"--root", root, "--continue", "s20000101-000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	PrepareHome(cfg)
+
+	if _, err := os.Stat(resumed); err != nil {
+		t.Errorf("startup deleted the conversation --continue asked for: %v", err)
 	}
 }

@@ -220,3 +220,28 @@ func TestAProjectFileIsNotGivenAuthorityOverTheUser(t *testing.T) {
 		t.Error("the note rule never says the user's request wins")
 	}
 }
+
+func TestBothPromptsBoundTheVerifyStep(t *testing.T) {
+	for name, prompt := range map[string]string{"SystemPrompt": SystemPrompt, "newSystemPrompt": newSystemPrompt} {
+		if !strings.Contains(prompt, "Exit 0 means it passed") || !strings.Contains(prompt, "throwaway") {
+			t.Errorf("%s lets verification run open-ended (task 03 spent 12 of 17 requests on it)", name)
+		}
+	}
+}
+
+func TestBothPromptsHoldTheRequestedAnswerFormat(t *testing.T) {
+	for name, prompt := range map[string]string{"SystemPrompt": SystemPrompt, "newSystemPrompt": newSystemPrompt} {
+		if strings.Contains(prompt, "say so in your answer") {
+			t.Errorf("%s still asks for a note in every answer (task 05 lost 5 of 5 runs that way)", name)
+		}
+		if !strings.Contains(prompt, "Answer in the form the user asked for") {
+			t.Errorf("%s never binds the answer to the format the user asked for", name)
+		}
+		if !strings.Contains(prompt, "follow it even if the code suggests otherwise") {
+			t.Errorf("%s stopped obeying a rule a project file states about the code (the 91a675c eval)", name)
+		}
+		if !strings.Contains(prompt, "the reason for your answer") {
+			t.Errorf("%s names a project file in every answer, not only where it decides the answer (the read-the-note eval)", name)
+		}
+	}
+}

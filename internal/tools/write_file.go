@@ -47,8 +47,7 @@ func (t *WriteFile) Targets(args json.RawMessage) ([]Target, error) {
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(in.Path, t.dir)
-	return []Target{target}, err
+	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
 func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
@@ -76,7 +75,7 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	before, err := h.root.ReadFile(h.name)
 	existed := err == nil
-	t.pushUndo(h, before, existed)
+	t.pushUndo(h, before, []byte(in.Content), existed)
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}

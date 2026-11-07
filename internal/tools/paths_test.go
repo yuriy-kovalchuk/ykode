@@ -33,11 +33,7 @@ func TestResolveTarget(t *testing.T) {
 		{"..", "/home/u", true},
 	}
 	for _, c := range cases {
-		got, err := resolveTarget(c.raw, root)
-		if err != nil {
-			t.Errorf("%q: %v", c.raw, err)
-			continue
-		}
+		got := resolveTarget(c.raw, root)
 		if got.Resolved != c.resolved || got.Outside != c.outside {
 			t.Errorf("%q: got (%s, outside=%v), want (%s, outside=%v)",
 				c.raw, got.Resolved, got.Outside, c.resolved, c.outside)

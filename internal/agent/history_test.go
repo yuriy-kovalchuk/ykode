@@ -10,36 +10,28 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// historyFixture is a conversation with two large tool results, of which only the oldest may go.
-func historyFixture() []llm.Message {
-	big := strings.Repeat("x", 2000)
+// twoReads is a conversation with two read results of the given sizes, the oldest first.
+func twoReads(older, newer int) []llm.Message {
 	return []llm.Message{
 		{Role: "system", Content: SystemPrompt},
 		{Role: "user", Content: "fix the bug"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: big},
+		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", older)},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: big},
+		{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", newer)},
 		{Role: "assistant", Content: "done"},
 	}
 }
+
+// historyFixture has two large results, of which only the oldest may go.
+func historyFixture() []llm.Message { return twoReads(2000, 2000) }
 
 func newForHistory(opts Options) *Agent {
 	return New(nil, nil, "test-model", opts, nullSink{})
 }
 
 // sizedFixture has one huge old result and one small recent one, so trimming has an obvious first victim.
-func sizedFixture() []llm.Message {
-	return []llm.Message{
-		{Role: "system", Content: SystemPrompt},
-		{Role: "user", Content: "fix the bug"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", 4000)},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", 800)},
-		{Role: "assistant", Content: "done"},
-	}
-}
+func sizedFixture() []llm.Message { return twoReads(4000, 800) }
 
 // windowBelow returns a context window that the untrimmed history has passed 3/4 of,
 // and that one trim of history[3] already brings under half.
@@ -90,17 +82,7 @@ func TestTrimHistorySacrificesTheOldestBigResultFirst(t *testing.T) {
 
 // Two equally huge results: one trim lands under 3/4 but still above half, so the trim must keep going.
 func TestTrimOncePastTheThresholdKeepsGoingToHalfTheWindow(t *testing.T) {
-	heavy := func() []llm.Message {
-		return []llm.Message{
-			{Role: "system", Content: SystemPrompt},
-			{Role: "user", Content: "fix the bug"},
-			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
-			{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", 6000)},
-			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
-			{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", 6000)},
-			{Role: "assistant", Content: "done"},
-		}
-	}
+	heavy := func() []llm.Message { return twoReads(6000, 6000) }
 	oneTrim := newForHistory(Options{})
 	oneTrim.history = heavy()
 	oneTrim.history[3].Content = trimMarker
@@ -148,6 +130,37 @@ func TestTrimHistoryLeavesSmallResultsAndNoContextAlone(t *testing.T) {
 	off.trimHistory()
 	if trimmed := trimCount(off.history); trimmed != 0 {
 		t.Fatalf("trimming ran without --ctx (%d trimmed); it must be off", trimmed)
+	}
+}
+
+func TestTrimNeverBlanksAResultTheModelHasNotSeen(t *testing.T) {
+	unseen := func() []llm.Message { return sizedFixture()[:6] } // ends on a tool reply: no answer yet
+	a := newForHistory(Options{CtxSize: windowBelow(t, unseen)}) // trimming the old result is enough
+	a.history = unseen()
+
+	a.trimHistory()
+
+	for _, m := range a.history {
+		if m.ToolCallID == "c2" && m.Content == trimMarker {
+			t.Error("the reply the model is about to read was blanked before it ever saw it")
+		}
+	}
+}
+
+func TestATrimmedResultCanStillBeRecalled(t *testing.T) {
+	store := tools.NewResultStore(t.TempDir())
+	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture), Store: store})
+	a.history = sizedFixture()
+	a.history[3].Name, a.history[3].CallID = "exec_command", "r1"
+	full := a.history[3].Content
+
+	a.trimHistory()
+
+	if !strings.Contains(a.history[3].Content, "recall") {
+		t.Fatalf("the trimmed result names no way back: %.80q", a.history[3].Content)
+	}
+	if saved, err := store.Load("r1"); err != nil || saved != full {
+		t.Errorf("the trimmed text was not kept for recall: %v", err)
 	}
 }
 

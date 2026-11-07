@@ -8,7 +8,7 @@ import (
 
 // Undoer puts the most recent file change back; tools.UndoStack is the real thing.
 type Undoer interface {
-	Undo() (string, error)
+	Undo(force bool) (string, error)
 	Empty() bool
 }
 
@@ -26,7 +26,7 @@ const Help = `commands:
   /tools      what the model may call, and what each description costs
   /model [id] which model this run asks, or ask a different one
   /think on|off  whether the model gets a thinking phase
-  /undo     put the most recent file change back
+  /undo [force]  put the most recent file change back; force also when it was edited since
   /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
 
@@ -61,7 +61,7 @@ func CommandIsSafeDuringATurn(line string) bool {
 
 // CompactReport is what /compact says when it is done.
 func CompactReport(freed int) string {
-	return fmt.Sprintf("older tool results shortened; the conversation is about %d tokens smaller\n", freed)
+	return fmt.Sprintf("compacted: the conversation is about %d tokens smaller\n", freed)
 }
 
 // onOff reads what /think was asked for.
@@ -85,7 +85,7 @@ func commandName(line string) string {
 
 // Command runs a slash command and returns the text a front end should show.
 // quit says the session is over; err is the caller's to report, never a reason to stop.
-func (a *Agent) Command(line string) (text string, quit bool, err error) {
+func (a *Agent) Command(ctx context.Context, line string) (text string, quit bool, err error) {
 	name, arg := commandName(line), strings.TrimSpace(strings.TrimPrefix(line, commandName(line)))
 	switch name {
 	case "/exit", "/quit":
@@ -98,7 +98,7 @@ func (a *Agent) Command(line string) (text string, quit bool, err error) {
 	case "/usage":
 		return UsageLine(a.Usage(), a.CtxSize()) + "\n", false, nil
 	case "/compact":
-		return CompactReport(a.Compact(context.Background())), false, nil
+		return CompactReport(a.Compact(ctx)), false, nil
 	case "/history":
 		return a.History(arg, historyLimit), false, nil
 	case "/ctx":
@@ -125,7 +125,7 @@ func (a *Agent) Command(line string) (text string, quit bool, err error) {
 		if a.opts.Undo == nil || a.opts.Undo.Empty() {
 			return "nothing to undo: ykode has not changed a file yet\n", false, nil
 		}
-		said, err := a.opts.Undo.Undo()
+		said, err := a.opts.Undo.Undo(arg == "force")
 		if err != nil {
 			return "", false, err
 		}

@@ -54,11 +54,14 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-// waitFor says whether the screen showed want before the deadline.
-
+// waitFor waits for the screen to show want, until the test's own -timeout: a busy machine is not a failure.
 func waitFor(t *testing.T, screen *lockedBuffer, want string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline, ok := t.Deadline()
+	if !ok {
+		deadline = time.Now().Add(time.Minute)
+	}
+	deadline = deadline.Add(-2 * time.Second) // fail here with the screen, not in go test's panic
 	for time.Now().Before(deadline) {
 		if strings.Contains(stripCodes(screen.String()), want) {
 			return

@@ -146,3 +146,23 @@ func TestADamagedLineIsSkippedAndCounted(t *testing.T) {
 		t.Errorf("the history does not say lines were missing:\n%s", answer)
 	}
 }
+
+func TestOneRunsHistoryDoesNotReadTheMonthsBeforeIt(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "audit")
+	logger := New(dir, "s20261107-120000.000")
+	if err := logger.Append(Entry{Tool: "read_file", Time: time.Date(2026, 11, 7, 12, 0, 1, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(dir, "2026-10.jsonl")
+	if err := os.WriteFile(old, []byte("{}\n"), 0o000); err != nil { // unreadable: opening it fails the read
+		t.Fatal(err)
+	}
+
+	entries, _, err := logger.Read("s20261107-120000.000")
+	if err != nil || len(entries) != 1 {
+		t.Errorf("reading this run's calls opened an older month: %d entries, %v", len(entries), err)
+	}
+	if got := logger.LatestSession(); got != "s20261107-120000.000" {
+		t.Errorf("latest session = %q; it should come from the newest month alone", got)
+	}
+}

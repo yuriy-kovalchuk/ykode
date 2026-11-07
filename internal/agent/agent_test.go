@@ -105,6 +105,16 @@ func (c *captureSink) Emit(ev Event) Decision {
 	return c.decision
 }
 
+// noticed says whether a notice containing text was emitted.
+func (c *captureSink) noticed(text string) bool {
+	for _, ev := range c.events {
+		if ev.Kind == Notice && strings.Contains(ev.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
 // kinds lists the event kinds in order, for asserting the shape of a run.
 
 func (c *captureSink) kinds() []EventKind {
@@ -188,32 +198,6 @@ func TestToolUsingRequestIsNotNudged(t *testing.T) {
 	}
 }
 
-func TestQuestionAboutTheAgentIsNotNudged(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "I am ykode, running Qwen", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
-	defer done()
-
-	if err := a.Ask(context.Background(), "what model are you and how fast are you?"); err != nil {
-		t.Fatal(err)
-	}
-	if len(stub.requests) != 1 {
-		t.Fatalf("%d requests, want the chat answer to be final", len(stub.requests))
-	}
-}
-
-func TestVerificationRetryDoesNotLoop(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "no tools needed", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 512}, &captureSink{})
-	defer done()
-
-	if err := a.Ask(context.Background(), "fix the failing test"); err != nil {
-		t.Fatal(err)
-	}
-	if len(stub.requests) != 2 {
-		t.Fatalf("%d requests, want exactly one verification retry", len(stub.requests))
-	}
-}
-
 // hasUserNote looks for text in the user messages of a recorded request.
 
 func hasUserNote(req map[string]any, want string) bool {
@@ -227,6 +211,31 @@ func hasUserNote(req map[string]any, want string) bool {
 	return false
 }
 
+func TestAMemoryAnswerIsCheckedAgainAtMostOnce(t *testing.T) {
+	cases := []struct {
+		name, prompt string
+		noVerify     bool
+		requests     int
+	}{
+		{"a question about the agent is not nudged", "what model are you and how fast are you?", false, 1},
+		{"the verification retry does not loop", "fix the failing test", false, 2},
+		{"--no-verify turns the nudge off", "why does main.go fail to build?", true, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stub := &stubServer{scripts: []string{sse("", "answered from memory", "", nil, "stop")}}
+			a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 512, NoVerify: c.noVerify}, &captureSink{})
+			defer done()
+			if err := a.Ask(context.Background(), c.prompt); err != nil {
+				t.Fatal(err)
+			}
+			if len(stub.requests) != c.requests {
+				t.Errorf("%d requests, want %d", len(stub.requests), c.requests)
+			}
+		})
+	}
+}
+
 func TestTheNudgeMatchesWholeWordsOnly(t *testing.T) {
 	for _, ask := range []string{"fix the bug in main.go", "add a test", "why does this fail", "review this file"} {
 		if !looksLikeProjectWork(ask) {
@@ -237,19 +246,6 @@ func TestTheNudgeMatchesWholeWordsOnly(t *testing.T) {
 		if looksLikeProjectWork(ask) {
 			t.Errorf("%q is not project work", ask)
 		}
-	}
-}
-
-func TestVerifyOffLeavesAMemoryAnswerAlone(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "the file is fine", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512, NoVerify: true}, &captureSink{})
-	defer done()
-
-	if err := a.Ask(context.Background(), "why does main.go fail to build?"); err != nil {
-		t.Fatal(err)
-	}
-	if len(stub.requests) != 1 {
-		t.Fatalf("%d requests, want one: --no-verify turns the nudge off", len(stub.requests))
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -42,6 +43,7 @@ type Exec struct {
 	Timeout  time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
 	LogDir   string        // where a cut command's full output is saved; empty means os.TempDir()
 	MaxBytes int           // bytes the result may use; 0 means defaultResultBytes
+	Sandbox  bool          // run inside sandbox-exec or bwrap: writes only in the project, no network
 }
 
 func (t Exec) timeout() time.Duration {
@@ -68,7 +70,7 @@ func (t Exec) logDir() string {
 func (Exec) Name() string { return "exec_command" }
 
 func (Exec) Description() string {
-	return fmt.Sprintf("Run a shell command with sh -c in the project root; you get cleaned output (no escape sequences or progress spam) plus the exit code. Default timeout %ds, max %d minutes. Cut output is saved to a log file whose path is shown: read or grep that instead of re-running.", int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Minutes()))
+	return fmt.Sprintf("Run a shell command with sh -c on "+runtime.GOOS+" in the project root; you get cleaned output (no escape sequences or progress spam) plus the exit code. Default timeout %ds, max %d minutes. Cut output is saved to a log file whose path is shown: read or grep that instead of re-running.", int(defaultExecTimeout.Seconds()), int(maxExecTimeout.Minutes()))
 }
 
 func (Exec) NeedsConfirm() bool { return true }
@@ -114,7 +116,15 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := groupCommand(runCtx, "sh", "-c", in.Command)
+	argv := []string{"sh", "-c", in.Command}
+	if t.Sandbox {
+		sandboxed, err := sandboxArgs(t.dir, in.Command)
+		if err != nil {
+			return "", err
+		}
+		argv = sandboxed
+	}
+	cmd := groupCommand(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.dir
 	cmd.Env = commandEnv()
 	out, err := cmd.CombinedOutput()
@@ -124,6 +134,9 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 		t.last.ExitCode = &code
 	}
 	if err == nil {
+		if strings.TrimSpace(result) == "" {
+			return "exit 0, no output: the command succeeded", nil // silence reads as "unknown" and invites a re-run
+		}
 		return t.fit(result), nil
 	}
 	// a non-zero exit is a normal result: the model needs the command's own output to fix it
@@ -199,9 +212,33 @@ func (t *Exec) fit(out string) string {
 	return b.String()
 }
 
-// PruneSpillLogs deletes whole command logs older than maxAge.
+// PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went.
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
-	return PruneOldDirs(dir, spillPrefix, maxAge)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil // a first run has nothing to clean
+	}
+	if err != nil {
+		return 0, fmt.Errorf("clean old files in %s: %w", dir, err)
+	}
+	removed := 0
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), spillPrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return removed, fmt.Errorf("stat %s: %w", e.Name(), err)
+		}
+		if time.Since(info.ModTime()) < maxAge {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return removed, fmt.Errorf("remove %s: %w", e.Name(), err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 // writeFullOutput stores an oversized output in a temp dir and returns its path.

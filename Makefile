@@ -34,7 +34,7 @@ fmt:
 run: build
 	./$(BINARY) $(ARGS)
 
-# eval runs the scripted tasks against a real server; ARGS filters with --only
+# eval runs the scripted tasks against a real server; ARGS takes the eval's flags and ykode's
 eval:
 	$(GO) run ./cmd/eval $(ARGS)
 

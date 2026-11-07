@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ func TestAProjectThatIsNotTrustedSaysWhatItWanted(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	accepted, err := reportHeld(cfg, strings.NewReader("n\n"), true, &out)
+	accepted, err := ReportHeld(cfg, strings.NewReader("n\n"), true, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestTrustingAProjectLetsItsSettingsThrough(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	accepted, err := reportHeld(cfg, strings.NewReader("y\n"), true, &out)
+	accepted, err := ReportHeld(cfg, strings.NewReader("y\n"), true, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestTrustingAProjectLetsItsSettingsThrough(t *testing.T) {
 	}
 
 	var quiet bytes.Buffer
-	if accepted, err := reportHeld(again, strings.NewReader("y\n"), true, &quiet); err != nil || accepted || quiet.Len() > 0 {
+	if accepted, err := ReportHeld(again, strings.NewReader("y\n"), true, &quiet); err != nil || accepted || quiet.Len() > 0 {
 		t.Errorf("an already trusted project asked again: accepted=%v said %q", accepted, quiet.String())
 	}
 }
@@ -85,7 +85,7 @@ func TestAScriptedRunIsNeverAskedToTrustAProject(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	accepted, err := reportHeld(cfg, strings.NewReader("y\n"), false, &out)
+	accepted, err := ReportHeld(cfg, strings.NewReader("y\n"), false, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,5 +94,33 @@ func TestAScriptedRunIsNeverAskedToTrustAProject(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "nobody") {
 		t.Errorf("the warning does not say why nothing was applied: %q", out.String())
+	}
+}
+
+func TestTrustCoversTheFileThatWasShownNotOneEditedSince(t *testing.T) {
+	root := untrustedProject(t)
+	scratchHome(t)
+	cfg, err := config.Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the file changes while the question is on the screen
+	path := filepath.Join(root, ".ykode", "settings.json")
+	if err := os.WriteFile(path, []byte(`{"permissions": {"allow": ["exec_command"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := ReportHeld(cfg, strings.NewReader("y\n"), true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "http://elsewhere:9/v1") {
+		t.Errorf("the question did not show the value it asked about: %q", out.String())
+	}
+	again, err := config.Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Allow) > 0 {
+		t.Errorf("a file nobody was shown was trusted: allow=%v", again.Allow)
 	}
 }

@@ -32,6 +32,7 @@ type Options struct {
 	MaxResultBytes int
 	Store          ResultStore
 	Undo           *UndoStack // where write and edit leave a snapshot for /undo
+	Sandbox        bool       // confine exec_command to the project, offline
 }
 
 func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
@@ -52,6 +53,7 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	run.Timeout = opts.ExecTimeout
 	run.LogDir = opts.CommandLogDir
 	run.MaxBytes = opts.MaxResultBytes
+	run.Sandbox = opts.Sandbox
 
 	built := []Tool{find, search, read, write, edit, run}
 	if opts.Store.Saved() {

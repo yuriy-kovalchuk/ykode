@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
-	compactKeep   = 2 // the newest tool calls stay in full
+	compactKeep   = 2               // the newest tool calls stay in full
+	foldGap       = compactKeep + 4 // new calls between folds: each fold costs a request and the whole prompt cache
 	compactPrompt = `Summarise the earlier part of a coding session so it can be dropped from the context.
 Answer in four short sections - Goal, Files touched, What was decided, Next step.
 Only state what the transcript shows. Under 150 words.`
@@ -64,7 +66,7 @@ func callBlocks(messages []llm.Message) int {
 // run empties the window more than once, and by the second time there are no old results left to
 // shorten, so folding the turns again is the only thing that earns its request.
 func (a *Agent) foldOverdue() bool {
-	return callBlocks(a.history)-a.compactedAt >= compactKeep
+	return a.compactedAt < 0 || callBlocks(a.history)-a.compactedAt >= foldGap
 }
 
 // dropping is what the summary replaces: everything before the kept calls except the message
@@ -107,7 +109,7 @@ func (a *Agent) compactCut() (start, task int) {
 		return 0, 0
 	}
 	for i := start - 1; i > 0; i-- {
-		if a.history[i].Role == "user" {
+		if a.history[i].Role == "user" && a.history[i].Content == a.task { // ykode's own notes are user messages too
 			return start, i
 		}
 	}
@@ -129,7 +131,11 @@ func (a *Agent) transcriptOf(messages []llm.Message) string {
 			fmt.Fprintf(&b, "%s: %s\n", m.Role, oneLine(m.Content, compactLineCap))
 		}
 	}
-	return b.String()
+	if a.opts.CtxSize <= 0 {
+		return b.String()
+	}
+	// the summary request must fit the window too: 40% of it, keeping the start and the latest work
+	return tools.FormatResult(b.String(), int(float64(a.opts.CtxSize*2/5)*a.meter.bytesPerTok))
 }
 
 // summariseWithModel asks for the summary in its own request: no tools, a small answer, no history tailoring.

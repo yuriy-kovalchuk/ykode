@@ -64,8 +64,7 @@ func (t FindFiles) Targets(args json.RawMessage) ([]Target, error) {
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(in.Path, t.dir)
-	return []Target{target}, err
+	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
 func (t FindFiles) Run(ctx context.Context, args json.RawMessage) (string, error) {

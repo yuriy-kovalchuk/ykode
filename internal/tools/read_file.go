@@ -15,6 +15,9 @@ import (
 const (
 	defaultReadLimit = 150 // lines per read_file call when the model omits limit
 	maxReadLimit     = 2000
+	wholeFileLines   = 400  // an unasked read returns a file this short whole: one call, not three
+	peekFileLines    = 1000 // an unasked read of a longer file gets a peek and a pointer at search
+	peekLines        = 30
 )
 
 // ReadFile returns a slice of a file, numbered like cat -n.
@@ -69,8 +72,7 @@ func (t *ReadFile) Targets(args json.RawMessage) ([]Target, error) {
 	if err := decodeArgs(args, &in); err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(in.Path, t.dir)
-	return []Target{target}, err
+	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
 func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
@@ -127,7 +129,14 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	if first > len(lines) {
 		return "", fmt.Errorf("read_file %q: offset %d is past the end of a %d line file", in.Path, first, len(lines))
 	}
-	last := first - 1 + clampLimit(in.Limit, t.window(), maxReadLimit)
+	window, unasked := t.window(), in.Limit == 0 && in.Offset <= 1
+	switch {
+	case unasked && len(lines) <= wholeFileLines:
+		window = len(lines)
+	case unasked && len(lines) > peekFileLines:
+		window = min(window, peekLines)
+	}
+	last := first - 1 + clampLimit(in.Limit, window, maxReadLimit)
 	if last > len(lines) {
 		last = len(lines)
 	}
@@ -154,6 +163,9 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 			reason = fmt.Sprintf("%d byte limit", t.aim())
 		}
 		fmt.Fprintf(&b, "\n[%d of %d lines shown (%s); continue with offset=%d]\n", shown-first+1, len(lines), reason, shown+1)
+		if unasked && len(lines) > peekFileLines {
+			fmt.Fprintf(&b, "[a long file: to find a line, search_text with path %q is faster than reading on]\n", h.shown())
+		}
 	}
 	text := b.String()
 	if t.alreadyShown(text) {

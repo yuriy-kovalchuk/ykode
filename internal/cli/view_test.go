@@ -92,29 +92,17 @@ func TestToolEventsLandInTheLog(t *testing.T) {
 	}
 }
 
-func TestConfirmationIsAskedAndAnswered(t *testing.T) {
-	var out, log bytes.Buffer
-	lines := NewLineSource(strings.NewReader("y\n"))
-	v := NewView(&out, &log, NewConfirmer(lines, &out))
+func TestAConfirmationShowsTheQuestionAndReadsTheAnswer(t *testing.T) {
+	for typed, want := range map[string]agent.Decision{"y\n": agent.Allow, "a\n": agent.AllowAlways} {
+		var out, log bytes.Buffer
+		v := NewView(&out, &log, NewConfirmer(NewLineSource(strings.NewReader(typed)), &out))
 
-	if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "exec_command", Text: "exec_command rm -rf build"}); got != agent.Allow {
-		t.Fatalf("decision = %v, want the typed y to allow it", got)
-	}
-	if !strings.Contains(out.String(), "exec_command rm -rf build [y/N/a]") {
-		t.Fatalf("stdout = %q, want the question visible", out.String())
-	}
-}
-
-func TestAnsweringAlwaysAllowsAndRemembers(t *testing.T) {
-	var out, log bytes.Buffer
-	lines := NewLineSource(strings.NewReader("a\n"))
-	v := NewView(&out, &log, NewConfirmer(lines, &out))
-
-	if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "edit_file", Text: "edit_file src/a.go"}); got != agent.AllowAlways {
-		t.Fatalf("decision = %v, want the typed a to allow it always", got)
-	}
-	if !strings.Contains(out.String(), "[y/N/a]") {
-		t.Errorf("the question should offer always: %q", out.String())
+		if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "exec_command", Text: "exec_command rm -rf build"}); got != want {
+			t.Errorf("typed %q: decision = %v, want %v", typed, got, want)
+		}
+		if !strings.Contains(out.String(), "exec_command rm -rf build [y/N/a]") {
+			t.Errorf("typed %q: stdout = %q, want the question with its three answers", typed, out.String())
+		}
 	}
 }
 

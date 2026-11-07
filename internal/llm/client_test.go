@@ -299,7 +299,7 @@ func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL+"/v1", "")
-	c.idle = 50 * time.Millisecond
+	c.Idle = 50 * time.Millisecond
 	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "sent nothing for") {
 		t.Fatalf("ChatStream() error = %v, want the silence to be named", err)
@@ -319,7 +319,7 @@ func TestChatStreamTakesAsLongAsItNeedsBetweenChunks(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL+"/v1", "")
-	c.idle = 150 * time.Millisecond // longer than any gap, shorter than the whole stream
+	c.Idle = 150 * time.Millisecond // longer than any gap, shorter than the whole stream
 	turn, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err != nil {
 		t.Fatalf("a slow but living stream must not be cut off: %v", err)

@@ -23,8 +23,12 @@ const finishLength = "length"
 type Options struct {
 	MaxTurns      int
 	MaxTokens     int // cap on one response
+	SafetyMargin  int // tokens left free for the chat template; 0 means ctxSafetyTok
 	CtxSize       int // server context window; 0 = unknown, no budgeting
 	Think         bool
+	NewPrompt     bool         // newSystemPrompt instead of SystemPrompt, until the evals pick one
+	Thinking      llm.Sampling // sent while the model thinks
+	NoThink       llm.Sampling // sent with thinking off; Qwen's cards recommend different values
 	AssumeYes     bool
 	Instructions  string            // what the project's AGENTS.md / CLAUDE.md said
 	NoVerify      bool              // never push a text-only answer back into the tools
@@ -57,6 +61,8 @@ type Agent struct {
 	opts          Options
 	sink          Sink
 	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
+	prompt        string       // the system message, built once so the cached prefix never moves
+	task          string       // the prompt being answered, which compaction keeps word for word
 	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
 	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
@@ -76,13 +82,18 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.meter = newMeter()
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
+	base := SystemPrompt
+	if opts.NewPrompt {
+		base = newSystemPrompt
+	}
+	a.prompt = withInstructions(withEnvironment(base, opts.Root), opts.Instructions)
 	a.Reset()
 	return a
 }
 
 // Reset keeps the system prompt and forgets the rest of the conversation; the learned byte ratio stays.
 func (a *Agent) Reset() {
-	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
+	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.meter.clearCost()
 	a.compactedAt = -1
 	a.forgetAll() // the tools forget what they handed over too: there is nothing in front of the model
@@ -133,13 +144,16 @@ func looksLikeProjectWork(prompt string) bool {
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	a.add(llm.Message{Role: "user", Content: prompt})
+	a.task = prompt
 
 	usedTools, nudged, forceTool := false, false, false
 	for turn := 1; ; turn++ {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
 		if a.underPressure() {
-			a.shrinkWhatAged(keepResults)
+			if freed := a.shrinkWhatAged(keepResults); freed > 0 {
+				a.tell(fmt.Sprintf("shortened older tool output to fit the context (%s)", byteSize(freed)))
+			}
 		}
 		// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call
 		if a.underPressure() && a.canCompact() && a.foldOverdue() {

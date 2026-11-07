@@ -1,14 +1,17 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/app"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
@@ -20,6 +23,7 @@ const defaultMaxTurns = 8
 // transcript is what one run left behind.
 type transcript struct {
 	tools    []string
+	args     []string // what each call was asked, in the same order as tools
 	failures []string
 	results  []string // what each tool handed back, one-lined
 	notice   []string
@@ -115,7 +119,7 @@ func (r *recorder) Emit(ev agent.Event) agent.Decision {
 	case agent.Answer:
 		r.answerByTurn[ev.Turn] += ev.Text
 	case agent.ToolStart:
-		r.tools = append(r.tools, ev.Tool)
+		r.tools, r.args = append(r.tools, ev.Tool), append(r.args, ev.Args)
 	case agent.ToolFail:
 		r.failures = append(r.failures, ev.Text)
 	case agent.ToolEnd:
@@ -149,6 +153,7 @@ type evalResult struct {
 	note      string
 	story     string
 	dir       string
+	counters  map[string]int
 }
 
 func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg config.Config, t task) evalResult {
@@ -173,26 +178,20 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 	if t.ctx > 0 {
 		ctxSize = t.ctx
 	}
-	resultBytes := tools.ResultBytesFor(ctxSize)
 	instructions, _ := agent.LoadInstructions("", project)
 	rec := newRecorder()
-	maxTurns := t.maxTurns
-	if maxTurns == 0 {
-		maxTurns = defaultMaxTurns
-	}
-	a := agent.New(client, registryFor(root, project, cfg, resultBytes), model.ID, agent.Options{
-		MaxTurns:     maxTurns,
-		MaxTokens:    cfg.MaxTokens,
-		CtxSize:      ctxSize,
-		Think:        cfg.Think,
-		AssumeYes:    true, // the harness has nobody to ask, so in-project work runs and outside work is refused
-		Instructions: instructions,
-		MaxResult:    resultBytes,
-		Store:        store,
-	}, rec)
+	cfg.Root = project
+	toolOpts, agentOpts := app.Options(cfg, model.ID, ctxSize, store, nil)
+	agentOpts.MaxTurns = cmp.Or(t.maxTurns, defaultMaxTurns)
+	agentOpts.AssumeYes = true // nobody to ask: in-project work runs, outside work is refused
+	agentOpts.Instructions = instructions
+	a := agent.New(client, tools.BuiltIn(root, project, toolOpts), model.ID, agentOpts, rec)
 
 	start := time.Now()
 	askErr := a.Ask(ctx, t.prompt)
+	if askErr == nil && t.followUp != "" {
+		askErr = a.Ask(ctx, t.followUp)
+	}
 	usage := a.Usage()
 	rec.lastAnswer()
 
@@ -210,17 +209,63 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 		note:      note,
 		story:     rec.transcript.describe(),
 		dir:       base,
+		counters:  rec.counters(askErr),
 	}
 }
 
-func registryFor(root *os.Root, project string, cfg config.Config, resultBytes int) *tools.Registry {
-	return tools.BuiltIn(root, project, tools.Options{
-		ReadLines:      cfg.ReadLines,
-		SearchLimit:    cfg.SearchLimit,
-		ExecTimeout:    cfg.ExecTimeout,
-		CommandLogDir:  cfg.CommandLogDir,
-		MaxResultBytes: resultBytes,
-	})
+// toolCallAsText catches a call written into the answer instead of made: ykode then sees prose and stops.
+var toolCallAsText = regexp.MustCompile(`<tool_call>|\{\s*"name"\s*:`)
+
+// counters are the behaviours the prompt work targets, counted from what the run emitted.
+func (t *transcript) counters(askErr error) map[string]int {
+	c := map[string]int{
+		"recall":     t.countTool("recall"),
+		"rerun":      t.reruns(),
+		"compaction": t.noticed("summarise the older turns"),
+		"shrink":     t.noticed("shortened older tool output"),
+		"trim":       t.noticed("trimmed") + t.noticed("dropped"),
+		"nudge":      t.noticed("asking once to verify"),
+	}
+	for _, result := range t.results {
+		if strings.Contains(result, "unchanged since you read") || strings.Contains(result, "you already have this outline") {
+			c["unchanged-reread"]++
+		}
+	}
+	if toolCallAsText.MatchString(t.answer) {
+		c["call-as-text"] = 1
+	}
+	if strings.Count(strings.TrimSpace(t.answer), "\n") >= 5 {
+		c["long-answer"] = 1
+	}
+	if askErr != nil && strings.Contains(askErr.Error(), "max-turns") {
+		c["max-turns"] = 1
+	}
+	return c
+}
+
+func (t *transcript) noticed(needle string) int {
+	n := 0
+	for _, note := range t.notice {
+		if strings.Contains(note, needle) {
+			n++
+		}
+	}
+	return n
+}
+
+// reruns counts commands run again with the same arguments, which recall was meant to save.
+func (t *transcript) reruns() int {
+	seen, n := map[string]bool{}, 0
+	for i, tool := range t.tools {
+		if tool != "exec_command" || i >= len(t.args) {
+			continue
+		}
+		if seen[t.args[i]] {
+			n++
+		}
+		seen[t.args[i]] = true
+	}
+	return n
 }
 
 // writeFixture lays out <base>/project for the agent's root plus anything one level above it.

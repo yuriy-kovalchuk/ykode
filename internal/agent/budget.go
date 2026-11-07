@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
@@ -27,13 +29,15 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		// servers that ignore "required" just keep answering, so the guard costs one turn
 		req.ToolChoice = "required"
 	}
+	req.Sampling = a.opts.Thinking
 	if !a.opts.Think {
+		req.Sampling = a.opts.NoThink
 		// llama.cpp honours "enable_thinking" and silently ignores "thinking_enabled"
 		req.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	}
 	if a.opts.CtxSize > 0 {
 		used := a.estimateTokens()
-		room := a.opts.CtxSize - used - ctxSafetyTok
+		room := a.opts.CtxSize - used - cmp.Or(a.opts.SafetyMargin, ctxSafetyTok)
 		if room < minResponseTok {
 			return llm.ChatRequest{}, fmt.Errorf(
 				"conversation is about %d tokens but the server context is %d; use /reset or raise --ctx", used, a.opts.CtxSize)
@@ -96,14 +100,7 @@ func (a *Agent) trimHistory() {
 	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.opts.CtxSize*3/4 {
 		return
 	}
-	target := a.opts.CtxSize / 2
-	for i := 1; i < len(a.history) && a.estimateTokens() > target; i++ {
-		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 {
-			a.forget(*m)
-			m.Content = trimMarker
-			a.tell("trimmed an old tool result to fit the context")
-		}
-	}
+	a.trimResults(1, a.firstUnseen(), a.opts.CtxSize/2)
 	// dropping whole calls is the emergency brake: it costs the model its recent work, so it waits
 	// until the window is nearly full, after shortening and compaction have had their turn.
 	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestToolCall() {
@@ -113,6 +110,36 @@ func (a *Agent) trimHistory() {
 	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestExchange() {
 		a.tell("dropped an older turn to fit the context")
 	}
+	// last resort: a reply too big for what is left is cut rather than failing the request
+	a.trimResults(a.firstUnseen(), len(a.history), a.opts.CtxSize*9/10)
+}
+
+// trimResults blanks large results in history[from:to], oldest first, until the estimate is under goal.
+func (a *Agent) trimResults(from, to, goal int) {
+	for i := from; i < to && a.estimateTokens() > goal; i++ {
+		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 && !strings.HasPrefix(m.Content, shrinkMark) {
+			a.forget(*m)
+			m.Content = a.trimmed(m)
+			a.tell("trimmed a tool result to fit the context")
+		}
+	}
+}
+
+// firstUnseen is where the replies the model has not read yet begin: every result is seen once in full.
+func (a *Agent) firstUnseen() int {
+	i := len(a.history)
+	for i > 1 && a.history[i-1].Role == "tool" {
+		i--
+	}
+	return i
+}
+
+// trimmed is what is left of a blanked result: a recall pointer when it has an id, else a marker.
+func (a *Agent) trimmed(m *llm.Message) string {
+	if m.CallID == "" {
+		return trimMarker
+	}
+	return a.summarize(m, m.CallID)
 }
 
 // dropOldestToolCall removes the oldest tool call with its replies, keeping the newest pair intact:

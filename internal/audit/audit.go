@@ -90,16 +90,24 @@ func (l *Logger) Append(e Entry) error {
 // Read returns the entries of one session, oldest first, and how many log lines could not be
 // read; an empty session matches every run.
 func (l *Logger) Read(session string) ([]Entry, int, error) {
-	return l.matching(func(e Entry) bool { return session == "" || e.Session == session })
+	return l.matching(startMonth(session), func(e Entry) bool { return session == "" || e.Session == session })
+}
+
+// startMonth names the month file a session began in (s20261107-… → 2026-11), "" when unknown.
+func startMonth(session string) string {
+	if len(session) < 7 || session[0] != 's' {
+		return ""
+	}
+	return session[1:5] + "-" + session[5:7]
 }
 
 // ReadRoot returns every entry logged for one project root, across sessions.
 func (l *Logger) ReadRoot(root string) ([]Entry, int, error) {
-	return l.matching(func(e Entry) bool { return e.Root == root })
+	return l.matching("", func(e Entry) bool { return e.Root == root })
 }
 
 // matching reads the log file by file - name order is month order - and keeps what the filter takes.
-func (l *Logger) matching(keep func(Entry) bool) ([]Entry, int, error) {
+func (l *Logger) matching(since string, keep func(Entry) bool) ([]Entry, int, error) {
 	if l == nil {
 		return nil, 0, nil
 	}
@@ -110,6 +118,9 @@ func (l *Logger) matching(keep func(Entry) bool) ([]Entry, int, error) {
 	var entries []Entry
 	damaged := 0
 	for _, path := range files {
+		if filepath.Base(path) < since { // a month before the run began cannot hold its calls
+			continue
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, 0, fmt.Errorf("audit: %w", err)
@@ -182,7 +193,14 @@ func (l *Logger) Session() string {
 
 // LatestSession names the most recent run in the log, "" when there is none.
 func (l *Logger) LatestSession() string {
-	entries, _, err := l.Read("")
+	if l == nil {
+		return ""
+	}
+	files, _ := filepath.Glob(filepath.Join(l.dir, "*.jsonl"))
+	if len(files) == 0 {
+		return ""
+	}
+	entries, _, err := l.matching(filepath.Base(files[len(files)-1]), func(Entry) bool { return true })
 	if err != nil || len(entries) == 0 {
 		return ""
 	}

@@ -28,19 +28,13 @@ func acceptedProject(root string, raw []byte) bool {
 	return records[root] == hex.EncodeToString(sum[:])
 }
 
-// TrustProject records a project's settings file as accepted, so the next run applies it whole.
-func TrustProject(root string) error {
-	settings := projectSettingsPath(root)
-	raw, err := os.ReadFile(settings)
-	if err != nil {
-		return fmt.Errorf("trust %s: %w", settings, err)
-	}
+// TrustProject trusts the file the user was shown (its hash), so an edit made since is asked about again.
+func TrustProject(root, hash string) error {
 	records, err := readTrust()
 	if err != nil {
 		records = map[string]string{}
 	}
-	sum := sha256.Sum256(raw)
-	records[root] = hex.EncodeToString(sum[:])
+	records[root] = hash
 	out, err := json.MarshalIndent(records, "", "  ")
 	if err != nil {
 		return err

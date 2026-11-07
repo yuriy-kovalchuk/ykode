@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// scratchHome points $YKODE_HOME at a scratch directory; startup_test.go uses it too.
+// scratchHome points $YKODE_HOME at a scratch directory and returns it with a project root.
 func scratchHome(t *testing.T) (string, string) {
 	t.Helper()
 	homeDir, root := t.TempDir(), t.TempDir()
@@ -38,7 +38,7 @@ func TestHistoryWithoutFlagsShowsTheNewestRunOnly(t *testing.T) {
 	logCalls(t, homeDir, "s1", root, audit.Entry{ID: "r1", Tool: "read_file", Status: "ok", Time: time.Now().Add(-time.Hour)})
 	logCalls(t, homeDir, "s2", root, audit.Entry{ID: "r3", Tool: "exec_command", Status: "error", Time: time.Now()})
 	var out bytes.Buffer
-	if err := historyCommand([]string{"--root", root}, &out); err != nil {
+	if err := History([]string{"--root", root}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "r3") || strings.Contains(got, "r1") {
@@ -54,28 +54,28 @@ func TestHistoryAllJSONSinceAndFilters(t *testing.T) {
 	logCalls(t, homeDir, "s2", root, recent)
 
 	var all bytes.Buffer
-	if err := historyCommand([]string{"--root", root, "--all"}, &all); err != nil {
+	if err := History([]string{"--root", root, "--all"}, &all); err != nil {
 		t.Fatal(err)
 	}
 	if got := all.String(); !strings.Contains(got, "r1") || !strings.Contains(got, "r2") {
 		t.Errorf("--all should span both runs: %s", got)
 	}
 	var fresh bytes.Buffer
-	if err := historyCommand([]string{"--root", root, "--all", "--since", "24h"}, &fresh); err != nil {
+	if err := History([]string{"--root", root, "--all", "--since", "24h"}, &fresh); err != nil {
 		t.Fatal(err)
 	}
 	if got := fresh.String(); strings.Contains(got, "r1") {
 		t.Errorf("--since 24h should drop the two-day-old call: %s", got)
 	}
 	var failed bytes.Buffer
-	if err := historyCommand([]string{"--root", root, "--all", "--failed"}, &failed); err != nil {
+	if err := History([]string{"--root", root, "--all", "--failed"}, &failed); err != nil {
 		t.Fatal(err)
 	}
 	if got := failed.String(); !strings.Contains(got, "r2") {
 		t.Errorf("--failed: %s", got)
 	}
 	var asJSON bytes.Buffer
-	if err := historyCommand([]string{"--root", root, "--all", "--json", "exec"}, &asJSON); err != nil {
+	if err := History([]string{"--root", root, "--all", "--json", "exec"}, &asJSON); err != nil {
 		t.Fatal(err)
 	}
 	dec := json.NewDecoder(strings.NewReader(asJSON.String()))
@@ -93,7 +93,7 @@ func TestHistoryAllJSONSinceAndFilters(t *testing.T) {
 
 func TestHistoryRefusesADurationItCannotRead(t *testing.T) {
 	_, root := scratchHome(t)
-	if err := historyCommand([]string{"--root", root, "--since", "yesterday"}, nil); err == nil ||
+	if err := History([]string{"--root", root, "--since", "yesterday"}, nil); err == nil ||
 		!strings.Contains(err.Error(), "--since") {
 		t.Errorf("want an error about --since, got %v", err)
 	}

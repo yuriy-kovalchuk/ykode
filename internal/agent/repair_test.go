@@ -20,7 +20,7 @@ func TestAResumedConversationIsStillTalkingToTheModel(t *testing.T) {
 		sse("", "", "read_file", []string{`{"path":"note.txt"}`}, "tool_calls"),
 		sse("", "it says 90", "", nil, "stop"),
 	}}
-	log := session.New(sessions, "s20260101-120000")
+	log := session.New(sessions, "s20260101-120000", "")
 	a, done, work, _ := newAuditedAgent(t, firstStub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
 	defer done()
 	writeLines(t, work, "note.txt", 3)
@@ -30,14 +30,14 @@ func TestAResumedConversationIsStillTalkingToTheModel(t *testing.T) {
 	}
 
 	// second run: same conversation loaded back, one question later
-	saved, err := session.Load(log.Path())
+	saved, err := session.Load(log.Path(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondStub := &stubServer{scripts: []string{sse("", "still 90", "", nil, "stop")}}
 	b, doneB, _, _ := newAuditedAgent(t, secondStub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
 	defer doneB()
-	b.opts.Session = session.New(sessions, "s20260101-120000")
+	b.opts.Session = session.New(sessions, "s20260101-120000", "")
 	b.Resume(saved)
 	if err := b.Ask(context.Background(), "and again?"); err != nil {
 		t.Fatal(err)

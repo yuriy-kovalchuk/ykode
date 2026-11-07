@@ -46,6 +46,7 @@ func TestLoadDefaults(t *testing.T) {
 		ReadLines:       defaultReadLines,
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
+		StreamIdle:      defaultStreamIdle,
 		KeepCommandLogs: defaultLogKeep,
 		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
@@ -58,6 +59,7 @@ func TestLoadDefaults(t *testing.T) {
 	cfg.SessionFile = ""   // derived from $YKODE_HOME and the run time
 	cfg.Session = ""       // derived from the run time
 	cfg.modelReasoning = nil
+	cfg.modelSampling = nil
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg = %+v, want %+v", cfg, want)
 	}
@@ -249,8 +251,8 @@ func TestResultsLiveUnderTheHomeDirForThisRun(t *testing.T) {
 		t.Fatalf("results sit in %s, want %s", dir, filepath.Join(homeDir, "results"))
 	}
 	name := filepath.Base(cfg.ResultDir)
-	if !strings.HasPrefix(name, "s2") || len(name) != 16 {
-		t.Fatalf("run dir %q is not stamped like s20060102-150405", name)
+	if !sessionIDPattern.MatchString(name) {
+		t.Fatalf("run dir %q is not stamped like s20060102-150405.000", name)
 	}
 }
 
@@ -305,5 +307,48 @@ func TestContinueRejectsAnythingThatIsNotAnID(t *testing.T) {
 	}
 	if _, err := Load([]string{"--continue", "s20060102-150405"}); err == nil || !strings.Contains(err.Error(), "no such conversation") {
 		t.Errorf("an unknown but well-formed id: %v", err)
+	}
+}
+
+func TestTwoRunsInTheSameSecondGetTheirOwnConversation(t *testing.T) {
+	user := fakeHome(t)
+	first, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sessionIDPattern.MatchString(first.Session) || !strings.Contains(first.Session, ".") {
+		t.Fatalf("session id %q carries no milliseconds", first.Session)
+	}
+	// an id from before milliseconds still resumes
+	if err := os.MkdirAll(filepath.Join(user, "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(user, "sessions", "s20260101-000000.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load([]string{"--continue", "s20260101-000000"}); err != nil {
+		t.Errorf("an old id no longer resumes: %v", err)
+	}
+}
+
+func TestEveryFlagReachesItsSetting(t *testing.T) {
+	tempHome(t)
+	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
+		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--no-verify", "--send-reasoning",
+		"-p", "task", "--json", "--version", "--new-prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
+		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.Think || !cfg.AssumeYes || !cfg.NoVerify ||
+		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.JSON || !cfg.Version || !cfg.NewPrompt {
+		t.Errorf("flags did not all land: %+v", cfg)
+	}
+	off, err := Load([]string{"--yes=false", "--no-think=false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.AssumeYes || !off.Think {
+		t.Errorf("a flag given as false switched its setting: yes=%v think=%v", off.AssumeYes, off.Think)
 	}
 }

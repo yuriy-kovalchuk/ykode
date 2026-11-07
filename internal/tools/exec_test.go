@@ -244,3 +244,14 @@ func TestARunOfIdenticalLinesIsCollapsed(t *testing.T) {
 		t.Fatalf("the lines after the run were lost:\n%s", out)
 	}
 }
+
+func TestASilentCommandThatSucceededSaysSo(t *testing.T) {
+	out, err := NewExec(t.TempDir()).Run(context.Background(), json.RawMessage(`{"command":"true"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// an empty answer reads as "unknown" to a small model, which then runs the build again
+	if !strings.Contains(out, "exit 0") {
+		t.Errorf("a silent success answered %q", out)
+	}
+}

@@ -74,11 +74,15 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 		return sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + names[i] + `"}`}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, &captureSink{decision: Allow}, dir)
+	sink := &captureSink{decision: Allow}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "search five files"); err != nil {
 		t.Fatal(err)
+	}
+	if !sink.noticed("shortened older tool output") {
+		t.Error("results were shortened without telling the user")
 	}
 	contents := toolContents(t, stub.requests[len(stub.requests)-1])
 	if len(contents) < 3 {

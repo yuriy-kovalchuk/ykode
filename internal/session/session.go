@@ -19,14 +19,20 @@ const filePerm = 0o600
 // Log writes one conversation.
 type Log struct {
 	path string
+	root string // the project, written as the first line so another project cannot resume it
 }
 
-// New points a log at <dir>/<id>.jsonl; an empty id means sessions are off.
-func New(dir, id string) *Log {
+// header is the first line of a conversation that knows its project.
+type header struct {
+	Root string `json:"root"`
+}
+
+// New points a log at <dir>/<id>.jsonl for the project at root; an empty id means sessions are off.
+func New(dir, id, root string) *Log {
 	if dir == "" || id == "" {
 		return nil
 	}
-	return &Log{path: filepath.Join(dir, id+".jsonl")}
+	return &Log{path: filepath.Join(dir, id+".jsonl"), root: root}
 }
 
 // Path names the file this log writes to.
@@ -50,19 +56,24 @@ func (l *Log) Append(m llm.Message) error {
 		return fmt.Errorf("session: %w", err)
 	}
 	defer f.Close()
+	var lines []byte
+	if info, err := f.Stat(); err == nil && info.Size() == 0 && l.root != "" {
+		lines, _ = json.Marshal(header{Root: l.root})
+		lines = append(lines, '\n')
+	}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
-	if _, err := f.Write(append(raw, '\n')); err != nil {
+	if _, err := f.Write(append(append(lines, raw...), '\n')); err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
 	return nil
 }
 
-// Load reads a conversation back. A half-written last line (the process was killed mid-write)
-// is dropped rather than failing the whole resume.
-func Load(path string) ([]llm.Message, error) {
+// Load reads a conversation back for the project at root, refusing one another project started.
+// A half-written last line (the process was killed mid-write) is dropped rather than failing the resume.
+func Load(path, root string) ([]llm.Message, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("session: %w", err)
@@ -71,6 +82,13 @@ func Load(path string) ([]llm.Message, error) {
 	var messages []llm.Message
 	for i, line := range lines {
 		if line == "" {
+			continue
+		}
+		var h header
+		if i == 0 && json.Unmarshal([]byte(line), &h) == nil && h.Root != "" {
+			if root != "" && h.Root != root {
+				return nil, fmt.Errorf("session: %s belongs to %s; resume it with --root %s", filepath.Base(path), h.Root, h.Root)
+			}
 			continue
 		}
 		var m llm.Message
