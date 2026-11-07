@@ -3,17 +3,18 @@
 GO ?= go
 BINARY := bin/ykode
 ARGS ?=
-INSTALL_DIR ?= $(HOME)/.local/bin
+PREFIX ?= $(HOME)/.local
+INSTALL_DIR ?= $(PREFIX)/bin
 # the version --version prints comes from git, so a build can be named later
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -X main.version=$(VERSION)
+LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: all build vet test check cover fmt run eval install uninstall release clean
 
 all: build check
 
 build:
-	$(GO) build -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/ykode
+	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/ykode
 
 vet:
 	$(GO) vet ./...
