@@ -129,7 +129,8 @@ func TestSearchLiteralAndContext(t *testing.T) {
 	tool := &SearchText{scope: scope{root: root, dir: dir}}
 
 	out := runSearch(t, tool, `{"pattern":"// Needle in Go","literal":true,"context":1}`)
-	if !strings.Contains(out, "internal/a.go-2-") || !strings.Contains(out, "internal/a.go:3:") || !strings.Contains(out, "internal/a.go-4-") {
+	// several matches in one file share a header, context lines included
+	if !strings.Contains(out, "internal/a.go:\n  2-") || !strings.Contains(out, "  3:") || !strings.Contains(out, "  4-") {
 		t.Fatalf("context lines missing:\n%s", out)
 	}
 	if out2 := runSearch(t, tool, `{"pattern":"println(\"hello\")","literal":true}`); !strings.Contains(out2, "main.go:4:") {
@@ -401,6 +402,28 @@ func TestSeveralMatchesInOneFileShareAHeader(t *testing.T) {
 	for _, want := range []string{"src/main.go:\n  1:", "  2:", "  3:", "src/two.go:1:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%q missing from:\n%s", want, out)
+		}
+	}
+}
+
+func TestContextLinesShareTheFileHeaderToo(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{
+		"src/main.go": "before\nneedle one\nbetween\nneedle two\nend\n",
+	})
+	goOnly := &SearchText{scope: scope{root: root, dir: dir}}
+
+	out := runSearch(t, goOnly, `{"pattern":"needle","context":1}`)
+	if got := strings.Count(out, "src/main.go"); got != 1 {
+		t.Fatalf("the path appears %d times, want it once as a header:\n%s", got, out)
+	}
+	for _, want := range []string{"src/main.go:\n  1-", "  2:", "  3-", "  4:", "  5-"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing from:\n%s", want, out)
+		}
+	}
+	if both := NewSearchText(root, dir); both.rgPath != "" {
+		if rgOut := runSearch(t, both, `{"pattern":"needle","context":1}`); rgOut != out {
+			t.Errorf("the two search paths disagree:\n%s\n---\n%s", out, rgOut)
 		}
 	}
 }

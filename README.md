@@ -112,7 +112,10 @@ inside the root, absolute only for an approved outside path.
 
 `search_text` answers in three sizes: matching lines (default), `mode="count"`
 (matches per file) and `mode="files_with_matches"` (names only). The two summaries
-cost a fraction of the tokens when the question is *where*, not *what*.
+cost a fraction of the tokens when the question is *where*, not *what*. Matching
+lines read `path:line:text`; a file with several matches gets its path once with the
+lines indented under it, including the lines of context, because the path is the part
+that repeats.
 
 When a turn asks for several reads at once, `find_files`, `search_text`, `read_file`
 and `recall` run at the same time and their replies still come back in the order the

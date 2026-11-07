@@ -64,7 +64,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 func (SearchText) Name() string { return "search_text" }
 
 func (SearchText) Description() string {
-	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
+	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg; a file with several matches gets its path once, then indented lines. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
 }
 
 func (SearchText) NeedsConfirm() bool { return false }
@@ -510,14 +510,12 @@ func formatHits(hits []hit, limit, scanned, budget int) string {
 		return "(no matches)"
 	}
 	perFile := map[string]int{}
-	contexts := map[string]int{}
 	for _, h := range hits {
 		perFile[h.path]++
-		if h.context {
-			contexts[h.path]++
-		}
 	}
-	grouped := func(path string) bool { return perFile[path] > 1 && contexts[path] == 0 }
+	// one header per file, whether the lines around it are matches or context: the path is what
+	// repeats, and it is the same path every time
+	grouped := func(path string) bool { return perFile[path] > 1 }
 
 	var b strings.Builder
 	for i, h := range hits {
