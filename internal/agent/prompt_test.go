@@ -4,8 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 func writeInstructionFile(t *testing.T, dir, name, body string) {
@@ -102,5 +105,71 @@ func TestProjectRulesReachTheModel(t *testing.T) {
 	system := stub.lastRequest(t)["messages"].([]any)[0].(map[string]any)["content"].(string)
 	if !strings.Contains(system, "never edit generated/") {
 		t.Fatalf("system prompt has no project rules:\n%.200s", system)
+	}
+}
+
+func TestFirstRequestCarriesSystemPrompt(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("thinking hard", "the answer", "", nil, "stop")}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "do it"); err != nil {
+		t.Fatal(err)
+	}
+	messages := stub.lastRequest(t)["messages"].([]any)
+	first := messages[0].(map[string]any)
+	if first["role"] != "system" || !strings.Contains(first["content"].(string), "ykode") {
+		t.Fatalf("first message = %v, want the system prompt", first)
+	}
+	if sink.reasoning.String() != "thinking hard" || sink.content.String() != "the answer" {
+		t.Fatalf("sink got reasoning=%q content=%q", sink.reasoning.String(), sink.content.String())
+	}
+}
+
+func TestThePrefixTheServerCachesStaysIdentical(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{decision: Allow})
+	defer done()
+
+	if err := a.Ask(context.Background(), "read a.go"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 3 {
+		t.Fatalf("%d requests, want three turns", len(stub.requests))
+	}
+	first := stub.requests[0]
+	for i, next := range stub.requests[1:] {
+		if !reflect.DeepEqual(first["tools"], next["tools"]) {
+			t.Errorf("request %d changed the tool specs: the cached prefix must not move", i+1)
+		}
+		if !reflect.DeepEqual(first["messages"].([]any)[0], next["messages"].([]any)[0]) {
+			t.Errorf("request %d changed the system prompt", i+1)
+		}
+	}
+	for i := 1; i < len(stub.requests); i++ {
+		older := stub.requests[i-1]["messages"].([]any)
+		newer := stub.requests[i]["messages"].([]any)
+		if !reflect.DeepEqual(older, newer[:len(older)]) {
+			t.Errorf("request %d rewrote history that was already sent; only appends keep the cache", i)
+		}
+	}
+}
+
+func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
+	if got := a.SpecBytes(); got > 5000 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5000", got, got/3)
 	}
 }
