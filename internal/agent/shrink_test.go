@@ -67,14 +67,16 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	for i := range names {
 		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
 	}
-	read := func(i int) string {
-		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	// a search is the case worth keeping: unlike a file read, its output cannot be had again by
+	// reading the file, and it may outlive the file
+	search := func(i int) string {
+		return sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + names[i] + `"}`}, "tool_calls")
 	}
-	stub := &stubServer{scripts: []string{read(0), read(1), read(2), read(3), read(4), sse("", "done", "", nil, "stop")}}
+	stub := &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}}
 	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, &captureSink{decision: Allow}, dir)
 	defer done()
 
-	if err := a.Ask(context.Background(), "read both files twice"); err != nil {
+	if err := a.Ask(context.Background(), "search five files"); err != nil {
 		t.Fatal(err)
 	}
 	contents := toolContents(t, stub.requests[len(stub.requests)-1])
@@ -88,7 +90,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	if !strings.Contains(summary, `"id":"r1"`) || !strings.Contains(summary, "recall") {
 		t.Fatalf("the summary does not say how to get the text back:\n%s", summary)
 	}
-	if !strings.Contains(summary, "read_file") || !strings.Contains(summary, "it began:") {
+	if !strings.Contains(summary, "search_text") || !strings.Contains(summary, "it began:") {
 		t.Fatalf("the summary does not say what the result was:\n%s", summary)
 	}
 	for _, recent := range contents[len(contents)-keepResults:] {
@@ -325,5 +327,36 @@ func TestTwoCallsWithTheSameServerIDPointAtTheirOwnReply(t *testing.T) {
 		if !strings.Contains(got, fmt.Sprintf("r%d was the reply", want+1)) {
 			t.Errorf("the %d oldest summary does not name its own reply: %s", want+1, got)
 		}
+	}
+}
+
+func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 5)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("read%d.txt", i), 20)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	stub := &stubServer{scripts: []string{read(0), read(1), read(2), read(3), read(4), sse("", "done", "", nil, "stop")}}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, &captureSink{decision: Allow}, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read five files"); err != nil {
+		t.Fatal(err)
+	}
+	summary := toolContents(t, stub.requests[len(stub.requests)-1])[0]
+	if !strings.HasPrefix(summary, shrinkMark) {
+		t.Fatalf("the oldest read is still whole:\n%s", brief(summary))
+	}
+	if strings.Contains(summary, "recall") {
+		t.Errorf("a shortened file read offers recall, which could hand back text a later edit changed:\n%s", brief(summary))
+	}
+	if !strings.Contains(summary, "read the range you need again") {
+		t.Errorf("the shortened read does not say how to get the text back:\n%s", brief(summary))
+	}
+	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); !os.IsNotExist(err) {
+		t.Errorf("a file read was stored for recall: %v", err)
 	}
 }

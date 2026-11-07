@@ -14,7 +14,7 @@ func TestCompactShortensTheRestAndSaysHowMuch(t *testing.T) {
 	dir := t.TempDir()
 	name := writeLines(t, dir, "first.txt", 60)
 	stub := &stubServer{scripts: []string{
-		sse("", "", "read_file", []string{`{"path":"` + name + `"}`}, "tool_calls"),
+		sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + name + `"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)

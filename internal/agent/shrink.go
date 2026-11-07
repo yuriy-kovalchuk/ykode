@@ -56,6 +56,10 @@ func (a *Agent) shrinkOldResults(keep int) int {
 	return freed
 }
 
+// readsTheFile are the tools whose result is a copy of something on disk. Storing it would let
+// recall hand back text a later edit already changed, so a shortened read gets a pointer instead.
+var readsTheFile = map[string]bool{"read_file": true}
+
 // summarize is what ykode keeps of a dropped result: which call it was, how big it was, how it began, and where the text is.
 func (a *Agent) summarize(m *llm.Message, id string) string {
 	name := m.Name
@@ -64,6 +68,9 @@ func (a *Agent) summarize(m *llm.Message, id string) string {
 	}
 	text := fmt.Sprintf("%s %s output (it was %d bytes) to fit the context; it began: %q",
 		shrinkMark, name, len(m.Content), oneLine(m.Content, 120))
+	if readsTheFile[name] {
+		return text + " the file on disk has not changed unless you edited it: read the range you need again]"
+	}
 	if !a.opts.Store.Saved() {
 		return text + "]"
 	}
@@ -71,7 +78,7 @@ func (a *Agent) summarize(m *llm.Message, id string) string {
 		a.tell(fmt.Sprintf("could not keep the full %s output: %v", name, err))
 		return text + "]"
 	}
-	return fmt.Sprintf("%s: recall {\"id\":\"%s\"} hands back the full text]", text, id)
+	return fmt.Sprintf("%s: recall {\"id\":\"%s\"} for the whole text, or with pattern for just the lines you need]", text, id)
 }
 
 // writesTheFile are the tools whose argument is mostly text the tool has already put on disk.

@@ -139,6 +139,9 @@ already used. In order, cheapest first:
    `~/.ykode/results/<run>/r7.txt` for `recall {"id":"r7"}` to hand back. The two
    newest results are never shortened, and a `read_file` of a window the model
    already has, of a file that has not changed, comes back as one line.
+   An old `read_file` is the exception: it is replaced by a pointer to read the range
+   again, never stored for `recall`, because the file on disk is the source of truth and
+   a stored copy goes stale the moment the model edits it.
    The same pass drops the text an older `write_file` or `edit_file` sent: the
    history keeps one line saying how much went where, because the file on disk has
    the rest. A call that failed keeps its arguments, so a retry still has them.
