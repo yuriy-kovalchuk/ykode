@@ -16,7 +16,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -85,7 +84,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 | C6 | S | `agent/compact.go` `transcriptOf` | The summary request has no total cap and can overflow the window. → Cap at ~40% of the window, dropping the oldest lines first. |
 | C7 | XS | `agent/commands.go` `/compact` | Runs on `context.Background()` and always reports "tool results shortened". → Take the caller's ctx; report what happened. |
 | C8 | S | `llm/client.go` | The 2-minute silence limit is fixed; plain llama-server can stay silent longer on a cold prompt. → A `stream_idle_sec` setting. |
-| C10 | XS | `home/home.go`, `tools/store.go` | `0755` under `~/.ykode`, and results hold raw command output. → `0700`. |
 | C11 | XS | `config/config.go` | Session ids have one-second resolution, so two runs can collide. → Add milliseconds or a random suffix. |
 | C12 | S | `session` | A session does not record its root, so `--continue` in another project mixes them. → A header line `{root, model, created}`; refuse or ask on a mismatch. |
 | C13 | S | `audit` `matching` | Every history read parses every month. → Newest first; stop when the limit is filled. |

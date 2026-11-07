@@ -50,3 +50,21 @@ func TestAStoringRefusesAnIdThatIsNotAnId(t *testing.T) {
 		t.Fatalf("a refused id still wrote into the store: %v", entries)
 	}
 }
+
+func TestAStoreDirectoryIsPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "results")
+	if err := os.MkdirAll(path, 0o755); err != nil { // as an older ykode made it
+		t.Fatal(err)
+	}
+	store := NewResultStore(path)
+	if err := store.Save("r1", "the raw output of a command nobody else should read"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("the store dir is %o, and it holds raw command output", info.Mode().Perm())
+	}
+}

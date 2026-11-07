@@ -29,7 +29,10 @@ func (s ResultStore) Save(id, text string) error {
 	if !resultIDPattern.MatchString(id) {
 		return fmt.Errorf("store: bad result id %q", id)
 	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	if err := os.Chmod(s.dir, 0o700); err != nil { // a directory made before this was readable by the machine
 		return fmt.Errorf("store: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(s.dir, id+".txt"), []byte(text), 0o600); err != nil {
