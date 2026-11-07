@@ -40,7 +40,7 @@ eval:
 install: build
 	install -d $(INSTALL_DIR)
 	install -m 0755 $(BINARY) $(INSTALL_DIR)/ykode
-	@echo "installed $(INSTALL_DIR)/ykode (version $(VERSION)); make sure $(INSTALL_DIR) is on PATH"
+	@echo "installed $(INSTALL_DIR)/ykode (version $(VERSION)); make sure $(INSTALL_DIR) is on PATH; settings and sessions land in ~/.ykode on the first run"
 
 # make uninstall PURGE=1 also removes ~/.ykode (settings, sessions, logs)
 uninstall:

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
 func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
@@ -32,12 +33,16 @@ func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cleanHome(cfg)
+	prepareHome(cfg)
 
 	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("an audit file past retention survived startup: %v", err)
 	}
 	if _, err := os.Stat(results); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a finished run's result dir survived startup: %v", err)
+	}
+
+	if _, err := os.Stat(home.Settings()); err != nil {
+		t.Errorf("a first run left no settings file to edit: %v", err)
 	}
 }

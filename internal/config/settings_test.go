@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,5 +239,108 @@ func TestAMisspelledKeyInAPortofTheFileIsNamedToo(t *testing.T) {
 	_, err := Load(nil)
 	if err == nil || !strings.Contains(err.Error(), "read_lines ") {
 		t.Errorf("want the nested misspelling named, got %v", err)
+	}
+}
+
+func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
+	fakeHome(t)
+	if err := SeedSettings(); err != nil {
+		t.Fatal(err)
+	}
+	path := home.Settings()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("settings.json holds a key one day: mode %v", info.Mode().Perm())
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seeded map[string]any
+	if err := json.Unmarshal(raw, &seeded); err != nil {
+		t.Fatalf("the file written is not valid json: %v", err)
+	}
+	if _, ok := seeded["api_key"]; ok {
+		t.Error("a key nobody set is written as null instead of left out")
+	}
+	for _, key := range []string{"base_url", "model", "thinking", "audit", "tools", "context"} {
+		if _, ok := seeded[key]; !ok {
+			t.Errorf("%s missing from the file that shows every key", key)
+		}
+	}
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 150 || !cfg.LogAudit {
+		t.Errorf("the file written is not what the code would have done: %+v", cfg)
+	}
+}
+
+func TestAFileTheUserEditedIsNeverOverwritten(t *testing.T) {
+	fakeHome(t)
+	if err := os.MkdirAll(filepath.Dir(home.Settings()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(home.Settings(), []byte(`{"model": "mine"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SeedSettings(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "mine" {
+		t.Errorf("the first run replaced what the user wrote: %q", cfg.Model)
+	}
+}
+
+func TestThePerUserDirectoryIsPrivate(t *testing.T) {
+	fresh := filepath.Join(t.TempDir(), ".ykode") // nothing there yet, the way a first run finds it
+	t.Setenv("YKODE_HOME", fresh)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	if err := SeedSettings(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("~/.ykode holds sessions and audit lines: mode %v", info.Mode().Perm())
+	}
+}
+
+func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
+	fakeHome(t)
+	if err := SeedSettings(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Think {
+		t.Error("the written defaults turned thinking off")
+	}
+	if cfg.NoVerify {
+		t.Error("the written defaults turned the tool nudge off")
+	}
+
+	root := t.TempDir()
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking": false, "verify": false}`)
+	cfg, err = Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Think || !cfg.NoVerify {
+		t.Errorf("turning both off in a file did not take: think=%v no-verify=%v", cfg.Think, cfg.NoVerify)
 	}
 }

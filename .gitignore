@@ -4,3 +4,6 @@
 # test and profiling output
 coverage.out
 *.test
+
+# a project's own ykode settings; commit it on purpose if you want it tracked
+.ykode/

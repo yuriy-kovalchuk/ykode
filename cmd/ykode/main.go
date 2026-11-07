@@ -57,8 +57,8 @@ func run() error {
 		return nil
 	}
 
-	// everything ykode leaves in $YKODE_HOME ages out on its own, at startup
-	cleanHome(cfg)
+	// a first run gets its directory and its settings file; everything left there ages out
+	prepareHome(cfg)
 	store := tools.NewResultStore(cfg.ResultDir)
 	undo := &tools.UndoStack{}
 
@@ -210,9 +210,14 @@ func describeCtx(tokens int) string {
 	return strconv.Itoa(tokens) + " tokens"
 }
 
-// cleanHome removes what older runs left behind: spilled command output, the result dirs of
-// runs long finished, and audit months past their retention.
-func cleanHome(cfg config.Config) {
+// prepareHome makes the per-user directory ready: the settings file a first run never wrote,
+// and no leftovers from runs that finished long ago (spilled command output, the result dirs
+// of finished runs, audit months past their retention).
+func prepareHome(cfg config.Config) {
+	if err := config.SeedSettings(); err != nil {
+		fmt.Fprintln(os.Stderr, "ykode:", err)
+	}
+
 	removed := func(what string, n int, err error) {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ykode:", err)

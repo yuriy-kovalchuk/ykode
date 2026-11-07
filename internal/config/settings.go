@@ -14,34 +14,70 @@ import (
 
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
 type fileSettings struct {
-	BaseURL   *string `json:"base_url"`
-	APIKey    *string `json:"api_key"`
-	APIKeyEnv *string `json:"api_key_env"` // name of the variable that holds it, which beats the key
-	Audit     *bool   `json:"audit"`
-	Retain    *int    `json:"audit_retention_days"`
-	Model     *string `json:"model"`
-	MaxTurns  *int    `json:"max_turns"`
-	MaxTokens *int    `json:"max_tokens"`
-	Thinking  *bool   `json:"thinking"`
-	AssumeYes *bool   `json:"assume_yes"`
-	Verify    *bool   `json:"verify"`
+	BaseURL   *string `json:"base_url,omitempty"`
+	APIKey    *string `json:"api_key,omitempty"`
+	APIKeyEnv *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
+	Audit     *bool   `json:"audit,omitempty"`
+	Retain    *int    `json:"audit_retention_days,omitempty"`
+	Model     *string `json:"model,omitempty"`
+	MaxTurns  *int    `json:"max_turns,omitempty"`
+	MaxTokens *int    `json:"max_tokens,omitempty"`
+	Thinking  *bool   `json:"thinking,omitempty"`
+	AssumeYes *bool   `json:"assume_yes,omitempty"`
+	Verify    *bool   `json:"verify,omitempty"`
 	Context   struct {
-		ReserveOutput *int `json:"reserve_output"`
-		SafetyMargin  *int `json:"safety_margin"`
-	} `json:"context"`
+		ReserveOutput *int `json:"reserve_output,omitempty"`
+		SafetyMargin  *int `json:"safety_margin,omitempty"`
+	} `json:"context,omitempty"`
 	Tools struct {
-		ReadLines       *int    `json:"read_lines"`
-		SearchLimit     *int    `json:"search_limit"`
-		ExecTimeoutSec  *int    `json:"exec_timeout_sec"`
-		CommandLogDir   *string `json:"command_log_dir"`
-		KeepCommandLogs *string `json:"keep_command_logs"`
-	} `json:"tools"`
+		ReadLines       *int    `json:"read_lines,omitempty"`
+		SearchLimit     *int    `json:"search_limit,omitempty"`
+		ExecTimeoutSec  *int    `json:"exec_timeout_sec,omitempty"`
+		CommandLogDir   *string `json:"command_log_dir,omitempty"`
+		KeepCommandLogs *string `json:"keep_command_logs,omitempty"`
+	} `json:"tools,omitempty"`
 	Permissions struct {
-		Allow []string `json:"allow"`
-	} `json:"permissions"`
+		Allow []string `json:"allow,omitempty"`
+	} `json:"permissions,omitempty"`
 	Models map[string]struct {
-		SendReasoning *bool `json:"send_reasoning"`
-	} `json:"models"`
+		SendReasoning *bool `json:"send_reasoning,omitempty"`
+	} `json:"models,omitempty"`
+}
+
+// builtinSettings are the defaults ykode ships with, in the shape of the file, so the
+// settings.json a first run writes cannot disagree with what the code would have done.
+func builtinSettings() fileSettings {
+	var s fileSettings
+	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p("http://127.0.0.1:8080/v1"), p("default"), p(25), p(4096)
+	s.Thinking, s.Verify, s.AssumeYes = p(true), p(true), p(false)
+	s.Audit, s.Retain = p(true), p(180)
+	s.Context.SafetyMargin = p(512)
+	s.Tools.ReadLines, s.Tools.SearchLimit = p(150), p(100)
+	s.Tools.ExecTimeoutSec, s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(60), p(""), p("24h")
+	return s
+}
+
+// p keeps a default addressable: a non-nil pointer is what tells the layers "this was set".
+func p[T any](v T) *T { return &v }
+
+// SeedSettings writes the defaults to $YKODE_HOME/settings.json when nothing is there yet, so
+// the file a user might edit exists and shows every key. An existing file is never touched.
+func SeedSettings() error {
+	path := home.Settings()
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	}
+	raw, err := json.MarshalIndent(builtinSettings(), "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // readSettings layers ~/.ykode/settings.json under <root>/.ykode/settings.json.
@@ -54,6 +90,7 @@ func (c *Config) readSettings() error {
 	return nil
 }
 
+// applyFile reads one settings file and layers it over what came before.
 func (c *Config) applyFile(path string) error {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -68,7 +105,10 @@ func (c *Config) applyFile(path string) error {
 	if err := dec.Decode(&s); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
+	return c.applySettings(s, path)
+}
 
+func (c *Config) applySettings(s fileSettings, path string) error {
 	pick(s.BaseURL, &c.BaseURL)
 	// a named variable keeps the secret out of the file; api_key still works for a single-user box
 	pick(s.APIKey, &c.APIKey)
@@ -83,11 +123,11 @@ func (c *Config) applyFile(path string) error {
 	pick(s.Context.SafetyMargin, &c.SafetyMargin)
 	pick(s.Tools.ReadLines, &c.ReadLines)
 	pick(s.Tools.SearchLimit, &c.SearchLimit)
-	if s.Thinking != nil && !*s.Thinking {
-		c.Think = false
+	if s.Thinking != nil {
+		c.Think = *s.Thinking
 	}
-	if s.Verify != nil && !*s.Verify {
-		c.NoVerify = true
+	if s.Verify != nil {
+		c.NoVerify = !*s.Verify
 	}
 	if s.AssumeYes != nil {
 		c.AssumeYes = *s.AssumeYes

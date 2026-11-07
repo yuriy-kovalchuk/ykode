@@ -205,7 +205,15 @@ ykode --version                   # git tag the binary was built from
 make release                      # linux/amd64, linux/arm64, darwin/arm64 into dist/
 ```
 
-`~/.local/bin` is not on `PATH` by default in every shell; add it if `ykode` is not found.
+The installer prints the exact `PATH` line for the shell that ran it (zsh, bash, fish), and
+with `--add-to-path` appends it to your startup file once, instead of just showing it:
+
+```sh
+sh scripts/install.sh --add-to-path
+```
+
+The first run creates `~/.ykode` (mode `0700`) and writes `~/.ykode/settings.json` (mode
+`0600`) holding every setting at its default, so the file you would edit is already there.
 
 ## Settings
 
