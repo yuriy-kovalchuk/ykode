@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -71,7 +70,7 @@ type walker struct {
 	spec  walkSpec
 }
 
-func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth int) error {
+func (w walker) walk(ctx context.Context, dir string, ignores *ignoreRules, depth int) error {
 	read := w.spec.read
 	if err := ctx.Err(); err != nil {
 		return err
@@ -87,8 +86,8 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth i
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
-	if ig := w.readIgnore(dir, entries); ig != nil {
-		ignores = slices.Concat(ignores, ignoreSet{ig})
+	if text, ok := w.readIgnore(dir, entries); ok {
+		ignores = ignores.with(dir, text)
 	}
 	var dirs []string
 	for _, e := range entries {
@@ -97,7 +96,7 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth i
 		}
 		path := joinSlash(dir, e.Name())
 		if e.IsDir() {
-			if ignored(path, ignores, true) {
+			if ignores.ignored(path, true) {
 				continue
 			}
 			if w.spec.dirs {
@@ -110,7 +109,7 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth i
 			}
 			continue
 		}
-		if e.Type()&fs.ModeSymlink != 0 || ignored(path, ignores, false) {
+		if e.Type()&fs.ModeSymlink != 0 || ignores.ignored(path, false) {
 			continue // never follow symlinks while searching
 		}
 		if info, err := e.Info(); err != nil || (read && info.Size() > maxScannedFileBytes) {
@@ -136,22 +135,18 @@ func (w walker) walk(ctx context.Context, dir string, ignores ignoreSet, depth i
 	return nil
 }
 
-func (w walker) readIgnore(dir string, entries []fs.DirEntry) *ignoreFile {
-	var e fs.DirEntry
-	for _, entry := range entries {
-		if entry.Name() == ".gitignore" {
-			e = entry
-			break
+func (w walker) readIgnore(dir string, entries []fs.DirEntry) (string, bool) {
+	for _, e := range entries {
+		if e.Name() != ".gitignore" || e.IsDir() {
+			continue
 		}
+		data, err := w.root.ReadFile(joinSlash(dir, ".gitignore"))
+		if err != nil {
+			return "", false
+		}
+		return string(data), true
 	}
-	if e == nil || e.IsDir() {
-		return nil
-	}
-	data, err := w.root.ReadFile(joinSlash(dir, ".gitignore"))
-	if err != nil {
-		return nil
-	}
-	return &ignoreFile{dir: dir, rules: parseIgnoreRules(string(data))}
+	return "", false
 }
 
 // isText looks at the first 8 KB, which is where a binary hides its NUL bytes.
