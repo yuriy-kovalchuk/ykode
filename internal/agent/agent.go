@@ -293,6 +293,7 @@ func (a *Agent) SetThink(on bool) { a.opts.Think = on }
 func (a *Agent) Thinking() bool { return a.opts.Think }
 
 func (a *Agent) add(m llm.Message) {
+	m = storable(m)
 	a.history = append(a.history, m)
 	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken.Swap(true) {
 		// a session that will not save is reported once, not per message

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,5 +153,43 @@ func TestAResumedRunContinuesTheResultNumbers(t *testing.T) {
 	ids := a.nextCallIDs(2)
 	if ids[0] != "r8" || ids[1] != "r9" {
 		t.Errorf("a resumed run numbered its results %v: recall r7 could now be handed someone else's output", ids)
+	}
+}
+
+func TestACutOffToolCallIsStillSaved(t *testing.T) {
+	dir := t.TempDir()
+	log := session.New(dir, "scut", "")
+	stub := &stubServer{scripts: []string{
+		sse("", "", "write_file", []string{`{"path":"a.go","content":"package ma`}, finishLength),
+		sse("", "stopped short", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done, work, _ := newAuditedAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, sink)
+	defer done()
+	a.opts.Session = log
+
+	if err := a.Ask(context.Background(), "write a.go"); err != nil {
+		t.Fatal(err)
+	}
+	if sink.noticed("json:") {
+		t.Error("the session log refused the cut-off call and told the user about it")
+	}
+	saved, err := session.Load(log.Path(), "")
+	if err != nil {
+		t.Fatalf("the saved conversation does not load back: %v", err)
+	}
+	var savedCall bool
+	for _, m := range saved {
+		for _, c := range m.ToolCalls {
+			if c.Function.Name == "write_file" && json.Valid(c.Function.Arguments) {
+				savedCall = true
+			}
+		}
+	}
+	if !savedCall {
+		t.Error("the log lost the call that was cut off")
+	}
+	if _, err := os.Stat(filepath.Join(work, "a.go")); err == nil {
+		t.Error("a call with half its arguments must never run")
 	}
 }

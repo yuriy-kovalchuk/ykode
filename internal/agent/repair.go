@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -34,4 +35,23 @@ func toolCallsRunnable(calls []llm.ToolCall) bool {
 		}
 	}
 	return true
+}
+
+// storable returns a copy whose call arguments are whole JSON. A reply cut off at max_tokens carries
+// half a JSON document as raw bytes, and those bytes fail the encoder that writes the session log: the
+// conversation stops being saved from that point on. The copy keeps the original for toolCallsRunnable,
+// which must still see that the call was cut.
+func storable(m llm.Message) llm.Message {
+	if len(m.ToolCalls) == 0 {
+		return m
+	}
+	calls := make([]llm.ToolCall, len(m.ToolCalls))
+	copy(calls, m.ToolCalls)
+	for i := range calls {
+		if !json.Valid(calls[i].Function.Arguments) {
+			calls[i].Function.Arguments = json.RawMessage("{}")
+		}
+	}
+	m.ToolCalls = calls
+	return m
 }
