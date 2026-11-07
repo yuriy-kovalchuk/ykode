@@ -58,10 +58,9 @@ func (a *Agent) specs() []llm.ToolSpec {
 	}
 	all := a.tools.All()
 	specs := make([]llm.ToolSpec, 0, len(all))
+	// the list never changes mid-session: Qwen renders the tools inside the system message, so a
+	// tool arriving later throws away everything the server had cached
 	for _, t := range all {
-		if t.Name() == "recall" && !a.shortened {
-			continue // nothing has been shortened yet, so the tool only costs tokens in every request
-		}
 		specs = append(specs, llm.ToolSpec{
 			Type:     "function",
 			Function: llm.ToolFunction{Name: t.Name(), Description: t.Description(), Parameters: t.Schema()},

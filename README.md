@@ -99,10 +99,11 @@ stdout.
 ## Tools
 
 `find_files`, `search_text`, `read_file`, `write_file`, `edit_file`,
-`exec_command`, and `recall` — which only appears once a result has actually been
-shortened, because a tool description costs tokens in every request. A whole result comes
-back once; after that `recall {"id":"r7","pattern":"FAIL"}` (or `offset` and `limit`)
-brings back one part of it, which is what keeps a second look cheap.
+`exec_command`, and `recall` whenever the run can keep results at all. The list is fixed for
+the whole session: Qwen renders it inside the system message, so a tool that appears later
+throws away everything the server had cached. A whole result comes back once; after that
+`recall {"id":"r7","pattern":"FAIL"}` (or `offset` and `limit`) brings back one part of it,
+which is what keeps a second look cheap.
 `find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`

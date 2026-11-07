@@ -54,7 +54,6 @@ type Agent struct {
 	model         string
 	opts          Options
 	sink          Sink
-	shortened     bool         // a tool result has been shortened, so recall is worth describing
 	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
 	compacted     bool         // the older turns were folded into a summary once already
 	auditBroken   bool         // the audit log failed once: say so once, not per call
@@ -83,7 +82,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
-	a.compacted, a.shortened = false, false
+	a.compacted = false
 	a.publishUsage()
 }
 

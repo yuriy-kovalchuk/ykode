@@ -40,7 +40,6 @@ func (a *Agent) Compact(ctx context.Context) int {
 		Role:    "user",
 		Content: compactMessage + "\n" + summary,
 	}}, a.history[start:]...)...)
-	a.shortened = true
 	return before - a.estimateTokens()
 }
 

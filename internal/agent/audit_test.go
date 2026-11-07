@@ -43,7 +43,7 @@ func TestACallIsLoggedBeforeAndAfterItRuns(t *testing.T) {
 	if err := a.Ask(context.Background(), "read note.txt"); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := logger.Read("stest")
+	entries, _, err := logger.Read("stest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestARefusalIsInLogEvenThoughNothingRan(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "out.txt")); err == nil {
 		t.Fatal("a refused write still touched the disk")
 	}
-	entries, err := logger.Read("stest")
+	entries, _, err := logger.Read("stest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestWhatACommandDidAndWhatAChangeDidAreBothRecorded(t *testing.T) {
 	if err := a.Ask(context.Background(), "run it then write"); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := logger.Read("stest")
+	entries, _, err := logger.Read("stest")
 	if err != nil {
 		t.Fatal(err)
 	}

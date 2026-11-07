@@ -82,7 +82,7 @@ func (t *Recall) Run(_ context.Context, args json.RawMessage) (string, error) {
 		return "", err
 	}
 	if !t.store.Saved() {
-		return "", fmt.Errorf("no results are kept by this ykode, so nothing can be recalled")
+		return "", fmt.Errorf("recall: this run keeps no results, so nothing can be handed back")
 	}
 	text, err := t.store.Load(in.ID)
 	if err != nil {

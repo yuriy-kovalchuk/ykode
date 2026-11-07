@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -114,7 +115,7 @@ func brief(s string) string {
 	return s
 }
 
-func TestRecallIsOnlyOfferedOnceSomethingWasShortened(t *testing.T) {
+func TestTheToolListStaysFixedWhileResultsAreShortened(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 5)
 	for i := range names {
@@ -130,15 +131,36 @@ func TestRecallIsOnlyOfferedOnceSomethingWasShortened(t *testing.T) {
 	if err := a.Ask(context.Background(), "read them all"); err != nil {
 		t.Fatal(err)
 	}
-	if toolNames(stub.requests[0])["recall"] {
-		t.Error("recall was described before anything had been shortened")
-	}
-	last := toolNames(stub.requests[len(stub.requests)-1])
 	if !toolNames(stub.requests[0])["read_file"] {
 		t.Fatal("the first request lost a tool it should always have")
 	}
-	if !last["recall"] {
-		t.Error("recall is missing after a result was shortened")
+	if !toolNames(stub.requests[0])["recall"] {
+		t.Error("recall was kept out of the first request: Qwen renders the tools inside the system message, so the whole cached prefix is lost when it joins")
+	}
+	first := stub.requests[0]["tools"]
+	for i, next := range stub.requests[1:] {
+		if next["tools"] == nil {
+			continue // the compaction summariser is asked without tools, on purpose
+		}
+		if !reflect.DeepEqual(first, next["tools"]) {
+			t.Errorf("request %d changed the tool list mid-session", i+1)
+		}
+	}
+}
+
+func TestRecallIsAbsentWhenNothingCanBeKept(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
+	for _, spec := range a.Specs() {
+		if spec.Name == "recall" {
+			t.Error("recall was offered with no store to keep results in")
+		}
 	}
 }
 

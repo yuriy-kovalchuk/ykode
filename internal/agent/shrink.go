@@ -51,7 +51,6 @@ func (a *Agent) shrinkOldResults(keep int) int {
 		summary := a.summarize(m, m.CallID)
 		freed += len(m.Content) - len(summary)
 		m.Content = summary
-		a.shortened = true
 	}
 	return freed
 }
