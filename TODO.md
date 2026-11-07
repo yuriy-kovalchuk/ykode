@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-4. B6 (results age out with their session)
+
 5. B8, B9, B12, B13, then the rest of the cleanup
 6. Evals E1–E7, then F1 (new system prompt), then F2, F3
 
@@ -25,9 +25,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Bugs
 
-- **B6 · XS · Stored results expire before their session.** Result dirs are pruned after
-  `keep_command_logs` (24 h, `cmd/ykode/main.go`); sessions are kept forever. → Add
-  `keep_results` and `keep_sessions`, and prune results together with their session.
 - **B8 · S · Compaction drops the wording of the current task.** `compactCut`
   (`internal/agent/compact.go`) keeps only the two newest tool calls, so the latest user
   message goes into a summary of at most 150 words. → Keep that message word for word

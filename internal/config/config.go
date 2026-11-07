@@ -24,6 +24,7 @@ const (
 	defaultSearchLimit = 50
 	defaultExecTimeout = 60 * time.Second
 	defaultLogKeep     = 24 * time.Hour
+	defaultSessionKeep = 30 * 24 * time.Hour  // a conversation, and the results recall can still name
 	defaultAuditKeep   = 180 * 24 * time.Hour // six months of tool calls
 	defaultSafety      = 256
 	sessionStamp       = "20060102-150405"
@@ -52,6 +53,7 @@ type Config struct {
 	LogAudit        bool   // write that log at all; off only by a setting
 	Session         string // this run's id, shared by the results, the audit log and sessions
 	KeepCommandLogs time.Duration
+	KeepSessions    time.Duration   // how long a saved conversation survives, and its saved results
 	KeepAudit       time.Duration   // how long old audit files survive
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
@@ -145,6 +147,7 @@ func defaults() Config {
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		KeepCommandLogs: defaultLogKeep,
+		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
 		LogAudit:        true,
 		modelReasoning:  map[string]bool{},

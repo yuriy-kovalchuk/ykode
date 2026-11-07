@@ -438,3 +438,31 @@ func TestAcceptingAProjectLetsItsFileThroughUntilItChanges(t *testing.T) {
 		t.Errorf("an edited file was trusted as if it were the one that was accepted: base=%q held=%v", cfg.BaseURL, cfg.HeldKeys)
 	}
 }
+
+func TestConversationsAndTheirResultsHaveTheirOwnKeep(t *testing.T) {
+	user := fakeHome(t)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KeepSessions != 30*24*time.Hour {
+		t.Errorf("default keep_sessions = %v, want 30 days", cfg.KeepSessions)
+	}
+
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"keep_sessions": "48h"}`)
+	cfg, err = Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KeepSessions != 48*time.Hour {
+		t.Errorf("keep_sessions = %v, want the file's 48h", cfg.KeepSessions)
+	}
+	if cfg.KeepCommandLogs != 24*time.Hour {
+		t.Errorf("the conversation's clock leaked into the command logs: %v", cfg.KeepCommandLogs)
+	}
+
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"keep_sessions": "a while"}`)
+	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "keep_sessions") {
+		t.Errorf("a keep_sessions that is not a duration was not named: %v", err)
+	}
+}

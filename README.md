@@ -253,6 +253,7 @@ what it held back, asks once when someone is at the keyboard, and records the an
   "assume_yes": false,
   "audit": true,
   "audit_retention_days": 180,
+  "keep_sessions": "720h",
   "context": { "reserve_output": 4096, "safety_margin": 256 },
   "tools": {
     "read_lines": 150,
@@ -270,6 +271,10 @@ it, and `send_reasoning` tells ykode to repeat earlier thinking for a chat templ
 expects it back from tool-calling turns. A server that wants a bearer token takes it from
 `api_key`, or from the variable `api_key_env` names — the second keeps the secret out of
 the file, and an unset variable is no error.
+
+A saved conversation ages out after `keep_sessions` (30 days by default), and the tool results
+that run saved for `recall` go with it: a result is only reachable by the conversation that
+names its id, so the two survive exactly as long as each other.
 
 A key the settings file does not recognise is an error naming the file and the key, not a
 silently ignored line.

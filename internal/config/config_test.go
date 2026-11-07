@@ -47,6 +47,7 @@ func TestLoadDefaults(t *testing.T) {
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		KeepCommandLogs: defaultLogKeep,
+		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
 		LogAudit:        true,
 	}

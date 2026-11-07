@@ -14,18 +14,19 @@ import (
 
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
 type fileSettings struct {
-	BaseURL   *string `json:"base_url,omitempty"`
-	APIKey    *string `json:"api_key,omitempty"`
-	APIKeyEnv *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
-	Audit     *bool   `json:"audit,omitempty"`
-	Retain    *int    `json:"audit_retention_days,omitempty"`
-	Model     *string `json:"model,omitempty"`
-	MaxTurns  *int    `json:"max_turns,omitempty"`
-	MaxTokens *int    `json:"max_tokens,omitempty"`
-	Thinking  *bool   `json:"thinking,omitempty"`
-	AssumeYes *bool   `json:"assume_yes,omitempty"`
-	Verify    *bool   `json:"verify,omitempty"`
-	Context   struct {
+	BaseURL      *string `json:"base_url,omitempty"`
+	APIKey       *string `json:"api_key,omitempty"`
+	APIKeyEnv    *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
+	Audit        *bool   `json:"audit,omitempty"`
+	Retain       *int    `json:"audit_retention_days,omitempty"`
+	KeepSessions *string `json:"keep_sessions,omitempty"`
+	Model        *string `json:"model,omitempty"`
+	MaxTurns     *int    `json:"max_turns,omitempty"`
+	MaxTokens    *int    `json:"max_tokens,omitempty"`
+	Thinking     *bool   `json:"thinking,omitempty"`
+	AssumeYes    *bool   `json:"assume_yes,omitempty"`
+	Verify       *bool   `json:"verify,omitempty"`
+	Context      struct {
 		ReserveOutput *int `json:"reserve_output,omitempty"`
 		SafetyMargin  *int `json:"safety_margin,omitempty"`
 	} `json:"context,omitempty"`
@@ -54,6 +55,7 @@ func builtinSettings() fileSettings {
 	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
 	s.Context.SafetyMargin = p(d.SafetyMargin)
 	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
+	s.KeepSessions = p(hours(d.KeepSessions))
 	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
 	s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(""), p(hours(d.KeepCommandLogs))
 	return s
@@ -174,6 +176,13 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	}
 	if s.Context.ReserveOutput != nil {
 		c.MaxTokens = *s.Context.ReserveOutput
+	}
+	if s.KeepSessions != nil {
+		d, err := time.ParseDuration(*s.KeepSessions)
+		if err != nil {
+			return fmt.Errorf(`%s: keep_sessions %q is not a duration like "720h"`, path, *s.KeepSessions)
+		}
+		c.KeepSessions = d
 	}
 	if s.Tools.ExecTimeoutSec != nil {
 		c.ExecTimeout = time.Duration(*s.Tools.ExecTimeoutSec) * time.Second

@@ -241,10 +241,62 @@ func prepareHome(cfg config.Config) {
 	}
 	n, err := tools.PruneSpillLogs(cfg.CommandLogDir, cfg.KeepCommandLogs)
 	removed("command log(s)", n, err)
-	n, err = tools.PruneOldDirs(filepath.Dir(cfg.ResultDir), "s", cfg.KeepCommandLogs)
-	removed("result dir(s)", n, err)
+	n, err = pruneConversations(cfg)
+	removed("conversation(s)", n, err)
 	n, err = audit.PruneOldFiles(cfg.AuditDir, cfg.KeepAudit)
 	removed("audit file(s)", n, err)
+}
+
+// pruneConversations ages out saved conversations and, with each one, the tool results that run
+// saved for recall: a result is only reachable by the conversation that names its id, so the two
+// survive exactly as long as each other.
+func pruneConversations(cfg config.Config) (int, error) {
+	entries, err := os.ReadDir(cfg.SessionDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) { // nothing saved yet is not an error
+		return 0, fmt.Errorf("clean old conversations in %s: %w", cfg.SessionDir, err)
+	}
+	results := filepath.Dir(cfg.ResultDir)
+	removed := 0
+	alive := map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+		id := strings.TrimSuffix(name, ".jsonl")
+		info, err := e.Info()
+		if err != nil {
+			return removed, fmt.Errorf("stat %s: %w", name, err)
+		}
+		if time.Since(info.ModTime()) < cfg.KeepSessions {
+			alive[id] = true
+			continue
+		}
+		if err := os.Remove(filepath.Join(cfg.SessionDir, name)); err != nil {
+			return removed, fmt.Errorf("remove %s: %w", name, err)
+		}
+		if err := os.RemoveAll(filepath.Join(results, id)); err != nil {
+			return removed, fmt.Errorf("remove the results of %s: %w", name, err)
+		}
+		removed++
+	}
+
+	// a run's results are only reachable by the conversation that names their ids, so a set of
+	// them whose conversation is gone is unreachable and can go now
+	dirs, err := os.ReadDir(results)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return removed, fmt.Errorf("clean unreachable results in %s: %w", results, err)
+	}
+	for _, d := range dirs {
+		if !d.IsDir() || !strings.HasPrefix(d.Name(), "s") || alive[d.Name()] {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(results, d.Name())); err != nil {
+			return removed, fmt.Errorf("remove %s: %w", d.Name(), err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 // auditLogger writes the tool-call log unless a setting turned it off.
