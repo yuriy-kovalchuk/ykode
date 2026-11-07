@@ -161,3 +161,19 @@ func TestEditOutsideRootStillNeedsApproval(t *testing.T) {
 		t.Errorf("outside file = %q, want two", data)
 	}
 }
+
+func TestAFailedEditDoesNotReportAnEarlierEdit(t *testing.T) {
+	tool, _ := editToolFixture(t, "one\ntwo\nthree\n")
+	ctx := context.Background()
+
+	runTool(t, tool, `{"path":"target.txt","edits":[{"old_text":"two","new_text":"TWO"}]}`)
+	if tool.LastDetail().Diff == "" {
+		t.Fatal("the edit that ran left no diff for the audit log")
+	}
+	if _, err := tool.Run(ctx, json.RawMessage(`{"path":"target.txt","edits":[{"old_text":"absent","new_text":"x"}]}`)); err == nil {
+		t.Fatal("an edit that matches nothing should fail")
+	}
+	if tool.LastDetail().Diff != "" {
+		t.Errorf("the failed call still reports an earlier edit's diff:\n%s", tool.LastDetail().Diff)
+	}
+}

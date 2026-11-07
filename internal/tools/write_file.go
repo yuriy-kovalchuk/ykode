@@ -55,6 +55,8 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	// LastDetail describes this call, so an old diff must not be logged against a new one
+	t.last = Detail{}
 	var in writeInput
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err

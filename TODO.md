@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: B7, B11, B14, G1, C4, C9, C10
+1. Quick fixes: B11, B14, G1, C4, C9, C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -55,8 +55,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 - **B6 · XS · Stored results expire before their session.** Result dirs are pruned after
   `keep_command_logs` (24 h, `cmd/ykode/main.go`); sessions are kept forever. → Add
   `keep_results` and `keep_sessions`, and prune results together with their session.
-- **B7 · XS · Write and edit log the previous diff.** `WriteFile` and `EditFile` never reset
-  `t.last`. → `t.last = Detail{}` at the start of `Run`.
 - **B8 · S · Compaction drops the wording of the current task.** `compactCut`
   (`internal/agent/compact.go`) keeps only the two newest tool calls, so the latest user
   message goes into a summary of at most 150 words. → Keep that message word for word

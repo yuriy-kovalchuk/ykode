@@ -81,6 +81,8 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	// LastDetail describes this call, so an old diff must not be logged against a new one
+	t.last = Detail{}
 	var in editInput
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err
