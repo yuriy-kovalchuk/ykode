@@ -112,11 +112,16 @@ func run() error {
 		Undo:           undo,
 	})
 
-	lines := cli.NewLineSource(os.Stdin)
-	// -p with a pipe has nobody to answer a confirmation, so nothing outside the defaults may run
+	// Only the line front end needs a reader of its own. The screen reads the terminal
+	// directly, and a second reader of stdin would swallow what the user types into it.
+	var lines *cli.LineSource
 	var confirm *cli.Confirmer
-	if cfg.Prompt == "" || cli.IsTerminal(os.Stdin) {
-		confirm = cli.NewConfirmer(lines, os.Stdout)
+	if readsStdinLineByLine(cfg) {
+		lines = cli.NewLineSource(os.Stdin)
+		// -p with a pipe has nobody to answer a confirmation, so nothing outside the defaults may run
+		if cfg.Prompt == "" || cli.IsTerminal(os.Stdin) {
+			confirm = cli.NewConfirmer(lines, os.Stdout)
+		}
 	}
 
 	var view agent.Sink = cli.NewView(os.Stdout, os.Stderr, confirm)
@@ -166,6 +171,9 @@ func run() error {
 	}
 	return answerOnce(a, events, cfg, ctxSize)
 }
+
+// readsStdinLineByLine says whether the front end reads stdin a line at a time.
+func readsStdinLineByLine(cfg config.Config) bool { return !cfg.TUI }
 
 // answerOnce runs one task to completion, for scripts and the eval harness.
 func answerOnce(a *agent.Agent, events *cli.JSONWriter, cfg config.Config, ctxSize int) error {
