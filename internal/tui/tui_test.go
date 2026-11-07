@@ -557,3 +557,53 @@ func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 		t.Errorf("the second question got %v", got)
 	}
 }
+
+func TestATypedEnterSendsOneLine(t *testing.T) {
+	w := newWiredModel(t, "already fixed")
+	w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix the bug")})
+	w.m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(w.m.history) != 1 || w.m.history[0] != "fix the bug" {
+		t.Fatalf("typed keys did not make a prompt: %v", w.m.history)
+	}
+}
+
+func TestCtrlJStartsANewLineInsteadOfSending(t *testing.T) {
+	for _, newline := range []tea.KeyMsg{{Type: tea.KeyCtrlJ}, {Type: tea.KeyEnter, Alt: true}} {
+		w := newWiredModel(t, "ran them")
+		w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("go test ./...")})
+		w.m.Update(newline)
+		if len(w.m.history) != 0 {
+			t.Fatalf("%s sent the prompt", newline)
+		}
+		w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("run the ones that fail")})
+		w.m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if len(w.m.history) != 1 {
+			t.Fatalf("%s: nothing was sent afterwards", newline)
+		}
+		if !strings.Contains(w.m.history[0], "\n") || !strings.Contains(w.m.history[0], "run the ones that fail") {
+			t.Errorf("%s lost the second line: %q", newline, w.m.history[0])
+		}
+	}
+}
+
+func TestAPasteKeepsItsOwnNewlines(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("func main() {\n\tprintln(1)\n}"), Paste: true})
+	if got := m.input.Value(); strings.Count(got, "\n") != 2 {
+		t.Errorf("the paste lost its shape: %q", got)
+	}
+	if len(m.history) != 0 {
+		t.Error("a paste submitted the prompt")
+	}
+}
+
+func TestPastingTheWordEnterDoesNotSend(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("enter"), Paste: true})
+	if len(m.history) != 0 {
+		t.Error(`pasting the word "enter" sent the prompt`)
+	}
+	if m.input.Value() != "enter" {
+		t.Errorf("the pasted word vanished: %q", m.input.Value())
+	}
+}

@@ -63,8 +63,9 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
 	input.ShowLineNumbers = false
 	input.SetHeight(2)
 	input.Focus() // an unfocused box swallows every keystroke, so nothing can be typed
-	// Enter sends, so a newline has to be asked for: ctrl+j always works.
-	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "shift+enter")
+	// Enter sends, so a newline has to be asked for. ctrl+j works everywhere; alt+enter and
+	// shift+enter work when the terminal reports the modifiers at all.
+	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "alt+enter", "shift+enter")
 
 	// a terminal that will not say its size still gets a screen
 	return &model{
