@@ -1,5 +1,6 @@
 # build output
 /bin/
+/eval   # a built eval harness, not source
 
 # test and profiling output
 coverage.out
