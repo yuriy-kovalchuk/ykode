@@ -37,7 +37,6 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--no-think` | — | thinking on | skips the thinking phase (`chat_template_kwargs`) |
 | `--yes` | — | off | skip in-project confirmations |
 | `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
-| `--audit` | — | — | print what the last run did, call by call, and exit |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405` |
 | `--tui` | — | off | full-screen session: scrolling transcript, input box, status bar |
 | `--version` | — | — | print the version and exit |
@@ -46,8 +45,10 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 
 Type a request. `/help` lists the commands, `/usage` reports what the
 conversation has cost, `/compact` folds the older turns into a summary the model
-writes, `/history [what]` shows what this run has done, `/undo` puts the most
-recent file change back, `/reset` clears the history, `/exit` leaves. `Ctrl-C` during a reply cancels that request and
+writes, `/history [what]` shows what this run has done (a tool name, `failed`,
+`outside`, one call by id like `r12`, or `--all` for every run of this root),
+`/undo` puts the most recent file change back, `/reset` clears the history,
+`/exit` leaves. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
 
 ## The full-screen session
@@ -137,6 +138,20 @@ log is never trimmed, compacted or reset — it is the record of what actually
 happened, with the file each call touched, a command's exit code, the size and
 fingerprint of each result, and `OUTSIDE` when a call reached past the root.
 Anything that reads like a key, token or password is masked on the way in.
+Months past their retention (180 days, `audit_retention_days`) are removed at
+startup, never the current one, and `"audit": false` stops the log being written.
+
+`/history` answers the same questions inside a session. Outside one:
+
+```sh
+ykode history                      # the last run, call by call
+ykode history --all exec           # every command of this root
+ykode history --failed --since 24h # what went wrong today
+ykode history --all r12            # one call in full, with its output path
+ykode history --json --all         # the same, one JSON object per call
+```
+
+Flags come first, then what to look for.
 
 `/undo` takes the most recent change off a small stack of snapshots that
 `write_file` and `edit_file` leave behind: a file that was edited goes back to the
@@ -191,6 +206,8 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
   "thinking": true,
   "verify": true,
   "assume_yes": false,
+  "audit": true,
+  "audit_retention_days": 180,
   "context": { "reserve_output": 4096, "safety_margin": 256 },
   "tools": {
     "read_lines": 150,

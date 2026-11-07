@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,10 +10,11 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
-	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
+// newAuditedAgent wires an agent whose audit log sits in a temp dir; the repair and
+// permission tests build on it too.
 func newAuditedAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, func(), string, *audit.Logger) {
 	t.Helper()
 	server := httptest.NewServer(stub)
@@ -139,219 +139,30 @@ func TestWhatACommandDidAndWhatAChangeDidAreBothRecorded(t *testing.T) {
 	}
 }
 
-func TestAResumedConversationIsStillTalkingToTheModel(t *testing.T) {
-	dir := t.TempDir()
-	sessions := filepath.Join(dir, "sessions")
-
-	// first run: read a file, answer, and leave a log behind
-	firstStub := &stubServer{scripts: []string{
-		sse("", "", "read_file", []string{`{"path":"note.txt"}`}, "tool_calls"),
-		sse("", "it says 90", "", nil, "stop"),
-	}}
-	log := session.New(sessions, "s20260101-120000")
-	a, done, work, _ := newAuditedAgent(t, firstStub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
+func TestHistoryCanWidenToEveryRunOfTheRootAndAnswerOneID(t *testing.T) {
+	a, done, dir, logger := newAuditedAgent(t, &stubServer{}, Options{MaxTurns: 1, CtxSize: 8000}, &captureSink{})
 	defer done()
-	writeLines(t, work, "note.txt", 3)
-	a.opts.Session = log
-	if err := a.Ask(context.Background(), "what does note.txt say"); err != nil {
+	if err := logger.Append(audit.Entry{ID: "r1", Tool: "read_file", Args: `{"path":"mine.txt"}`, Status: "ok", Root: dir}); err != nil {
+		t.Fatal(err)
+	}
+	other := audit.New(filepath.Join(dir, "audit"), "sother")
+	if err := other.Append(audit.Entry{ID: "r9", Tool: "exec_command", Args: `{"command":"go test"}`, Status: "ok", Root: dir}); err != nil {
 		t.Fatal(err)
 	}
 
-	// second run: same conversation loaded back, one question later
-	saved, err := session.Load(log.Path())
-	if err != nil {
-		t.Fatal(err)
+	if got := a.History("", historyLimit); !strings.Contains(got, "r1") || strings.Contains(got, "r9") {
+		t.Errorf("this run only: %s", got)
 	}
-	secondStub := &stubServer{scripts: []string{sse("", "still 90", "", nil, "stop")}}
-	b, doneB, _, _ := newAuditedAgent(t, secondStub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
-	defer doneB()
-	b.opts.Session = session.New(sessions, "s20260101-120000")
-	b.Resume(saved)
-	if err := b.Ask(context.Background(), "and again?"); err != nil {
-		t.Fatal(err)
+	if got := a.History("--all", historyLimit); !strings.Contains(got, "r9") {
+		t.Errorf("--all should reach the other run: %s", got)
 	}
-
-	messages := secondStub.lastRequest(t)["messages"].([]any)
-	var contents []string
-	for _, raw := range messages {
-		contents = append(contents, raw.(map[string]any)["content"].(string))
+	if got := a.History("r1", historyLimit); !strings.Contains(got, "mine.txt") {
+		t.Errorf("an id of this run should answer in full: %s", got)
 	}
-	if !strings.Contains(strings.Join(contents, "\n"), "what does note.txt say") {
-		t.Errorf("the earlier question is missing from the request:\n%s", strings.Join(contents, "\n"))
+	if got := a.History("--all r9", historyLimit); !strings.Contains(got, "go test") {
+		t.Errorf("--all plus an id should answer in full: %s", got)
 	}
-	if strings.Contains(strings.Join(contents, "\n"), "and again?") == false {
-		t.Error("the new question was not asked")
-	}
-}
-
-func TestAResumeFixesWhatABadStopLeftBehind(t *testing.T) {
-	saved := []llm.Message{
-		{Role: "user", Content: "start"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":`)}}}},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.go"}`)}}}},
-		{Role: "tool", Content: "package main", ToolCallID: "c2", Name: "read_file"},
-	}
-	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, &captureSink{})
-	defer done()
-	a.Resume(saved)
-	if err := a.Ask(context.Background(), "and again?"); err != nil {
-		t.Fatal(err)
-	}
-
-	messages := stub.lastRequest(t)["messages"].([]any)
-	var toolAnswers int
-	for _, raw := range messages {
-		msg := raw.(map[string]any)
-		if msg["role"] == "tool" {
-			toolAnswers++
-		}
-	}
-	if toolAnswers != 2 {
-		t.Errorf("every call still owes a reply: %d tool messages for %d calls", toolAnswers, 2)
-	}
-}
-
-func TestAResumeThatOverflowsTheWindowIsTrimmed(t *testing.T) {
-	var saved []llm.Message
-	for i := 0; i < 12; i++ {
-		saved = append(saved, llm.Message{Role: "user", Content: strings.Repeat("a", 900)})
-		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("b", 900)})
-	}
-	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 4000}, &captureSink{})
-	defer done()
-	a.Resume(saved)
-
-	if len(a.history) >= len(saved) {
-		t.Fatalf("a conversation four times the window should shed turns, kept %d of %d", len(a.history), len(saved))
-	}
-	if a.history[len(a.history)-1].Content != saved[len(saved)-1].Content {
-		t.Error("the newest turn must survive a resume that overflows")
-	}
-}
-
-func TestTrimmingNeverEatsTheQuestionBeingAnswered(t *testing.T) {
-	// a conversation too big for the window sheds its oldest turns, but the question being asked
-	// stays: an honest "this does not fit" beats quietly answering something else
-	var saved []llm.Message
-	for i := 0; i < 6; i++ {
-		saved = append(saved, llm.Message{Role: "user", Content: strings.Repeat("o", 1200)})
-		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("p", 1200)})
-	}
-	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 2600}, &captureSink{})
-	defer done()
-	a.Resume(saved)
-	if err := a.Ask(context.Background(), strings.Repeat("question ", 280)); err == nil {
-		t.Fatal("a conversation larger than the window should say so")
-	}
-	var asked bool
-	for _, m := range a.history {
-		if m.Role == "user" && strings.Contains(m.Content, "question question") {
-			asked = true
-		}
-	}
-	if !asked {
-		t.Error("trimming removed the turn the model is supposed to answer")
-	}
-	if len(a.history) >= len(saved)+2 {
-		t.Errorf("nothing was shed: %d messages", len(a.history))
-	}
-}
-
-func TestAnsweringOnceStopsTheAskingForThatTool(t *testing.T) {
-	stub := &stubServer{scripts: []string{
-		sse("", "", "write_file", []string{`{"path":"a.txt","content":"1"}`}, "tool_calls"),
-		sse("", "", "write_file", []string{`{"path":"b.txt","content":"2"}`}, "tool_calls"),
-		sse("", "both written", "", nil, "stop"),
-	}}
-	sink := &captureSink{decision: AllowAlways}
-	a, done, dir, _ := newAuditedAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
-
-	if err := a.Ask(context.Background(), "write two files"); err != nil {
-		t.Fatal(err)
-	}
-	var confirms int
-	for _, ev := range sink.events {
-		if ev.Kind == Confirm {
-			confirms++
-		}
-	}
-	if confirms != 1 {
-		t.Errorf("answered once, asked %d times", confirms)
-	}
-	for _, name := range []string{"a.txt", "b.txt"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-			t.Errorf("%s was not written: %v", name, err)
-		}
-	}
-}
-
-func TestACommandPrefixIsAllowedWithoutItsNeighbours(t *testing.T) {
-	stub := &stubServer{scripts: []string{
-		sse("", "", "exec_command", []string{`{"command":"go test ./..."}`}, "tool_calls"),
-		sse("", "", "exec_command", []string{`{"command":"rm -rf build"}`}, "tool_calls"),
-		sse("", "", "exec_command", []string{`{"command":"go mod tidy"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	sink := &captureSink{decision: Refuse}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000, Allow: []string{"exec:go test"}}, sink)
-	defer done()
-
-	if err := a.Ask(context.Background(), "run these"); err != nil {
-		t.Fatal(err)
-	}
-	var asked []string
-	for _, ev := range sink.events {
-		if ev.Kind == Confirm {
-			asked = append(asked, ev.Args)
-		}
-	}
-	if len(asked) != 2 {
-		t.Fatalf("go test was pre-approved but its neighbours were not: asked %v", asked)
-	}
-	if strings.Contains(asked[0], "go test") {
-		t.Errorf("`go test ./...` was asked about anyway: %v", asked)
-	}
-	if !strings.Contains(asked[1], "go mod tidy") {
-		t.Errorf("`go mod tidy` should not be covered by a `go test` allowance: %v", asked)
-	}
-}
-
-func TestAnAlwaysNeverCoversAPathOutsideTheProject(t *testing.T) {
-	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("top secret"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	stub := &stubServer{scripts: []string{
-		sse("", "", "write_file", []string{`{"path":"a.txt","content":"1"}`}, "tool_calls"),
-		sse("", "", "write_file", []string{`{"path":"b.txt","content":"2"}`}, "tool_calls"),
-		sse("", "", "read_file", []string{`{"path":"` + filepath.Join(outside, "secret.txt") + `"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	sink := &captureSink{decision: AllowAlways}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
-
-	if err := a.Ask(context.Background(), "write two files then read outside"); err != nil {
-		t.Fatal(err)
-	}
-	var confirms []Event
-	for _, ev := range sink.events {
-		if ev.Kind == Confirm {
-			confirms = append(confirms, ev)
-		}
-	}
-	// one ask for the first write, nothing for the second, and the outside path asked again
-	if len(confirms) != 2 {
-		t.Fatalf("asked %d times, want 2: %+v", len(confirms), confirms)
-	}
-	if len(confirms[0].Target) != 0 {
-		t.Errorf("the in-project write should not be an outside-root question: %+v", confirms[0])
-	}
-	if len(confirms[1].Target) == 0 {
-		t.Errorf("the outside read should still have been asked about: %+v", confirms[1])
+	if got := a.History("exec", historyLimit); strings.Contains(got, "r1") {
+		t.Errorf("a tool filter should narrow: %s", got)
 	}
 }

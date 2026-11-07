@@ -89,6 +89,16 @@ func (l *Logger) Append(e Entry) error {
 
 // Read returns the entries of one session, oldest first; an empty session matches every run.
 func (l *Logger) Read(session string) ([]Entry, error) {
+	return l.matching(func(e Entry) bool { return session == "" || e.Session == session })
+}
+
+// ReadRoot returns every entry logged for one project root, across sessions.
+func (l *Logger) ReadRoot(root string) ([]Entry, error) {
+	return l.matching(func(e Entry) bool { return e.Root == root })
+}
+
+// matching reads the log file by file - name order is month order - and keeps what the filter takes.
+func (l *Logger) matching(keep func(Entry) bool) ([]Entry, error) {
 	if l == nil {
 		return nil, nil
 	}
@@ -110,7 +120,7 @@ func (l *Logger) Read(session string) ([]Entry, error) {
 			if err := json.Unmarshal([]byte(line), &e); err != nil {
 				return nil, fmt.Errorf("audit: %s: %w", filepath.Base(path), err)
 			}
-			if session == "" || e.Session == session {
+			if keep(e) {
 				entries = append(entries, e)
 			}
 		}
@@ -118,10 +128,11 @@ func (l *Logger) Read(session string) ([]Entry, error) {
 	return entries, nil
 }
 
+// masked stands in for a secret in the log.
+const masked = "[masked]"
+
 // secretRe marks the parts of a command or diff that must never reach the log in clear text.
 var secretRe = regexp.MustCompile(`(?i)((?:[a-z0-9_]*(?:key|token|secret|password)|authorization)\s*[:=]\s*)(\S+)`)
-
-const masked = "[masked]"
 
 func redact(s string) string {
 	return secretRe.ReplaceAllString(s, "$1"+masked)
@@ -158,58 +169,3 @@ func (l *Logger) LatestSession() string {
 
 // ReadAll returns every entry, oldest first.
 func (l *Logger) ReadAll() ([]Entry, error) { return l.Read("") }
-
-// Format renders entries as a table, newest last. filter is a tool name, "failed" or "outside".
-func Format(entries []Entry, filter string, limit int) string {
-	kept := make([]Entry, 0, len(entries))
-	for _, e := range entries {
-		if e.Status == "started" {
-			continue // one line per call: the final line carries the outcome
-		}
-		if !wanted(e, filter) {
-			continue
-		}
-		kept = append(kept, e)
-	}
-	if limit > 0 && len(kept) > limit {
-		kept = kept[len(kept)-limit:]
-	}
-	var b strings.Builder
-	for _, e := range kept {
-		fmt.Fprintf(&b, "%-4s %s %-13s %-8s %s", e.ID, e.Time.Format("15:04:05"), e.Tool, e.Status, strings.Join(shortNames(e.Paths), " "))
-		if e.ExitCode != nil {
-			fmt.Fprintf(&b, " exit=%d", *e.ExitCode)
-		}
-		if len(e.OutsideRoot) > 0 {
-			fmt.Fprintf(&b, " OUTSIDE")
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-// wanted applies the history filter.
-func wanted(e Entry, filter string) bool {
-	switch filter {
-	case "":
-		return true
-	case "failed":
-		return e.Status == "error" || e.Status == "refused" || e.Status == "timeout"
-	case "outside":
-		return len(e.OutsideRoot) > 0
-	default:
-		return strings.Contains(e.Tool, filter)
-	}
-}
-
-func shortNames(paths []string) []string {
-	short := make([]string, len(paths))
-	for i, p := range paths {
-		if name := filepath.Base(p); name != "/" && name != "." {
-			short[i] = name
-		} else {
-			short[i] = p
-		}
-	}
-	return short
-}

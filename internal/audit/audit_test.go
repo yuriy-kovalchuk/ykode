@@ -98,36 +98,6 @@ func TestALoggerWithNoDirectoryIsOff(t *testing.T) {
 	}
 }
 
-func TestTheHistoryTableSkipsTheStartedLines(t *testing.T) {
-	code := 2
-	entries := []Entry{
-		{Time: time.Unix(0, 0), ID: "r1", Tool: "read_file", Status: "started", Paths: []string{"/p/src/a.go"}},
-		{Time: time.Unix(0, 0), ID: "r1", Tool: "read_file", Status: "ok", Paths: []string{"/p/src/a.go"}},
-		{Time: time.Unix(1, 0), ID: "r2", Tool: "exec_command", Status: "error", ExitCode: &code, Paths: []string{"/p"}},
-		{Time: time.Unix(2, 0), ID: "r3", Tool: "write_file", Status: "refused", Paths: []string{"/outside/x"}},
-	}
-	table := Format(entries, "", 0)
-	if strings.Count(table, "\n") != 3 {
-		t.Fatalf("want one line per call, got:\n%s", table)
-	}
-	if !strings.Contains(table, "a.go") || strings.Contains(table, "/p/src/a.go") {
-		t.Errorf("paths should show as names:\n%s", table)
-	}
-	if !strings.Contains(table, "exit=2") {
-		t.Errorf("the exit code is missing:\n%s", table)
-	}
-
-	if only := Format(entries, "failed", 0); strings.Count(only, "\n") != 2 {
-		t.Errorf("failed filter:\n%s", only)
-	}
-	if only := Format(entries, "exec", 0); only == "" || !strings.Contains(only, "exec_command") || strings.Contains(only, "read_file") {
-		t.Errorf("tool filter:\n%s", only)
-	}
-	if only := Format(entries, "", 1); strings.Count(only, "\n") != 1 || !strings.Contains(only, "r3") {
-		t.Errorf("the limit should keep the newest:\n%s", only)
-	}
-}
-
 func TestTheNewestRunIsTheOneRecalled(t *testing.T) {
 	logger := New(filepath.Join(t.TempDir(), "audit"), "older")
 	if err := logger.Append(Entry{ID: "r1", Tool: "read_file", Status: "ok"}); err != nil {

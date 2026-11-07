@@ -24,6 +24,7 @@ const (
 	defaultSearchLimit = 50
 	defaultExecTimeout = 60 * time.Second
 	defaultLogKeep     = 24 * time.Hour
+	defaultAuditKeep   = 180 * 24 * time.Hour // six months of tool calls
 	defaultSafety      = 256
 	sessionStamp       = "20060102-150405"
 )
@@ -48,11 +49,12 @@ type Config struct {
 	CommandLogDir   string // where a cut command's full output is saved
 	ResultDir       string // one run's shortened tool results, kept so recall can hand them back
 	AuditDir        string // append-only tool-call log, one file per month
+	LogAudit        bool   // write that log at all; off only by a setting
 	Session         string // this run's id, shared by the results, the audit log and sessions
 	KeepCommandLogs time.Duration
+	KeepAudit       time.Duration   // how long old audit files survive
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
-	Audit           bool            // print what the last run did and exit
 	TUI             bool            // full-screen session instead of the line prompt
 	Allow           []string        // never ask about these: a tool name, or "exec:go test"
 	Continue        string          // resume a saved conversation: "last" or its id
@@ -77,7 +79,6 @@ type flagValues struct {
 	SendReasoning bool
 	Prompt        string
 	JSON          bool
-	Audit         bool
 	TUI           bool
 	Continue      string
 	Version       bool
@@ -88,7 +89,8 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--tui] [--continue ID] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--tui] [--continue ID] [--version]")
+		fmt.Fprintln(fs.Output(), "       ykode history [what] [--all] [--failed] [--since DUR] [--root DIR] [--json] - what the runs did, outside a session")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -105,7 +107,6 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
 	fs.BoolVar(&f.TUI, "tui", false, "full-screen session: scrolling transcript, input box, status bar")
-	fs.BoolVar(&f.Audit, "audit", false, "print what the last run did, tool by tool, and exit")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -142,6 +143,8 @@ func defaults() Config {
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		KeepCommandLogs: defaultLogKeep,
+		KeepAudit:       defaultAuditKeep,
+		LogAudit:        true,
 		modelReasoning:  map[string]bool{},
 	}
 }
@@ -192,9 +195,6 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	}
 	if set["tui"] && f.TUI {
 		c.TUI = true
-	}
-	if set["audit"] && f.Audit {
-		c.Audit = true
 	}
 	if set["continue"] {
 		c.Continue = f.Continue

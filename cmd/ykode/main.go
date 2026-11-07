@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,6 +40,9 @@ func main() {
 
 // run wires the pieces together; the context here only bounds the startup probe.
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "history" {
+		return historyCommand(os.Args[2:], os.Stdout)
+	}
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -45,29 +50,16 @@ func run() error {
 		}
 		return err
 	}
-	if cfg.Audit {
-		return showAudit(cfg)
-	}
 
 	if cfg.Version {
 		fmt.Printf("ykode %s\n", version)
 		return nil
 	}
 
-	// command output logs are written one per oversized command and nothing else deletes them
-	if n, err := tools.PruneSpillLogs(cfg.CommandLogDir, cfg.KeepCommandLogs); err != nil {
-		fmt.Fprintln(os.Stderr, "ykode:", err)
-	} else if n > 0 {
-		fmt.Fprintf(os.Stderr, "ykode: removed %d old command log(s)\n", n)
-	}
-	// a run's shortened tool results live here until they age out, and recall reads them back
+	// everything ykode leaves in $YKODE_HOME ages out on its own, at startup
+	cleanHome(cfg)
 	store := tools.NewResultStore(cfg.ResultDir)
 	undo := &tools.UndoStack{}
-	if n, err := tools.PruneOldDirs(filepath.Dir(cfg.ResultDir), "s", cfg.KeepCommandLogs); err != nil {
-		fmt.Fprintln(os.Stderr, "ykode:", err)
-	} else if n > 0 {
-		fmt.Fprintf(os.Stderr, "ykode: removed %d old result dir(s)\n", n)
-	}
 
 	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)
@@ -147,7 +139,7 @@ func run() error {
 		SendReasoning: cfg.SendReasoningFor(model.ID),
 		MaxResult:     resultBytes,
 		Store:         store,
-		Audit:         audit.New(cfg.AuditDir, cfg.Session),
+		Audit:         auditLogger(cfg),
 		Session:       session.New(cfg.SessionDir, cfg.Session),
 		Allow:         cfg.Allow,
 		Root:          cfg.Root,
@@ -217,21 +209,112 @@ func describeCtx(tokens int) string {
 	return strconv.Itoa(tokens) + " tokens"
 }
 
-// showAudit prints the last run's tool calls and exits: the log outlives the conversation.
-func showAudit(cfg config.Config) error {
-	logger := audit.New(cfg.AuditDir, "")
-	session := logger.LatestSession()
-	if session == "" {
-		return errors.New("no audit log yet; it is written to " + cfg.AuditDir)
+// cleanHome removes what older runs left behind: spilled command output, the result dirs of
+// runs long finished, and audit months past their retention.
+func cleanHome(cfg config.Config) {
+	removed := func(what string, n int, err error) {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ykode:", err)
+			return
+		}
+		if n > 0 {
+			fmt.Fprintf(os.Stderr, "ykode: removed %d old %s\n", n, what)
+		}
 	}
-	entries, err := logger.Read(session)
+	n, err := tools.PruneSpillLogs(cfg.CommandLogDir, cfg.KeepCommandLogs)
+	removed("command log(s)", n, err)
+	n, err = tools.PruneOldDirs(filepath.Dir(cfg.ResultDir), "s", cfg.KeepCommandLogs)
+	removed("result dir(s)", n, err)
+	n, err = audit.PruneOldFiles(cfg.AuditDir, cfg.KeepAudit)
+	removed("audit file(s)", n, err)
+}
+
+// auditLogger writes the tool-call log unless a setting turned it off.
+func auditLogger(cfg config.Config) *audit.Logger {
+	if !cfg.LogAudit {
+		return nil
+	}
+	return audit.New(cfg.AuditDir, cfg.Session)
+}
+
+// historyCommand answers `ykode history [flags] [what]`: what the runs did, outside a session.
+// Flags come first, then what to look for - a tool name, failed, outside, or an id like r12.
+func historyCommand(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("ykode history", flag.ContinueOnError)
+	all := fs.Bool("all", false, "every run of this root, not only the last one")
+	failed := fs.Bool("failed", false, "only calls that failed or were refused")
+	outside := fs.Bool("outside", false, "only calls that reached outside the root")
+	since := fs.String("since", "", "only calls in the last stretch, like 24h or 90m")
+	root := fs.String("root", ".", "which project root to report on")
+	asJSON := fs.Bool("json", false, "one JSON object per call")
+	limit := fs.Int("limit", auditLimit, "how many calls to show")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	what := strings.Join(fs.Args(), " ")
+	if what == "" {
+		if *failed {
+			what = "failed"
+		}
+		if *outside {
+			what = "outside"
+		}
+	}
+	window, err := time.ParseDuration(*since)
+	if *since != "" && err != nil {
+		return fmt.Errorf("--since %q is not a duration like 24h", *since)
+	}
+	settings, err := config.Load([]string{"--root", *root})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("ykode: run %s\n", session)
-	fmt.Print(audit.Format(entries, "", auditLimit))
+	entries, err := loggedScope(settings, *all, window)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return errors.New("nothing logged in " + settings.AuditDir)
+	}
+	if *asJSON {
+		return loggedJSON(out, entries, what, *limit)
+	}
+	fmt.Fprintln(out, audit.Answer(entries, what, *limit))
 	return nil
 }
 
-// auditLimit caps how many calls one --audit listing shows.
+// loggedScope reads the run asked about: the newest one, or every run of this root, inside the window.
+func loggedScope(cfg config.Config, all bool, since time.Duration) ([]audit.Entry, error) {
+	logger := audit.New(cfg.AuditDir, "")
+	var entries []audit.Entry
+	var err error
+	if all {
+		entries, err = logger.ReadRoot(cfg.Root)
+	} else {
+		entries, err = logger.Read(logger.LatestSession())
+	}
+	if err != nil || since <= 0 {
+		return entries, err
+	}
+	cutoff := time.Now().Add(-since)
+	kept := entries[:0]
+	for _, e := range entries {
+		if !e.Time.Before(cutoff) {
+			kept = append(kept, e)
+		}
+	}
+	return kept, nil
+}
+
+func loggedJSON(out io.Writer, entries []audit.Entry, what string, limit int) error {
+	for _, e := range audit.Match(entries, what, limit) {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(raw))
+	}
+	return nil
+}
+
+// auditLimit caps how many calls one history listing shows.
 const auditLimit = 25

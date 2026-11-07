@@ -32,6 +32,8 @@ func TestLoadDefaults(t *testing.T) {
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		KeepCommandLogs: defaultLogKeep,
+		KeepAudit:       defaultAuditKeep,
+		LogAudit:        true,
 	}
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
 	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time

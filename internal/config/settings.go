@@ -14,6 +14,8 @@ import (
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
 type fileSettings struct {
 	BaseURL   *string `json:"base_url"`
+	Audit     *bool   `json:"audit"`
+	Retain    *int    `json:"audit_retention_days"`
 	Model     *string `json:"model"`
 	MaxTurns  *int    `json:"max_turns"`
 	MaxTokens *int    `json:"max_tokens"`
@@ -91,6 +93,15 @@ func (c *Config) applyFile(path string) error {
 			return fmt.Errorf("%s: keep_command_logs %q is not a duration like \"24h\"", path, *s.Tools.KeepCommandLogs)
 		}
 		c.KeepCommandLogs = d
+	}
+	if s.Audit != nil {
+		c.LogAudit = *s.Audit
+	}
+	if s.Retain != nil {
+		if *s.Retain <= 0 {
+			return fmt.Errorf("%s: audit_retention_days must be a whole number of days above zero", path)
+		}
+		c.KeepAudit = time.Duration(*s.Retain) * 24 * time.Hour
 	}
 	if len(s.Permissions.Allow) > 0 {
 		c.Allow = append(c.Allow, s.Permissions.Allow...)

@@ -150,3 +150,40 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 		t.Errorf("allow list = %q, want both files' entries", got)
 	}
 }
+
+func TestTheAuditLogCanBeTurnedOffAndItsKeepShortened(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"audit": false, "audit_retention_days": 30}`)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LogAudit {
+		t.Error("audit: false should stop the log being written")
+	}
+	if cfg.KeepAudit != 30*24*time.Hour {
+		t.Errorf("audit_retention_days: want 30 days, got %s", cfg.KeepAudit)
+	}
+}
+
+func TestTheAuditLogIsOnAndKeptForSixMonthsByDefault(t *testing.T) {
+	fakeHome(t)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LogAudit {
+		t.Error("the audit log should be on unless a setting says otherwise")
+	}
+	if cfg.KeepAudit != 180*24*time.Hour {
+		t.Errorf("default keep: want 180 days, got %s", cfg.KeepAudit)
+	}
+}
+
+func TestANonsenseRetentionIsRefusedByName(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"audit_retention_days": 0}`)
+	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "audit_retention_days") {
+		t.Errorf("want an error naming audit_retention_days, got %v", err)
+	}
+}

@@ -20,7 +20,8 @@ const Help = `commands:
   /help   show this
   /usage    what the conversation has cost the server
   /compact  fold the older turns into a summary the model writes
-  /history [what]  what this run did: a tool name, "failed" or "outside"
+  /history [what]  what this run did: a tool name, failed, outside, an id like r12,
+           or --all for every run of this root
   /undo     put the most recent file change back
   /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`

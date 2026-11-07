@@ -192,18 +192,43 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 
 // SpecBytes reports how much the tool descriptions cost in every request.
 // History reports what this run's audit log says about the calls it made.
-func (a *Agent) History(filter string, limit int) string {
+// History answers /history: a tool name, "failed", "outside", an id like r12, or --all to
+// widen the scope from this run to every run of this root.
+func (a *Agent) History(query string, limit int) string {
 	if a.opts.Audit == nil {
 		return "this run has no audit log"
 	}
-	entries, err := a.opts.Audit.Read(a.opts.Audit.Session())
+	query, all := splitAll(query)
+	entries, err := a.logged(all)
 	if err != nil {
 		return err.Error()
 	}
 	if len(entries) == 0 {
 		return "nothing has been logged yet"
 	}
-	return audit.Format(entries, filter, limit)
+	return audit.Answer(entries, query, limit)
+}
+
+// splitAll takes --all out of the query, wherever the user put it.
+func splitAll(query string) (string, bool) {
+	fields := strings.Fields(query)
+	kept := fields[:0]
+	all := false
+	for _, f := range fields {
+		if f == "--all" {
+			all = true
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return strings.Join(kept, " "), all
+}
+
+func (a *Agent) logged(all bool) ([]audit.Entry, error) {
+	if all {
+		return a.opts.Audit.ReadRoot(a.opts.Root)
+	}
+	return a.opts.Audit.Read(a.opts.Audit.Session())
 }
 
 func (a *Agent) SpecBytes() int {
