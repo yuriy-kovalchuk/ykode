@@ -157,7 +157,7 @@ func runTask(ctx context.Context, client *llm.Client, model llm.ModelInfo, cfg c
 
 	store := tools.NewResultStore(filepath.Join(base, "results"))
 	resultBytes := tools.ResultBytesFor(model.CtxSize)
-	instructions, _ := agent.LoadInstructions(project)
+	instructions, _ := agent.LoadInstructions("", project)
 	rec := newRecorder()
 	maxTurns := t.maxTurns
 	if maxTurns == 0 {

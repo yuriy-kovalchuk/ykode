@@ -19,7 +19,7 @@ func writeInstructionFile(t *testing.T, dir, name, body string) {
 }
 
 func TestMissingInstructionFilesAreQuiet(t *testing.T) {
-	text, err := LoadInstructions(t.TempDir())
+	text, err := LoadInstructions("", t.TempDir())
 	if err != nil || text != "" {
 		t.Fatalf("LoadInstructions() = (%q, %v), want empty and no error", text, err)
 	}
@@ -30,7 +30,7 @@ func TestBothInstructionFilesRideThePrompt(t *testing.T) {
 	writeInstructionFile(t, dir, "CLAUDE.md", "use tabs")
 	writeInstructionFile(t, dir, "AGENTS.md", "never touch vendor/")
 
-	text, err := LoadInstructions(dir)
+	text, err := LoadInstructions("", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestALongInstructionFileIsCutWithAHint(t *testing.T) {
 	}
 	writeInstructionFile(t, dir, "AGENTS.md", b.String())
 
-	text, err := LoadInstructions(dir)
+	text, err := LoadInstructions("", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestAnUnreadableInstructionFileIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := LoadInstructions(dir); err == nil || !strings.Contains(err.Error(), "AGENTS.md") {
+	if _, err := LoadInstructions("", dir); err == nil || !strings.Contains(err.Error(), "AGENTS.md") {
 		t.Fatalf("LoadInstructions() error = %v, want the unreadable file named", err)
 	}
 }
@@ -90,7 +90,7 @@ func TestAnUnreadableInstructionFileIsReported(t *testing.T) {
 func TestProjectRulesReachTheModel(t *testing.T) {
 	dir := t.TempDir()
 	writeInstructionFile(t, dir, "AGENTS.md", "never edit generated/")
-	instructions, err := LoadInstructions(dir)
+	instructions, err := LoadInstructions("", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,5 +171,25 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
 	if got := a.SpecBytes(); got > 5000 {
 		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5000", got, got/3)
+	}
+}
+
+func TestTheUsersOwnRulesComeBeforeTheProjects(t *testing.T) {
+	global, project := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(global, "AGENTS.md"), []byte("always answer in one line"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("answer in three lines"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	text, err := LoadInstructions(global, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Index(text, "one line") > strings.Index(text, "three lines") {
+		t.Errorf("the project should come last, so it can overrule:\n%s", text)
+	}
+	if !strings.Contains(withInstructions("base", text), "one line") {
+		t.Error("the global rules did not reach the prompt")
 	}
 }

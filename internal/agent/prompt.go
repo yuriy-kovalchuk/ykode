@@ -35,25 +35,39 @@ const maxInstructionBytes = 8000
 // instructionFiles are the names other coding agents already look for.
 var instructionFiles = []string{"AGENTS.md", "CLAUDE.md"}
 
-// LoadInstructions reads the project's instruction files; a missing one is simply absent.
-func LoadInstructions(root string) (string, error) {
+// LoadInstructions reads the rules that apply: the user's own global file first, then the
+// project's, so a project can always overrule what its owner set for every project.
+// A missing file is simply absent.
+func LoadInstructions(globalDir, root string) (string, error) {
 	var blocks []string
-	for _, name := range instructionFiles {
-		raw, err := os.ReadFile(filepath.Join(root, name))
+	for _, path := range instructionPaths(globalDir, root) {
+		raw, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return "", fmt.Errorf("project instructions: read %s: %w", name, err)
+			return "", fmt.Errorf("instructions: read %s: %w", path, err)
 		}
 		if body := strings.TrimSpace(string(raw)); body != "" {
-			blocks = append(blocks, "From "+name+":\n"+body)
+			blocks = append(blocks, "From "+path+":\n"+body)
 		}
 	}
 	if len(blocks) == 0 {
 		return "", nil
 	}
 	return capInstructions(strings.Join(blocks, "\n\n")), nil
+}
+
+// instructionPaths: $YKODE_HOME/AGENTS.md, then the names other agents already look for.
+func instructionPaths(globalDir, root string) []string {
+	var paths []string
+	if globalDir != "" {
+		paths = append(paths, filepath.Join(globalDir, "AGENTS.md"))
+	}
+	for _, name := range instructionFiles {
+		paths = append(paths, filepath.Join(root, name))
+	}
+	return paths
 }
 
 // capInstructions stops a long instruction file from eating the context window.

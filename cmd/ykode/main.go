@@ -20,6 +20,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/cli"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
@@ -89,7 +90,7 @@ func run() error {
 	defer root.Close()
 
 	resultBytes := tools.ResultBytesFor(ctxSize)
-	instructions, err := agent.LoadInstructions(cfg.Root)
+	instructions, err := agent.LoadInstructions(home.Dir(), cfg.Root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err, "- continuing without them")
 	}

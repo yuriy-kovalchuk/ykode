@@ -215,6 +215,7 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
 ```json
 {
   "base_url": "http://127.0.0.1:8080/v1",
+  "api_key_env": "LOCAL_LLM_API_KEY",
   "model": "Qwen3.6-35B-A3B-GSQ-hybrid",
   "max_turns": 25,
   "thinking": true,
@@ -236,10 +237,19 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
 
 `reserve_output` is the token budget for one reply, `safety_margin` what is kept free beside
 it, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
-expects it back from tool-calling turns. The per-user directory is `~/.ykode`, or
-`$YKODE_HOME` when that is set; command logs a cut `exec_command` left behind live in
-`~/.ykode/logs`, and shortened tool results in `~/.ykode/results`; both are pruned at
-startup after `keep_command_logs`.
+expects it back from tool-calling turns. A server that wants a bearer token takes it from
+`api_key`, or from the variable `api_key_env` names — the second keeps the secret out of
+the file, and an unset variable is no error.
+
+A key the settings file does not recognise is an error naming the file and the key, not a
+silently ignored line.
+
+The per-user directory is `~/.ykode`, or `$YKODE_HOME` when that is set; command logs a cut
+`exec_command` left behind live in `~/.ykode/logs`, and shortened tool results in
+`~/.ykode/results`; both are pruned at startup after `keep_command_logs`, and the audit
+months after `audit_retention_days`. `$YKODE_HOME/AGENTS.md` holds rules for every project
+you open; they are loaded before the project's own `AGENTS.md`, so a project can overrule
+what you set for all of them.
 
 ## What is confined, and what is not
 

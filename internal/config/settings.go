@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
 type fileSettings struct {
 	BaseURL   *string `json:"base_url"`
+	APIKey    *string `json:"api_key"`
+	APIKeyEnv *string `json:"api_key_env"` // name of the variable that holds it, which beats the key
 	Audit     *bool   `json:"audit"`
 	Retain    *int    `json:"audit_retention_days"`
 	Model     *string `json:"model"`
@@ -60,11 +63,20 @@ func (c *Config) applyFile(path string) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	var s fileSettings
-	if err := json.Unmarshal(raw, &s); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 
 	pick(s.BaseURL, &c.BaseURL)
+	// a named variable keeps the secret out of the file; api_key still works for a single-user box
+	pick(s.APIKey, &c.APIKey)
+	if s.APIKeyEnv != nil {
+		if fromEnv := os.Getenv(*s.APIKeyEnv); fromEnv != "" {
+			c.APIKey = fromEnv
+		}
+	}
 	pick(s.Model, &c.Model)
 	pick(s.MaxTurns, &c.MaxTurns)
 	pick(s.MaxTokens, &c.MaxTokens)

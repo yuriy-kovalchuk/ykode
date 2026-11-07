@@ -187,3 +187,56 @@ func TestANonsenseRetentionIsRefusedByName(t *testing.T) {
 		t.Errorf("want an error naming audit_retention_days, got %v", err)
 	}
 }
+
+func TestAKeyComesFromTheFileOrFromTheVariableItNames(t *testing.T) {
+	user := fakeHome(t)
+	t.Setenv("ROUTER_TOKEN", "from-the-variable")
+	writeSettings(t, filepath.Join(user, "settings.json"),
+		`{"api_key": "written-into-the-file", "api_key_env": "ROUTER_TOKEN"}`)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "from-the-variable" {
+		t.Errorf("the named variable should win: %q", cfg.APIKey)
+	}
+
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"api_key": "written-into-the-file"}`)
+	cfg, err = Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "written-into-the-file" {
+		t.Errorf("api_key: %q", cfg.APIKey)
+	}
+}
+
+func TestAVariableThatIsNotSetLeavesNoKey(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"api_key_env": "NOT_SET_ANYWHERE"}`)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "" {
+		t.Errorf("a missing variable invented a key: %q", cfg.APIKey)
+	}
+}
+
+func TestAKeyThatIsNotSpelledRightIsNamedInTheError(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"base_ url": "http://nowhere"}`)
+	_, err := Load(nil)
+	if err == nil || !strings.Contains(err.Error(), "base_ url") {
+		t.Errorf("want the misspelled key named, got %v", err)
+	}
+}
+
+func TestAMisspelledKeyInAPortofTheFileIsNamedToo(t *testing.T) {
+	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.json"), `{"tools": {"read_lines ": 40}}`)
+	_, err := Load(nil)
+	if err == nil || !strings.Contains(err.Error(), "read_lines ") {
+		t.Errorf("want the nested misspelling named, got %v", err)
+	}
+}
