@@ -57,7 +57,7 @@ type Agent struct {
 	opts          Options
 	sink          Sink
 	callSeq       int          // numbers the r1, r2... ids that recall and the audit log share
-	compacted     bool         // the older turns were folded into a summary once already
+	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
 	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
 	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
@@ -84,7 +84,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: withInstructions(SystemPrompt, a.opts.Instructions)}}
 	a.meter.clearCost()
-	a.compacted = false
+	a.compactedAt = -1
 	a.forgetAll() // the tools forget what they handed over too: there is nothing in front of the model
 	a.publishUsage()
 }
@@ -142,10 +142,9 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			a.shrinkWhatAged(keepResults)
 		}
 		// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call
-		if a.underPressure() && !a.compacted && a.canCompact() {
+		if a.underPressure() && a.canCompact() && a.foldOverdue() {
 			// shortening the results was not enough: pay one request to fold the older turns into a summary
 			a.tell("the conversation is out of room: asking the model to summarise the older turns")
-			a.compacted = true
 			a.Compact(ctx)
 		}
 		a.trimHistory() // last resort: blank what is left, then drop whole calls

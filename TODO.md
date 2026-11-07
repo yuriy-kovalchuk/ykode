@@ -17,7 +17,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 ## Order
 
 
-5. B9, B12, B13, then the rest of the cleanup
+5. B12, B13, then the rest of the cleanup
 6. Evals E1–E7, then F1 (new system prompt), then F2, F3
 
 ## Security
@@ -25,9 +25,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Bugs
 
-- **B9 · S · Automatic compaction runs only once.** `a.compacted` is cleared only by
-  `Reset`. → Compact again once N more tool calls have piled up, and include the previous
-  summary in the transcript.
 - **B12 · S · Secret masking leaks.** `secretRe`: `Authorization: Bearer x` masks only
   `Bearer`, and quoted JSON keys, `--password x`, `sk-`/`ghp_`/`xox?-`/`AKIA` tokens and PEM
   blocks pass through. → A list of patterns with a table test; plain words that contain

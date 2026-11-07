@@ -255,3 +255,73 @@ func historyText(a *Agent) string {
 	}
 	return b.String()
 }
+
+// One fold per session is not enough: a long run empties the window again, and the second time
+// there is nothing left to shorten, so the turns have to be folded again.
+func TestTheRunFoldsTheHistoryAgainWhenTheCallsPileBackUp(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 8)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 40)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "Goal: read them. Files: three. Decisions: none. Next: keep reading", "", nil, "stop"),
+		read(3), read(4),
+		sse("", "Goal: read them. Files: five. Decisions: none. Next: keep reading", "", nil, "stop"),
+		read(5), read(6), read(7),
+		sse("", "all eight read", "", nil, "stop"),
+	}}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 9, MaxTokens: 64, CtxSize: 3000}, &captureSink{}, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read all eight files and say how many lines each has"); err != nil {
+		t.Fatal(err)
+	}
+	if folds := summariserRequests(stub); folds < 2 {
+		t.Errorf("the window emptied twice but the model was asked to summarise %d times", folds)
+	}
+	if !lastFoldSawTheEarlierSummary(stub) {
+		t.Error("the second fold started from scratch and lost what the first one kept")
+	}
+}
+
+// summariserRequests counts the requests that ask for a summary of the older turns.
+func summariserRequests(stub *stubServer) int {
+	var folds int
+	for _, req := range stub.requests {
+		messages, _ := req["messages"].([]any)
+		if len(messages) == 0 {
+			continue
+		}
+		if first, _ := messages[0].(map[string]any); first["content"] == compactPrompt {
+			folds++
+		}
+	}
+	return folds
+}
+
+// lastFoldSawTheEarlierSummary says whether the summariser was given the summary from an earlier
+// fold, so the second one does not lose what the first one kept.
+func lastFoldSawTheEarlierSummary(stub *stubServer) bool {
+	seen := false
+	for _, req := range stub.requests {
+		messages, _ := req["messages"].([]any)
+		if len(messages) == 0 {
+			continue
+		}
+		if first, _ := messages[0].(map[string]any); first["content"] != compactPrompt {
+			continue
+		}
+		seen = false
+		for _, raw := range messages[1:] {
+			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), compactMessage) {
+				seen = true
+			}
+		}
+	}
+	return seen
+}

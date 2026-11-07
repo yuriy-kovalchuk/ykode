@@ -45,7 +45,26 @@ func (a *Agent) Compact(ctx context.Context) int {
 		kept = append(kept, a.history[task])
 	}
 	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
+	a.compactedAt = callBlocks(a.history)
 	return before - a.estimateTokens()
+}
+
+// callBlocks counts the tool-call blocks in a conversation: the unit compaction folds.
+func callBlocks(messages []llm.Message) int {
+	blocks := 0
+	for _, m := range messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			blocks++
+		}
+	}
+	return blocks
+}
+
+// foldOverdue says enough calls have piled up since the last fold to be worth another one. A long
+// run empties the window more than once, and by the second time there are no old results left to
+// shorten, so folding the turns again is the only thing that earns its request.
+func (a *Agent) foldOverdue() bool {
+	return callBlocks(a.history)-a.compactedAt >= compactKeep
 }
 
 // dropping is what the summary replaces: everything before the kept calls except the message
@@ -66,13 +85,7 @@ func (a *Agent) shrinkForCompaction() {
 
 // canCompact says there are enough tool calls to fold into a summary.
 func (a *Agent) canCompact() bool {
-	blocks := 0
-	for _, m := range a.history {
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			blocks++
-		}
-	}
-	return blocks > compactKeep
+	return callBlocks(a.history) > compactKeep
 }
 
 // compactCut picks where the kept part starts: the beginning of the second newest tool call, so a

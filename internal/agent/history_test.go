@@ -278,16 +278,6 @@ func TestTrimNeverSendsAnOrphanToolReply(t *testing.T) {
 	}
 }
 
-func callBlocks(history []llm.Message) int {
-	n := 0
-	for _, m := range history {
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			n++
-		}
-	}
-	return n
-}
-
 func dump(history []llm.Message) string {
 	var b strings.Builder
 	for _, m := range history {
