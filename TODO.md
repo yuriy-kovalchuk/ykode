@@ -108,6 +108,10 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 - **E7 · M** Every task is a toy. → A cross-package rename checked with `go build ./...`, a
   "where is X configured" task in 50+ files with decoys, a bug whose cause is in another
   file, and a two-prompt session.
+- **E8 · XS** `read-the-note` fails since S3: its check wants the note to beat the code, which
+  is the rule S3 removed from the prompt. → decide what the task measures: "names the file that
+  states the rule", or "follows a note over the user's question"; the current prompt supports
+  the first, not the second.
 
 ## Features
 
