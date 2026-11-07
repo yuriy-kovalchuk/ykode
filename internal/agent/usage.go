@@ -63,6 +63,9 @@ func (a *Agent) Usage() Usage {
 // CtxSize is the context window the budget is measured against; 0 when the server never reported one.
 func (a *Agent) CtxSize() int { return a.opts.CtxSize }
 
+// Model is the model id this agent talks to.
+func (a *Agent) Model() string { return a.model }
+
 // sendingBytes counts every byte a request carries; the system prompt already sits at the head of history.
 func (a *Agent) sendingBytes() int {
 	bytes := 0

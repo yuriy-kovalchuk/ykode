@@ -21,6 +21,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
+	"github.com/yuriy-kovalchuk/ykode/internal/tui"
 )
 
 const startupProbeTimeout = 10 * time.Second
@@ -80,10 +81,13 @@ func run() error {
 	if ctxSize == 0 {
 		ctxSize = model.CtxSize
 	}
-	if cfg.JSON {
-		fmt.Fprintf(os.Stderr, "model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
-	} else {
-		fmt.Printf("model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+	// the screen shows the model and the window in its status bar, so no banner to bury
+	if !cfg.TUI {
+		if cfg.JSON {
+			fmt.Fprintf(os.Stderr, "model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+		} else {
+			fmt.Printf("model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+		}
 	}
 
 	root, err := os.OpenRoot(cfg.Root)
@@ -117,6 +121,11 @@ func run() error {
 
 	var view agent.Sink = cli.NewView(os.Stdout, os.Stderr, confirm)
 	var events *cli.JSONWriter
+	var hub *tui.Hub
+	if cfg.TUI {
+		hub = tui.NewHub() // the screen answers confirmations itself
+		view = hub
+	}
 	if cfg.JSON {
 		events = cli.NewJSONWriter(os.Stdout)
 		view = events
@@ -150,6 +159,9 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 
 	if cfg.Prompt == "" {
+		if cfg.TUI {
+			return tui.Run(context.Background(), a, hub)
+		}
 		return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
 	}
 	return answerOnce(a, events, cfg, ctxSize)

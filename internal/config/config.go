@@ -53,6 +53,7 @@ type Config struct {
 	Prompt          string          // one task to answer and exit; empty runs the REPL
 	JSON            bool            // print the event stream as JSON lines
 	Audit           bool            // print what the last run did and exit
+	TUI             bool            // full-screen session instead of the line prompt
 	Allow           []string        // never ask about these: a tool name, or "exec:go test"
 	Continue        string          // resume a saved conversation: "last" or its id
 	SessionDir      string          // where conversations are saved
@@ -77,6 +78,7 @@ type flagValues struct {
 	Prompt        string
 	JSON          bool
 	Audit         bool
+	TUI           bool
 	Continue      string
 	Version       bool
 }
@@ -86,7 +88,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--continue ID] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--audit] [--tui] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -102,6 +104,7 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
+	fs.BoolVar(&f.TUI, "tui", false, "full-screen session: scrolling transcript, input box, status bar")
 	fs.BoolVar(&f.Audit, "audit", false, "print what the last run did, tool by tool, and exit")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
@@ -187,6 +190,9 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	if set["json"] && f.JSON {
 		c.JSON = true
 	}
+	if set["tui"] && f.TUI {
+		c.TUI = true
+	}
 	if set["audit"] && f.Audit {
 		c.Audit = true
 	}
@@ -214,6 +220,9 @@ func (c *Config) normalize() error {
 	}
 	if c.MaxTokens < 1 {
 		return fmt.Errorf("--max-tokens must be at least 1, got %d", c.MaxTokens)
+	}
+	if c.TUI && (c.JSON || c.Prompt != "") {
+		return fmt.Errorf("--tui draws the session; --json and -p write to stdout instead: pick one")
 	}
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)
