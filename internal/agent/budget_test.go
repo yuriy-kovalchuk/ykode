@@ -38,3 +38,57 @@ func TestAnUnknownWindowAsksForNoCap(t *testing.T) {
 		t.Errorf("max_tokens = %v, want the field left out", got)
 	}
 }
+
+// thinking is billed inside the reply, so its budget is capped to leave the answer room of its own
+func TestAThinkingBudgetNeverEatsTheAnswer(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "xhigh", CtxSize: 4000, SafetyMargin: 256}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+
+	body := stub.lastRequest(t)
+	budget, ok := body["thinking_budget_tokens"].(float64)
+	if !ok {
+		t.Fatal("a deep level must ask the server to cap the thinking phase")
+	}
+	cap, ok := body["max_tokens"].(float64)
+	if !ok {
+		t.Fatal("the reply still needs its own cap")
+	}
+	if cap-budget < 1024 {
+		t.Errorf("a %v token reply leaves the answer %v tokens after %v of thinking", cap, cap-budget, budget)
+	}
+}
+
+func TestAMediumThinkingBudgetReachesTheServer(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "medium", CtxSize: 16000, SafetyMargin: 256}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := stub.lastRequest(t)["thinking_budget_tokens"]; got != float64(8192) {
+		t.Errorf("thinking_budget_tokens = %v, want the 8192 a medium level asks for", got)
+	}
+}
+
+func TestThinkingOffTurnsThePhaseOffWithoutNamingABudget(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "off", CtxSize: 8000}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+
+	body := stub.lastRequest(t)
+	kwargs, ok := body["chat_template_kwargs"].(map[string]any)
+	if !ok || kwargs["enable_thinking"] != false {
+		t.Errorf("chat_template_kwargs = %v, want enable_thinking false", body["chat_template_kwargs"])
+	}
+	if got, present := body["thinking_budget_tokens"]; present {
+		t.Errorf("thinking_budget_tokens = %v with thinking off: the field must be left out", got)
+	}
+}

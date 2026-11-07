@@ -101,7 +101,7 @@ func TestTheToolsCommandPricesEveryDescription(t *testing.T) {
 }
 
 func TestTheModelAndThinkCommandsChangeTheRun(t *testing.T) {
-	a, done := newAgent(t, &stubServer{}, Options{MaxTurns: 2, CtxSize: 8000, Think: true}, &captureSink{})
+	a, done := newAgent(t, &stubServer{}, Options{MaxTurns: 2, CtxSize: 8000, ThinkingLevel: "medium"}, &captureSink{})
 	defer done()
 	if text, _, _ := a.Command(context.Background(), "/model"); !strings.Contains(text, "test-model") {
 		t.Errorf("/model did not name the model: %s", text)
@@ -115,11 +115,35 @@ func TestTheModelAndThinkCommandsChangeTheRun(t *testing.T) {
 	if _, _, err := a.Command(context.Background(), "/think off"); err != nil {
 		t.Fatal(err)
 	}
-	if a.Thinking() {
-		t.Error("/think off left thinking on")
+	if a.ThinkingLevel() != "off" {
+		t.Errorf("/think off left the level at %q", a.ThinkingLevel())
 	}
 	if _, _, err := a.Command(context.Background(), "/think maybe"); err == nil {
-		t.Error("/think accepted something that is not on or off")
+		t.Error("/think accepted something that is not a level")
+	}
+}
+
+// the same word pi uses: a level, not a switch
+func TestTheThinkCommandTakesALevel(t *testing.T) {
+	a, done := newAgent(t, &stubServer{}, Options{MaxTurns: 2, CtxSize: 8000, ThinkingLevel: "medium"}, &captureSink{})
+	defer done()
+	if _, _, err := a.Command(context.Background(), "/think low"); err != nil {
+		t.Fatal(err)
+	}
+	if a.ThinkingLevel() != "low" {
+		t.Errorf("level = %q, want low", a.ThinkingLevel())
+	}
+	if text, _, err := a.Command(context.Background(), "/think"); err != nil || !strings.Contains(text, "low") {
+		t.Errorf("/think on its own should report the level: %q err=%v", text, err)
+	}
+	if _, _, err := a.Command(context.Background(), "/think enormous"); err == nil || !strings.Contains(err.Error(), "xhigh") {
+		t.Errorf("/think enormous: %v, want an error naming the levels", err)
+	}
+	if _, _, err := a.Command(context.Background(), "/think on"); err != nil {
+		t.Fatal(err)
+	}
+	if a.ThinkingLevel() != "medium" {
+		t.Errorf("/think on set %q, want the default depth back", a.ThinkingLevel())
 	}
 }
 
@@ -142,7 +166,7 @@ func TestThinkingOffReachesTheNextRequest(t *testing.T) {
 		sse("", "first", "", nil, "stop"),
 		sse("", "second", "", nil, "stop"),
 	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000, Think: true}, &captureSink{})
+	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000, ThinkingLevel: "medium"}, &captureSink{})
 	defer done()
 	if err := a.Ask(context.Background(), "one"); err != nil {
 		t.Fatal(err)

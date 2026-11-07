@@ -25,7 +25,7 @@ func Options(cfg config.Config, model string, ctxSize int, store tools.ResultSto
 		MaxTokens:     cfg.MaxTokens,
 		SafetyMargin:  cfg.SafetyMargin,
 		CtxSize:       ctxSize,
-		Think:         cfg.Think,
+		ThinkingLevel: cfg.ThinkingLevel,
 		NewPrompt:     cfg.NewPrompt,
 		AssumeYes:     cfg.AssumeYes,
 		NoVerify:      cfg.NoVerify,

@@ -42,7 +42,7 @@ func TestLoadDefaults(t *testing.T) {
 		MaxTurns:        defaultMaxTurns,
 		MaxTokens:       0, // no cap: the window decides
 		SafetyMargin:    defaultSafety,
-		Think:           true,
+		ThinkingLevel:   defaultThinkingLevel,
 		ReadLines:       defaultReadLines,
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
@@ -95,8 +95,8 @@ func TestLoadFlagsOverrideEnv(t *testing.T) {
 	if cfg.MaxTurns != 3 || cfg.MaxTokens != 1024 || cfg.CtxSize != 8192 {
 		t.Fatalf("counts = %+v", cfg)
 	}
-	if cfg.Think || !cfg.AssumeYes {
-		t.Fatalf("Think=%v AssumeYes=%v, want thinking off and yes on", cfg.Think, cfg.AssumeYes)
+	if cfg.ThinkingLevel != "off" || !cfg.AssumeYes {
+		t.Fatalf("thinking level = %q, AssumeYes=%v, want --no-think to mean off and yes on", cfg.ThinkingLevel, cfg.AssumeYes)
 	}
 }
 
@@ -122,8 +122,8 @@ func TestLoadEnvFallbacks(t *testing.T) {
 	if cfg.BaseURL != "http://env-url/v1" || cfg.Model != "env-model" {
 		t.Fatalf("cfg = %+v, want both env vars honoured", cfg)
 	}
-	if !cfg.Think {
-		t.Fatal("thinking is on unless --no-think says otherwise")
+	if cfg.ThinkingLevel == "off" {
+		t.Fatalf("thinking level = %q: thinking is on unless --no-think says otherwise", cfg.ThinkingLevel)
 	}
 }
 
@@ -165,6 +165,7 @@ func TestLoadRejectsBadSettings(t *testing.T) {
 		{"no turns", []string{"--max-turns", "0"}, "--max-turns must be at least 1"},
 		{"negative cap", []string{"--max-tokens", "-1"}, "--max-tokens must be 0 (no cap)"},
 		{"negative ctx", []string{"--ctx", "-5"}, "--ctx must be 0 (auto) or a positive token count"},
+		{"invented thinking level", []string{"--thinking", "enormous"}, "want one of off, minimal, low, medium, high, xhigh, max"},
 		{"missing root", []string{"--root", filepath.Join(t.TempDir(), "nope")}, "nope"},
 		{"root is a file", []string{"--root", file}, "not a directory"},
 		{"unknown flag", []string{"--nope"}, "flag provided but not defined"},
@@ -351,7 +352,7 @@ func TestEveryFlagReachesItsSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
-		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.Think || !cfg.AssumeYes || !cfg.NoVerify ||
+		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes || !cfg.NoVerify ||
 		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.JSON || !cfg.Version || !cfg.NewPrompt {
 		t.Errorf("flags did not all land: %+v", cfg)
 	}
@@ -359,7 +360,28 @@ func TestEveryFlagReachesItsSetting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if off.AssumeYes || !off.Think {
-		t.Errorf("a flag given as false switched its setting: yes=%v think=%v", off.AssumeYes, off.Think)
+	if off.AssumeYes || off.ThinkingLevel == "off" {
+		t.Errorf("a flag given as false switched its setting: yes=%v thinking=%v", off.AssumeYes, off.ThinkingLevel)
+	}
+}
+
+// thinking is a depth, not a switch: the same names pi uses
+func TestTheThinkingLevelSetsTheDepth(t *testing.T) {
+	cfg, err := Load([]string{"--root", t.TempDir(), "--thinking", "low"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ThinkingLevel != "low" {
+		t.Errorf("thinking level = %q, want low", cfg.ThinkingLevel)
+	}
+}
+
+func TestNoThinkIsShorthandForTheOffLevel(t *testing.T) {
+	cfg, err := Load([]string{"--root", t.TempDir(), "--no-think"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ThinkingLevel != "off" {
+		t.Errorf("thinking level = %q, want off", cfg.ThinkingLevel)
 	}
 }

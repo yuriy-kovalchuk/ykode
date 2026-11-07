@@ -18,17 +18,18 @@ import (
 
 // Defaults used when no setting, env var or flag says otherwise.
 const (
-	defaultBaseURL     = "http://127.0.0.1:8080/v1"
-	defaultMaxTurns    = 25
-	defaultReadLines   = 150
-	defaultSearchLimit = 50
-	defaultExecTimeout = 60 * time.Second
-	defaultStreamIdle  = 2 * time.Minute // silence before a stream counts as dead; a cold prompt may need more
-	defaultLogKeep     = 24 * time.Hour
-	defaultSessionKeep = 30 * 24 * time.Hour   // a conversation, and the results recall can still name
-	defaultAuditKeep   = 180 * 24 * time.Hour  // six months of tool calls
-	defaultSafety      = 4096                  // room left free for one reply when no cap was asked for
-	sessionStamp       = "20060102-150405.000" // milliseconds, so two runs started together do not share one
+	defaultBaseURL       = "http://127.0.0.1:8080/v1"
+	defaultMaxTurns      = 25
+	defaultReadLines     = 150
+	defaultSearchLimit   = 50
+	defaultExecTimeout   = 60 * time.Second
+	defaultStreamIdle    = 2 * time.Minute // silence before a stream counts as dead; a cold prompt may need more
+	defaultLogKeep       = 24 * time.Hour
+	defaultSessionKeep   = 30 * 24 * time.Hour  // a conversation, and the results recall can still name
+	defaultAuditKeep     = 180 * 24 * time.Hour // six months of tool calls
+	defaultSafety        = 4096                 // room left free for one reply when no cap was asked for
+	defaultThinkingLevel = llm.DefaultThinkingLevel
+	sessionStamp         = "20060102-150405.000" // milliseconds, so two runs started together do not share one
 )
 
 // Config is the fully resolved set of settings.
@@ -38,10 +39,10 @@ type Config struct {
 	Model           string // empty means "whatever the server lists first"
 	Root            string // absolute project root
 	MaxTurns        int
-	MaxTokens       int // tokens per model response; 0 asks for no cap and leaves it to the window
-	CtxSize         int // server context window; 0 = read it from the server
-	SafetyMargin    int // tokens kept free for the reply
-	Think           bool
+	MaxTokens       int    // tokens per model response; 0 asks for no cap and leaves it to the window
+	CtxSize         int    // server context window; 0 = read it from the server
+	SafetyMargin    int    // tokens kept free for the reply
+	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	AssumeYes       bool
 	Sandbox         bool // exec_command runs confined: writes only in the project, no network
 	NoVerify        bool // do not push a text-only answer back into the tools
@@ -84,6 +85,7 @@ type flagValues struct {
 	MaxTurns      int
 	MaxTokens     int
 	CtxSize       int
+	ThinkingLevel string
 	NoThink       bool
 	Yes           bool
 	NoVerify      bool
@@ -101,7 +103,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--tui] [--continue ID] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--tui] [--continue ID] [--version]")
 		fmt.Fprintln(fs.Output(), "       ykode history [what] [--all] [--failed] [--since DUR] [--root DIR] [--json] - what the runs did, outside a session")
 		fs.PrintDefaults()
 	}
@@ -112,7 +114,8 @@ func Load(args []string) (Config, error) {
 	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request (default 25)")
 	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "tokens per model response; 0 leaves the reply the room the window has left (default)")
 	fs.IntVar(&f.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
-	fs.BoolVar(&f.NoThink, "no-think", false, "skip the model's thinking phase")
+	fs.StringVar(&f.ThinkingLevel, "thinking", "", "how deeply the model thinks: off, minimal, low, medium, high, xhigh, max")
+	fs.BoolVar(&f.NoThink, "no-think", false, "shorthand for --thinking off")
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
 	fs.BoolVar(&f.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
@@ -150,7 +153,7 @@ func defaults() Config {
 		MaxTurns:        defaultMaxTurns,
 		MaxTokens:       0, // no cap: the context window decides
 		SafetyMargin:    defaultSafety,
-		Think:           true,
+		ThinkingLevel:   defaultThinkingLevel,
 		ReadLines:       defaultReadLines,
 		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
@@ -180,7 +183,7 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 		"max-turns":      func() { c.MaxTurns = f.MaxTurns },
 		"max-tokens":     func() { c.MaxTokens = f.MaxTokens },
 		"ctx":            func() { c.CtxSize = f.CtxSize },
-		"no-think":       func() { c.Think = c.Think && !f.NoThink },
+		"thinking":       func() { c.ThinkingLevel = f.ThinkingLevel },
 		"yes":            func() { c.AssumeYes = c.AssumeYes || f.Yes },
 		"no-verify":      func() { c.NoVerify = c.NoVerify || f.NoVerify },
 		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
@@ -195,6 +198,11 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 		if apply, ok := setters[name]; ok {
 			apply()
 		}
+	}
+	// --thinking and --no-think set one thing, so the shorthand is applied apart from the map: a depth
+	// spelled out wins whichever order the flags came in
+	if set["no-think"] && f.NoThink && !set["thinking"] {
+		c.ThinkingLevel = llm.ThinkingOff
 	}
 }
 
@@ -220,6 +228,9 @@ func (c *Config) normalize() error {
 	}
 	if c.TUI && (c.JSON || c.Prompt != "") {
 		return fmt.Errorf("--tui draws the session; --json and -p write to stdout instead: pick one")
+	}
+	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
+		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))
 	}
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)

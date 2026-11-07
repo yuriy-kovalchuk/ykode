@@ -41,12 +41,12 @@ func newRunRecord(model string, cfg config.Config) runRecord {
 	return runRecord{
 		Time: time.Now(), Model: model, BaseURL: cfg.BaseURL, Commit: gitCommit(),
 		Settings: map[string]string{
-			"thinking":     fmt.Sprint(cfg.Think),
-			"max_tokens":   fmt.Sprint(cfg.MaxTokens),
-			"read_lines":   fmt.Sprint(cfg.ReadLines),
-			"search_limit": fmt.Sprint(cfg.SearchLimit),
-			"verify":       fmt.Sprint(!cfg.NoVerify),
-			"new_prompt":   fmt.Sprint(cfg.NewPrompt),
+			"thinking_level": cfg.ThinkingLevel,
+			"max_tokens":     fmt.Sprint(cfg.MaxTokens),
+			"read_lines":     fmt.Sprint(cfg.ReadLines),
+			"search_limit":   fmt.Sprint(cfg.SearchLimit),
+			"verify":         fmt.Sprint(!cfg.NoVerify),
+			"new_prompt":     fmt.Sprint(cfg.NewPrompt),
 		},
 	}
 }

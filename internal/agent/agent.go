@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -22,10 +23,10 @@ const finishLength = "length"
 // Options configures one agent.
 type Options struct {
 	MaxTurns      int
-	MaxTokens     int // cap on one response
-	SafetyMargin  int // tokens left free for the chat template; 0 means ctxSafetyTok
-	CtxSize       int // server context window; 0 = unknown, no budgeting
-	Think         bool
+	MaxTokens     int          // cap on one response
+	SafetyMargin  int          // tokens left free for the chat template; 0 means ctxSafetyTok
+	CtxSize       int          // server context window; 0 = unknown, no budgeting
+	ThinkingLevel string       // off, minimal, low, medium, high, xhigh, max; empty is medium
 	NewPrompt     bool         // newSystemPrompt instead of SystemPrompt, until the evals pick one
 	Thinking      llm.Sampling // sent while the model thinks
 	NoThink       llm.Sampling // sent with thinking off; Qwen's cards recommend different values
@@ -287,10 +288,10 @@ func (a *Agent) logged(all bool) ([]audit.Entry, int, error) {
 func (a *Agent) SetModel(id string) { a.model = id }
 
 // SetThink decides whether the model gets a thinking phase on the turns that follow.
-func (a *Agent) SetThink(on bool) { a.opts.Think = on }
+func (a *Agent) SetThinkingLevel(level string) { a.opts.ThinkingLevel = level }
 
-// Thinking says whether the model is allowed to think out loud.
-func (a *Agent) Thinking() bool { return a.opts.Think }
+// ThinkingLevel is how deeply the model is allowed to think before it answers.
+func (a *Agent) ThinkingLevel() string { return cmp.Or(a.opts.ThinkingLevel, llm.DefaultThinkingLevel) }
 
 func (a *Agent) add(m llm.Message) {
 	m = storable(m)

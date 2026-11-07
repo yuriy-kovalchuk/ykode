@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	ctxSafetyTok   = 256 // the least to leave free when the caller named no margin
-	minResponseTok = 64  // a response budget smaller than this is useless
+	ctxSafetyTok   = 256  // the least to leave free when the caller named no margin
+	minResponseTok = 64   // a response budget smaller than this is useless
+	minAnswerTok   = 1024 // what the answer keeps after a thinking phase takes its share
 	trimMarker     = "(older tool output trimmed to fit the server context)"
 )
 
@@ -30,10 +31,12 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		req.ToolChoice = "required"
 	}
 	req.Sampling = a.opts.Thinking
-	if !a.opts.Think {
+	if level := a.ThinkingLevel(); level == llm.ThinkingOff {
 		req.Sampling = a.opts.NoThink
 		// llama.cpp honours "enable_thinking" and silently ignores "thinking_enabled"
 		req.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
+	} else if budget, known := llm.ThinkingBudgetTokens(level); known {
+		req.ThinkingBudget = budget
 	}
 	if a.opts.CtxSize > 0 {
 		used := a.estimateTokens()
@@ -45,6 +48,10 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		// no cap asked for: the room the window has left is the cap, so a reply cannot run past the prompt
 		if req.MaxTokens == 0 || room < req.MaxTokens {
 			req.MaxTokens = room
+		}
+		// thinking is billed inside the reply, so it never takes more than the reply can spare
+		if req.ThinkingBudget > 0 {
+			req.ThinkingBudget = min(req.ThinkingBudget, max(req.MaxTokens-minAnswerTok, 0))
 		}
 	}
 	return req, nil

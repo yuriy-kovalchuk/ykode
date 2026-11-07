@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // Undoer puts the most recent file change back; tools.UndoStack is the real thing.
@@ -25,7 +27,7 @@ const Help = `commands:
   /ctx        how full the window is, and what the server is caching
   /tools      what the model may call, and what each description costs
   /model [id] which model this run asks, or ask a different one
-  /think on|off  whether the model gets a thinking phase
+  /think [level]  how deeply the model thinks: off, minimal, low, medium, high, xhigh, max
   /undo [force]  put the most recent file change back; force also when it was edited since
   /reset    forget the conversation
   /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
@@ -64,18 +66,6 @@ func CompactReport(freed int) string {
 	return fmt.Sprintf("compacted: the conversation is about %d tokens smaller\n", freed)
 }
 
-// onOff reads what /think was asked for.
-func onOff(arg string) (bool, error) {
-	switch arg {
-	case "on":
-		return true, nil
-	case "off":
-		return false, nil
-	default:
-		return false, fmt.Errorf("think takes on or off, not %q", arg)
-	}
-}
-
 func commandName(line string) string {
 	if fields := strings.Fields(line); len(fields) > 0 {
 		return fields[0]
@@ -112,15 +102,21 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		a.SetModel(arg)
 		return fmt.Sprintf("model: %s (the next request asks for it; a model the server has to load waits before the first token)\n", arg), false, nil
 	case "/think":
-		on, err := onOff(arg)
-		if err != nil {
-			return "", false, err
+		if arg == "" {
+			return fmt.Sprintf("thinking: %s (levels: %s)\n", a.ThinkingLevel(), strings.Join(llm.ThinkingLevels(), ", ")), false, nil
 		}
-		a.SetThink(on)
-		if on {
-			return "thinking is on: the model gets a thinking phase\n", false, nil
+		level := strings.ToLower(arg)
+		if level == "on" { // the old switch still means what it meant
+			level = llm.DefaultThinkingLevel
 		}
-		return "thinking is off: the model answers straight away\n", false, nil
+		if _, err := llm.ThinkingLevelValue(level); err != nil {
+			return "", false, fmt.Errorf("/think %s: %w", arg, err)
+		}
+		a.SetThinkingLevel(level)
+		if level == llm.ThinkingOff {
+			return "thinking: off: the model answers straight away\n", false, nil
+		}
+		return fmt.Sprintf("thinking: %s (the next request asks the server for that depth)\n", level), false, nil
 	case "/undo":
 		if a.opts.Undo == nil || a.opts.Undo.Empty() {
 			return "nothing to undo: ykode has not changed a file yet\n", false, nil

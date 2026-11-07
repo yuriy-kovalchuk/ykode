@@ -37,7 +37,7 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 		"base_url": "http://from-settings:8080/v1",
 		"model": "settings-model",
 		"max_turns": 7,
-		"thinking": false,
+		"thinking_level": "off",
 		"verify": false,
 		"max_tokens": 2048, "context": {"safety_margin": 512},
 		"tools": {"read_lines": 120, "search_limit": 20, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
@@ -54,8 +54,8 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	if cfg.MaxTurns != 7 || cfg.MaxTokens != 2048 || cfg.SafetyMargin != 512 {
 		t.Fatalf("turns/max tokens/margin = %d/%d/%d", cfg.MaxTurns, cfg.MaxTokens, cfg.SafetyMargin)
 	}
-	if cfg.Think || !cfg.NoVerify {
-		t.Fatalf("Think=%v NoVerify=%v, want the settings switches honoured", cfg.Think, cfg.NoVerify)
+	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
+		t.Fatalf("thinking=%q NoVerify=%v, want the settings honoured", cfg.ThinkingLevel, cfg.NoVerify)
 	}
 	if cfg.ReadLines != 120 || cfg.SearchLimit != 20 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
 		t.Fatalf("tool settings = %+v", cfg)
@@ -272,7 +272,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
 	}
-	for _, key := range []string{"base_url", "model", "thinking", "audit", "tools", "context"} {
+	for _, key := range []string{"base_url", "model", "thinking_level", "audit", "tools", "context"} {
 		if _, ok := seeded[key]; !ok {
 			t.Errorf("%s missing from the file that shows every key", key)
 		}
@@ -333,21 +333,21 @@ func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Think {
-		t.Error("the written defaults turned thinking off")
+	if cfg.ThinkingLevel != defaultThinkingLevel {
+		t.Errorf("the written defaults set thinking to %q, want %q", cfg.ThinkingLevel, defaultThinkingLevel)
 	}
 	if cfg.NoVerify {
 		t.Error("the written defaults turned the tool nudge off")
 	}
 
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking": false, "verify": false}`)
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking_level": "off", "verify": false}`)
 	cfg, err = Load([]string{"--root", root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Think || !cfg.NoVerify {
-		t.Errorf("turning both off in a file did not take: think=%v no-verify=%v", cfg.Think, cfg.NoVerify)
+	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
+		t.Errorf("turning both off in a file did not take: thinking=%q no-verify=%v", cfg.ThinkingLevel, cfg.NoVerify)
 	}
 }
 
@@ -385,7 +385,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
 	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{
-		"max_turns": 9, "max_tokens": 700, "thinking": false, "verify": false,
+		"max_turns": 9, "max_tokens": 700, "thinking_level": "off", "verify": false,
 		"context": {"safety_margin": 99},
 		"tools": {"read_lines": 40, "search_limit": 11, "exec_timeout_sec": 90},
 		"models": {"qwen": {"send_reasoning": true}}
@@ -399,7 +399,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 		t.Fatalf("a project's own working keys were held back: %v", cfg.HeldKeys)
 	}
 	if cfg.MaxTurns != 9 || cfg.MaxTokens != 700 || cfg.SafetyMargin != 99 || cfg.ReadLines != 40 ||
-		cfg.SearchLimit != 11 || cfg.ExecTimeout != 90*time.Second || cfg.Think || cfg.NoVerify == false ||
+		cfg.SearchLimit != 11 || cfg.ExecTimeout != 90*time.Second || cfg.ThinkingLevel != "off" || cfg.NoVerify == false ||
 		!cfg.SendReasoningFor("qwen") {
 		t.Errorf("project settings = %+v", cfg)
 	}

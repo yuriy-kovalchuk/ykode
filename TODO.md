@@ -52,7 +52,11 @@ after each item.
   medium 8192 · high 16384 · xhigh 32768 · max = send nothing`). Send `reasoning_effort` in
   `chat_template_kwargs` too — ykode already uses that map for `enable_thinking`, and Strata's Qwen
   template defaults to `xhigh` ("think carefully, consider plausible alternatives"), which is why
-  thinking reaches 12k chars. Never let the budget starve the answer; pi keeps 1024 tokens for it
+  thinking reaches 12k chars.
+  → **done**: `thinking_budget_tokens` goes on the request (`internal/llm/thinking.go` holds the
+  level→budget table) and the budget is capped to `max_tokens − 1024` so thinking can never starve the
+  answer. Deliberately *not* sent: `chat_template_kwargs.reasoning_effort` — the Qwen template throws on a
+  value it does not know, and the budget already sets the depth on any llama.cpp server. Never let the budget starve the answer; pi keeps 1024 tokens for it
   (`simple-options.ts:83,103`).
 - **T3 · S · Thinking levels, the same names pi uses.** `off · minimal · low · medium · high · xhigh ·
   max`, default `medium` (`packages/coding-agent/src/core/defaults.ts:3`), clamped to what the model
@@ -61,6 +65,11 @@ after each item.
   sampling already has a home: `models.<id>.thinking` / `no_think`. Needs T2. This is what lets the
   benchmark compare the same thing: pi ran its default `medium` (8192-token budget) while ykode ran
   uncapped thinking inside 4096.
+  → **done**: the levels exist in settings (`thinking_level`), flags (`--thinking LEVEL`, `--no-think` is
+  shorthand for `off`) and `/think [level]`, all validated by `llm.ThinkingLevelValue`. **Breaking**: the
+  `thinking: true|false` settings key is gone; the strict unknown-key error names it. Left out on purpose:
+  pi's Ctrl-S save and a level-cycling binding — `/think` sets the level for the run, the settings file
+  makes it permanent.
 - **B1 · XS · The session recorder chokes on a cut-off tool call.** A reply cut at `max_tokens` mid-call
   reaches the recorder and logs `session: json: error calling MarshalJSON for type *jsontext.Value:
   unexpected end of JSON input` (enriched task-11 run, turn 4). The agent refuses to run the call

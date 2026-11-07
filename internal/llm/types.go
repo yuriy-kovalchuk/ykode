@@ -60,6 +60,7 @@ type ChatRequest struct {
 	Tools              []ToolSpec     `json:"tools,omitempty"`
 	ToolChoice         string         `json:"tool_choice,omitempty"`
 	MaxTokens          int            `json:"max_tokens,omitempty"`
+	ThinkingBudget     int            `json:"thinking_budget_tokens,omitempty"` // llama.cpp: caps the thinking phase inside MaxTokens
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	Stream             bool           `json:"stream"`
 	Sampling

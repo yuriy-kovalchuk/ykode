@@ -8,7 +8,7 @@ import (
 )
 
 func TestEveryRunGetsTheSameStoreUndoAndSettings(t *testing.T) {
-	cfg := config.Config{MaxTurns: 9, MaxTokens: 512, SafetyMargin: 99, Think: true, Sandbox: true,
+	cfg := config.Config{MaxTurns: 9, MaxTokens: 512, SafetyMargin: 99, ThinkingLevel: "medium", Sandbox: true,
 		ReadLines: 40, SearchLimit: 7, Root: "/work/p", Allow: []string{"edit_file"}}
 	store := tools.NewResultStore(t.TempDir())
 	undo := &tools.UndoStack{}

@@ -17,21 +17,21 @@ import (
 
 // fileSettings mirrors settings.json; a non-nil pointer means the file set that key.
 type fileSettings struct {
-	BaseURL      *string `json:"base_url,omitempty"`
-	APIKey       *string `json:"api_key,omitempty"`
-	APIKeyEnv    *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
-	Audit        *bool   `json:"audit,omitempty"`
-	Retain       *int    `json:"audit_retention_days,omitempty"`
-	KeepSessions *string `json:"keep_sessions,omitempty"`
-	Model        *string `json:"model,omitempty"`
-	MaxTurns     *int    `json:"max_turns,omitempty"`
-	MaxTokens    *int    `json:"max_tokens,omitempty"`
-	Thinking     *bool   `json:"thinking,omitempty"`
-	AssumeYes    *bool   `json:"assume_yes,omitempty"`
-	Sandbox      *bool   `json:"sandbox,omitempty"`
-	Verify       *bool   `json:"verify,omitempty"`
-	StreamIdle   *int    `json:"stream_idle_sec,omitempty"`
-	Context      struct {
+	BaseURL       *string `json:"base_url,omitempty"`
+	APIKey        *string `json:"api_key,omitempty"`
+	APIKeyEnv     *string `json:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
+	Audit         *bool   `json:"audit,omitempty"`
+	Retain        *int    `json:"audit_retention_days,omitempty"`
+	KeepSessions  *string `json:"keep_sessions,omitempty"`
+	Model         *string `json:"model,omitempty"`
+	MaxTurns      *int    `json:"max_turns,omitempty"`
+	MaxTokens     *int    `json:"max_tokens,omitempty"`
+	ThinkingLevel *string `json:"thinking_level,omitempty"`
+	AssumeYes     *bool   `json:"assume_yes,omitempty"`
+	Sandbox       *bool   `json:"sandbox,omitempty"`
+	Verify        *bool   `json:"verify,omitempty"`
+	StreamIdle    *int    `json:"stream_idle_sec,omitempty"`
+	Context       struct {
 		SafetyMargin *int `json:"safety_margin,omitempty"`
 	} `json:"context,omitempty"`
 	Tools struct {
@@ -57,7 +57,7 @@ func builtinSettings() fileSettings {
 	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
 	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p(d.BaseURL), p("default"), p(d.MaxTurns), p(d.MaxTokens)
-	s.Thinking, s.Verify, s.AssumeYes, s.Sandbox = p(d.Think), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
+	s.ThinkingLevel, s.Verify, s.AssumeYes, s.Sandbox = p(d.ThinkingLevel), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
 	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
 	s.Context.SafetyMargin = p(d.SafetyMargin)
 	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
@@ -203,9 +203,7 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	pick(s.Context.SafetyMargin, &c.SafetyMargin)
 	pick(s.Tools.ReadLines, &c.ReadLines)
 	pick(s.Tools.SearchLimit, &c.SearchLimit)
-	if s.Thinking != nil {
-		c.Think = *s.Thinking
-	}
+	pick(s.ThinkingLevel, &c.ThinkingLevel)
 	if s.Verify != nil {
 		c.NoVerify = !*s.Verify
 	}

@@ -34,7 +34,8 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--ctx` | — | read from the server | context window in tokens |
 | `--max-tokens` | — | no cap | tokens per reply; with no cap it gets the room the window has left |
 | `--max-turns` | — | `25` | tool rounds per request |
-| `--no-think` | — | thinking on | skips the thinking phase (`chat_template_kwargs`) |
+| `--thinking LEVEL` | — | `medium` | how deeply the model thinks: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `--no-think` | — | thinking on | shorthand for `--thinking off` |
 | `--yes` | — | off | skip in-project confirmations |
 | `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405.123` |
@@ -57,7 +58,7 @@ Four commands change the run rather than the conversation:
 | `/ctx` | how full the window is, what the server had cached, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
 | `/tools` | the tools the model may call, and the bytes each description adds to every request |
 | `/model [id]` | which model this run asks for, or ask a different one from now on |
-| `/think on\|off` | whether the model gets a thinking phase on the turns that follow |
+| `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
 
 A turn owns the conversation and its own settings, so `/reset`, `/compact`, `/undo`,
 `/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage` and
@@ -236,7 +237,7 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
 `<root>/.ykode/settings.json`, environment variables, flags.
 
 A project's file is not trusted just because it is there. `<root>/.ykode/settings.json` may set
-`max_turns`, `max_tokens`, `thinking`, `verify`, `context.*`, `tools.read_lines`,
+`max_turns`, `max_tokens`, `thinking_level`, `verify`, `context.*`, `tools.read_lines`,
 `tools.search_limit`, `tools.exec_timeout_sec` and `models.*` — how the project is read and what a
 turn costs. Everything else waits until you trust the project: the server it talks to, any key,
 `assume_yes`, `permissions.allow`, the audit log, and where command output is written. ykode names
@@ -256,6 +257,7 @@ what it held back, asks once when someone is at the keyboard, and records the an
   "audit_retention_days": 180,
   "keep_sessions": "720h",
   "max_tokens": 0,
+  "thinking_level": "medium",
   "stream_idle_sec": 120,
   "context": { "safety_margin": 4096 },
   "tools": {
@@ -278,7 +280,9 @@ what it held back, asks once when someone is at the keyboard, and records the an
 `stream_idle_sec` is how long a stream may stay silent before ykode gives up on it (raise it
 when a server sends nothing while it reads a long cold prompt), `max_tokens` is the token budget for one reply
 (0, the default, asks for no cap: the server's own context decides where the reply ends, and ykode never asks
-for more than the window has left), `safety_margin` what is kept free beside
+for more than the window has left), `thinking_level` how deeply the model thinks
+(`off` … `max`; each level asks llama.cpp for a thinking budget, and the budget is capped so the answer
+keeps room of its own), `safety_margin` what is kept free beside
 it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
 expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
 gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,
