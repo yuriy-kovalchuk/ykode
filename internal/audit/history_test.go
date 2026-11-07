@@ -43,7 +43,7 @@ func TestHistoryCanAskForEveryRunOfOneRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entries, err := logger.ReadRoot("/repo/a")
+	entries, _, err := logger.ReadRoot("/repo/a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,16 +85,16 @@ func TestAskingForAnIDAnswersOneCallOrSaysThereIsNone(t *testing.T) {
 		{ID: "r1", Tool: "read_file", Status: "ok", Args: `{"path":"main.go"}`, Time: time.Now()},
 		{ID: "r2", Tool: "exec_command", Status: "error", Args: `{"command":"go test"}`, Time: time.Now()},
 	}
-	if got := Answer(entries, "r2", 0); !strings.Contains(got, "go test") || strings.Contains(got, "main.go") {
+	if got := Answer(entries, "r2", 0, 0); !strings.Contains(got, "go test") || strings.Contains(got, "main.go") {
 		t.Errorf("r2: %s", got)
 	}
-	if got := Answer(entries, "r7", 0); !strings.Contains(got, "no call r7") {
+	if got := Answer(entries, "r7", 0, 0); !strings.Contains(got, "no call r7") {
 		t.Errorf("r7: %s", got)
 	}
-	if got := Answer(entries, "exec", 0); !strings.Contains(got, "r2") || strings.Contains(got, "r1") {
+	if got := Answer(entries, "exec", 0, 0); !strings.Contains(got, "r2") || strings.Contains(got, "r1") {
 		t.Errorf("exec: %s", got)
 	}
-	if got := Answer(entries, "write_file", 0); !strings.Contains(got, "nothing matches") {
+	if got := Answer(entries, "write_file", 0, 0); !strings.Contains(got, "nothing matches") {
 		t.Errorf("an empty table should say so: %s", got)
 	}
 }

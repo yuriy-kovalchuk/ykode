@@ -275,9 +275,12 @@ func historyCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	entries, err := loggedScope(settings, *all, window)
+	entries, damaged, err := loggedScope(settings, *all, window)
 	if err != nil {
 		return err
+	}
+	if damaged > 0 && *asJSON {
+		fmt.Fprintf(os.Stderr, "ykode: %d log lines could not be read\n", damaged)
 	}
 	if len(entries) == 0 {
 		return errors.New("nothing logged in " + settings.AuditDir)
@@ -285,22 +288,23 @@ func historyCommand(args []string, out io.Writer) error {
 	if *asJSON {
 		return loggedJSON(out, entries, what, *limit)
 	}
-	fmt.Fprintln(out, audit.Answer(entries, what, *limit))
+	fmt.Fprintln(out, audit.Answer(entries, what, *limit, damaged))
 	return nil
 }
 
 // loggedScope reads the run asked about: the newest one, or every run of this root, inside the window.
-func loggedScope(cfg config.Config, all bool, since time.Duration) ([]audit.Entry, error) {
+func loggedScope(cfg config.Config, all bool, since time.Duration) ([]audit.Entry, int, error) {
 	logger := audit.New(cfg.AuditDir, "")
 	var entries []audit.Entry
+	var damaged int
 	var err error
 	if all {
-		entries, err = logger.ReadRoot(cfg.Root)
+		entries, damaged, err = logger.ReadRoot(cfg.Root)
 	} else {
-		entries, err = logger.Read(logger.LatestSession())
+		entries, damaged, err = logger.Read(logger.LatestSession())
 	}
 	if err != nil || since <= 0 {
-		return entries, err
+		return entries, damaged, err
 	}
 	cutoff := time.Now().Add(-since)
 	kept := entries[:0]
@@ -309,7 +313,7 @@ func loggedScope(cfg config.Config, all bool, since time.Duration) ([]audit.Entr
 			kept = append(kept, e)
 		}
 	}
-	return kept, nil
+	return kept, damaged, nil
 }
 
 func loggedJSON(out io.Writer, entries []audit.Entry, what string, limit int) error {

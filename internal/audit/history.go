@@ -35,19 +35,28 @@ func Match(entries []Entry, what string, limit int) []Entry {
 }
 
 // Answer replies to a history question in text: an id gets that call in full, the rest a table.
-func Answer(entries []Entry, what string, limit int) string {
+func Answer(entries []Entry, what string, limit, damaged int) string {
 	kept := Match(entries, what, limit)
+	note := Skipped(damaged)
 	q := strings.TrimSpace(what)
 	if len(kept) == 0 {
 		if idRe.MatchString(q) {
-			return "no call " + q + " in the log"
+			return "no call " + q + " in the log" + note
 		}
-		return "nothing matches " + q
+		return "nothing matches " + q + note
 	}
 	if idRe.MatchString(q) {
 		return kept[len(kept)-1].Detail()
 	}
-	return table(kept)
+	return table(kept) + note
+}
+
+// Skipped says, in one place, that some of the log could not be read.
+func Skipped(damaged int) string {
+	if damaged <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n%d log lines could not be read and were skipped", damaged)
 }
 
 // Format renders entries as a table, newest last. filter is a tool name, "failed" or "outside".

@@ -87,30 +87,32 @@ func (l *Logger) Append(e Entry) error {
 	return nil
 }
 
-// Read returns the entries of one session, oldest first; an empty session matches every run.
-func (l *Logger) Read(session string) ([]Entry, error) {
+// Read returns the entries of one session, oldest first, and how many log lines could not be
+// read; an empty session matches every run.
+func (l *Logger) Read(session string) ([]Entry, int, error) {
 	return l.matching(func(e Entry) bool { return session == "" || e.Session == session })
 }
 
 // ReadRoot returns every entry logged for one project root, across sessions.
-func (l *Logger) ReadRoot(root string) ([]Entry, error) {
+func (l *Logger) ReadRoot(root string) ([]Entry, int, error) {
 	return l.matching(func(e Entry) bool { return e.Root == root })
 }
 
 // matching reads the log file by file - name order is month order - and keeps what the filter takes.
-func (l *Logger) matching(keep func(Entry) bool) ([]Entry, error) {
+func (l *Logger) matching(keep func(Entry) bool) ([]Entry, int, error) {
 	if l == nil {
-		return nil, nil
+		return nil, 0, nil
 	}
 	files, err := filepath.Glob(filepath.Join(l.dir, "*.jsonl"))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var entries []Entry
+	damaged := 0
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("audit: %w", err)
+			return nil, 0, fmt.Errorf("audit: %w", err)
 		}
 		for _, line := range strings.Split(string(data), "\n") {
 			if line == "" {
@@ -118,14 +120,17 @@ func (l *Logger) matching(keep func(Entry) bool) ([]Entry, error) {
 			}
 			var e Entry
 			if err := json.Unmarshal([]byte(line), &e); err != nil {
-				return nil, fmt.Errorf("audit: %s: %w", filepath.Base(path), err)
+				// a torn line is one call lost, not the whole month lost: the log is append-only
+				// and somebody may have edited it, so keep reading and say how much was missing.
+				damaged++
+				continue
 			}
 			if keep(e) {
 				entries = append(entries, e)
 			}
 		}
 	}
-	return entries, nil
+	return entries, damaged, nil
 }
 
 // masked stands in for a secret in the log.
@@ -159,7 +164,7 @@ func (l *Logger) Session() string {
 
 // LatestSession names the most recent run in the log, "" when there is none.
 func (l *Logger) LatestSession() string {
-	entries, err := l.Read("")
+	entries, _, err := l.Read("")
 	if err != nil || len(entries) == 0 {
 		return ""
 	}
@@ -168,4 +173,4 @@ func (l *Logger) LatestSession() string {
 }
 
 // ReadAll returns every entry, oldest first.
-func (l *Logger) ReadAll() ([]Entry, error) { return l.Read("") }
+func (l *Logger) ReadAll() ([]Entry, int, error) { return l.Read("") }

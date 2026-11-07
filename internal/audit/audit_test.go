@@ -32,7 +32,7 @@ func TestACallIsReadableBack(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("log mode is %o, want 0600", info.Mode().Perm())
 	}
-	entries, err := logger.Read("s20260101-120000")
+	entries, _, err := logger.Read("s20260101-120000")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestAnotherSessionsLogIsNotMixedIn(t *testing.T) {
 	if err := logger.Append(Entry{ID: "r1", Tool: "read_file", Status: "ok"}); err != nil {
 		t.Fatal(err)
 	}
-	other, err := logger.Read("someone-else")
+	other, _, err := logger.Read("someone-else")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestASecretNeverReachesTheLog(t *testing.T) {
 			t.Errorf("%q reached the log:\n%s", leak, raw)
 		}
 	}
-	entries, err := logger.Read("s1")
+	entries, _, err := logger.Read("s1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestALoggerWithNoDirectoryIsOff(t *testing.T) {
 	if err := logger.Append(Entry{ID: "r1", Tool: "read_file", Status: "ok"}); err != nil {
 		t.Errorf("a disabled logger failed: %v", err)
 	}
-	entries, err := logger.Read("s1")
+	entries, _, err := logger.Read("s1")
 	if err != nil || entries != nil {
 		t.Errorf("a disabled logger read back %v, %v", entries, err)
 	}
@@ -109,5 +109,40 @@ func TestTheNewestRunIsTheOneRecalled(t *testing.T) {
 	}
 	if got := logger.LatestSession(); got != "newer" {
 		t.Errorf("latest session is %q", got)
+	}
+}
+
+func TestADamagedLineIsSkippedAndCounted(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "audit")
+	logger := New(dir, "s20260101-120000")
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	if err := logger.Append(Entry{Time: start, ID: "r1", Turn: 1, Root: "/p", Model: "m", Tool: "read_file", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "2026-01.jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("{ this line was torn by a half-written save\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := logger.Append(Entry{Time: start.Add(time.Minute), ID: "r2", Turn: 2, Root: "/p", Model: "m", Tool: "exec_command", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, damaged, err := logger.Read("s20260101-120000")
+	if err != nil {
+		t.Fatalf("one unreadable line hid the whole month: %v", err)
+	}
+	if len(entries) != 2 || entries[1].ID != "r2" {
+		t.Fatalf("read back %d entries: %+v", len(entries), entries)
+	}
+	if damaged != 1 {
+		t.Errorf("damaged = %d, want the reader to count what it skipped", damaged)
+	}
+	if answer := Answer(entries, "", 20, damaged); !strings.Contains(answer, "could not be read") {
+		t.Errorf("the history does not say lines were missing:\n%s", answer)
 	}
 }

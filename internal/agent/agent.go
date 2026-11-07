@@ -201,14 +201,14 @@ func (a *Agent) History(query string, limit int) string {
 		return "this run has no audit log"
 	}
 	query, all := splitAll(query)
-	entries, err := a.logged(all)
+	entries, damaged, err := a.logged(all)
 	if err != nil {
 		return err.Error()
 	}
 	if len(entries) == 0 {
-		return "nothing has been logged yet"
+		return "nothing has been logged yet" + audit.Skipped(damaged)
 	}
-	return audit.Answer(entries, query, limit)
+	return audit.Answer(entries, query, limit, damaged)
 }
 
 // splitAll takes --all out of the query, wherever the user put it.
@@ -226,7 +226,7 @@ func splitAll(query string) (string, bool) {
 	return strings.Join(kept, " "), all
 }
 
-func (a *Agent) logged(all bool) ([]audit.Entry, error) {
+func (a *Agent) logged(all bool) ([]audit.Entry, int, error) {
 	if all {
 		return a.opts.Audit.ReadRoot(a.opts.Root)
 	}

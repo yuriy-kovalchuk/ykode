@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: B11, B14, G1, C4, C9, C10
+1. Quick fixes: B14, G1, C4, C9, C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -66,9 +66,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
   `a.perms.add` (a map without a lock) when outside-root reads are answered "always", and
   they write `auditBroken` / `sessionBroken`. → A mutex in `permissions`, atomic flags, and
   no "always" for outside-root calls (it is ignored for them anyway).
-- **B11 · XS · One damaged audit line breaks every history read.** `matching`
-  (`internal/audit/audit.go`) returns an error for the whole month. → Skip unreadable lines
-  and report how many.
 - **B12 · S · Secret masking leaks.** `secretRe`: `Authorization: Bearer x` masks only
   `Bearer`, and quoted JSON keys, `--password x`, `sk-`/`ghp_`/`xox?-`/`AKIA` tokens and PEM
   blocks pass through. → A list of patterns with a table test; plain words that contain
