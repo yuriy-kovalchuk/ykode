@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: C4, C9, C10
+1. Quick fixes: C9, C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -81,7 +81,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 | C1 | XS | `config` → `agent/budget.go` | The `safety_margin` setting is never used; the budget uses the constant `ctxSafetyTok`. → Pass the setting through. |
 | C2 | XS | `llm/client.go` | `headerTimeout` is unused. → Use it as `ResponseHeaderTimeout`, or delete it. |
 | C3 | XS | `config/settings.go` | `reserve_output` and `max_tokens` set the same value. → Keep one. |
-| C4 | XS | `agent/shrink.go` | `underPressure` and `stillTight` are identical. → One function, or a different threshold. |
 | C5 | S | `agent/budget.go` `trimHistory` | Blanks results without storing them and may blank the newest ones. → Store first; never touch the last `keepResults`. |
 | C6 | S | `agent/compact.go` `transcriptOf` | The summary request has no total cap and can overflow the window. → Cap at ~40% of the window, dropping the oldest lines first. |
 | C7 | XS | `agent/commands.go` `/compact` | Runs on `context.Background()` and always reports "tool results shortened". → Take the caller's ctx; report what happened. |

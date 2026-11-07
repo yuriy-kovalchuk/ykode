@@ -20,11 +20,6 @@ func (a *Agent) underPressure() bool {
 	return a.opts.CtxSize > 0 && a.estimateTokens() > a.opts.CtxSize*3/4
 }
 
-// stillTight says shortening the results did not buy enough room, which is when compaction earns its call.
-func (a *Agent) stillTight() bool {
-	return a.opts.CtxSize > 0 && a.estimateTokens() > a.opts.CtxSize*3/4
-}
-
 // shrinkWhatAged shortens old results and the arguments of old file writes together: both are
 // text the model has already been paid for.
 func (a *Agent) shrinkWhatAged(keep int) int {

@@ -106,7 +106,8 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		if a.underPressure() {
 			a.shrinkWhatAged(keepResults)
 		}
-		if a.stillTight() && !a.compacted && a.canCompact() {
+		// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call
+		if a.underPressure() && !a.compacted && a.canCompact() {
 			// shortening the results was not enough: pay one request to fold the older turns into a summary
 			a.tell("the conversation is out of room: asking the model to summarise the older turns")
 			a.compacted = true
