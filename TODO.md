@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: G1, C4, C9, C10
+1. Quick fixes: C4, C9, C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -73,9 +73,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 - **B13 · S · `/undo` destroys manual edits.** `internal/tools/undo.go` writes the old bytes
   back without checking the file and with `0644`. → Store the hash of what the tool wrote;
   refuse when the file differs (`/undo force` overrides); keep the file's mode.
-- **G1 · XS · The eval binary is not ignored.** `.gitignore` has
-  `/eval   # a built eval harness…`, but git has no trailing comments, so the 11 MB `./eval`
-  shows as untracked. → Put the comment on its own line and delete `./eval`.
 
 ## Cleanup
 
