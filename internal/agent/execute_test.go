@@ -29,16 +29,10 @@ func TestTruncatedToolCallIsNotRun(t *testing.T) {
 		// turn 1 truncated, turn 2 answered without a tool, turn 3 is the verification retry
 		t.Fatalf("requests = %d, want the truncated turn, the answer, and the verification retry", len(stub.requests))
 	}
-	roles := stub.lastRequest(t)["messages"].([]any)
-	var note string
-	for _, raw := range roles {
-		m := raw.(map[string]any)
-		if m["role"] == "assistant" && strings.Contains(fmt.Sprint(m["content"]), "cut off") {
-			note = m["content"].(string)
-		}
-	}
-	if note == "" {
-		t.Fatal("the model was never told its reply was cut off")
+	next := stub.requests[1]["messages"].([]any)
+	last := next[len(next)-1].(map[string]any)
+	if last["role"] != "user" || !strings.Contains(fmt.Sprint(last["content"]), "cut off") {
+		t.Fatalf("the model was never told its reply was cut off, or was told in the wrong voice: %v", last)
 	}
 }
 
@@ -87,5 +81,30 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 	}
 	if !strings.Contains(refusal, "refused") {
 		t.Fatalf("tool result = %q, want the refusal", refusal)
+	}
+}
+
+func TestARequestAfterACutOffTurnDoesNotEndWithAnAssistantLine(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "read_file", []string{`{"path":`}, "length"),
+		sse("", "recovered", "", nil, "stop"),
+	}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, NoVerify: true}, &captureSink{})
+	defer done()
+
+	if err := a.Ask(context.Background(), "read it"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 2 {
+		t.Fatalf("requests = %d, want the cut-off turn and the retry", len(stub.requests))
+	}
+	messages := stub.requests[1]["messages"].([]any)
+	last := messages[len(messages)-1].(map[string]any)
+	if last["role"] != "user" {
+		t.Errorf("the retry request ends with role %v: a server sees that as its own unfinished reply and continues it\n%v",
+			last["role"], last["content"])
+	}
+	if !strings.Contains(fmt.Sprint(last["content"]), "cut off") {
+		t.Errorf("the retry request does not end with the notice:\n%v", last["content"])
 	}
 }

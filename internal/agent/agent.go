@@ -135,7 +135,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			a.tell("the response hit max_tokens and may be incomplete")
 			if !toolCallsRunnable(msg.ToolCalls) {
 				// a cut-off tool call cannot run: tell the model rather than hand broken arguments over
-				a.note("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
+				a.modelNote("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
 				continue
 			}
 		}
@@ -272,4 +272,10 @@ func (a *Agent) emit(ev Event) Decision {
 // note keeps the history honest when a turn ends without an answer.
 func (a *Agent) note(text string) {
 	a.add(llm.Message{Role: "assistant", Content: text})
+}
+
+// modelNote answers the model in the user's voice: a request whose last line is an assistant
+// message is continued by the server as prefill instead of answered.
+func (a *Agent) modelNote(text string) {
+	a.add(llm.Message{Role: "user", Content: text})
 }

@@ -16,7 +16,7 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Order
 
-1. Quick fixes: B3, B7, B11, B14, G1, C4, C9, C10
+1. Quick fixes: B7, B11, B14, G1, C4, C9, C10
 2. S2, B1, B10
 3. S1
 4. B4 + B5 + B6 together (resume and the result store share the cause)
@@ -46,9 +46,6 @@ Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
   trim, compaction or `/reset`, a re-read gets one line instead of text the model no longer
   has. → Add `Forget(ids)` / `ForgetAll()` to both, called wherever the history drops or
   replaces results. Test: read, shrink, read → full text.
-- **B3 · XS · The cut-off notice is an assistant message.** In `internal/agent/agent.go`,
-  `a.note(...)` before `continue` makes the request end with an assistant message, which
-  llama-server continues as prefill. → Add the notice as a user message.
 - **B4 · XS · `CallID` is lost on resume.** `json:"-"` (`internal/llm/types.go`) keeps it
   out of the session file, so resumed results are blanked without `recall`. → Persist it in
   the session only, never on the wire.
