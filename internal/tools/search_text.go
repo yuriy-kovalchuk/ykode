@@ -64,7 +64,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 func (SearchText) Name() string { return "search_text" }
 
 func (SearchText) Description() string {
-	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg; a file with several matches gets its path once, then indented lines. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
+	return "Search inside files with a regex (literal=true for plain text): path:line:text, like rg. mode=count gives one line per file with its match count, mode=files_with_matches just the paths. Default 100 matches; .gitignore entries and binary files are skipped."
 }
 
 func (SearchText) NeedsConfirm() bool { return false }
@@ -76,11 +76,11 @@ func (SearchText) Schema() json.RawMessage {
 	    "pattern": {"type": "string", "description": "regex, or plain text when literal is true"},
 	    "path": {"type": "string", "description": "file or directory to search"},
 	    "glob": {"type": "string", "description": "only files matching this glob, e.g. *.go"},
-	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"], "description": "content (default) returns matching lines; count returns per-file totals; files_with_matches returns only the file names"},
+	    "mode": {"type": "string", "enum": ["content", "count", "files_with_matches"], "description": "content (default) is matching lines; count is per-file totals; files_with_matches is paths only"},
 	    "ignore_case": {"type": "boolean", "description": "case-insensitive (default false)"},
 	    "literal": {"type": "boolean", "description": "pattern is plain text, not a regex (default false)"},
 	    "context": {"type": "integer", "description": "lines of context around each match (default 0, max %d)"},
-	    "limit": {"type": "integer", "description": "max matches to return, or max files in count and files_with_matches modes (default %d, max %d)"}
+	    "limit": {"type": "integer", "description": "max matches, or max files in the summary modes (default %d, max %d)"}
 	  },
 	  "required": ["pattern"]
 	}`, maxSearchContext, defaultSearchMatches, maxSearchMatches))

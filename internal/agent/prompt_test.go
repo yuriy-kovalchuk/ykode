@@ -168,9 +168,11 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 	}
 	defer root.Close()
 
-	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
-	if got := a.SpecBytes(); got > 5000 {
-		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5000", got, got/3)
+	store := tools.NewResultStore(filepath.Join(dir, "results"))
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
+	a.shortened = true // the worst case: every tool, recall included, is offered
+	if got := a.SpecBytes(); got > 5400 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 5400", got, got/3)
 	}
 }
 

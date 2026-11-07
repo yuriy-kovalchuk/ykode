@@ -45,8 +45,8 @@ func (*Recall) Schema() json.RawMessage {
 	return json.RawMessage(fmt.Sprintf(`{
 	  "type": "object",
 	  "properties": {
-	    "id": {"type": "string", "description": "the result id from the summary, e.g. r7"},
-	    "pattern": {"type": "string", "description": "regex: matching lines plus %d of context, instead of the whole text"},
+	    "id": {"type": "string", "description": "result id from the summary, e.g. r7"},
+	    "pattern": {"type": "string", "description": "regex: only the matching lines and %d of context"},
 	    "offset": {"type": "integer", "description": "skip this many lines"},
 	    "limit": {"type": "integer", "description": "at most this many lines (default %d)"}
 	  },

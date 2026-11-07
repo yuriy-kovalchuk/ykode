@@ -49,7 +49,7 @@ func NewReadFile(root *os.Root, dir string) *ReadFile {
 func (*ReadFile) Name() string { return "read_file" }
 
 func (*ReadFile) Description() string {
-	return fmt.Sprintf("Read a text file: a header gives the range and total lines, then the text with no line numbers, so old_string can be copied straight from it. Up to %d lines per call, and the output says where to continue. outline=true returns just the declarations with the lines they span - use it before reading a big file. Binary files are refused.", defaultReadLimit)
+	return fmt.Sprintf("Read a text file: a header gives the range and total lines, then the text with no line numbers, so edit_file can copy old_text straight out of it. Up to %d lines per call. outline=true returns the declarations with the lines they span - outline a big file before reading it. Binary files are refused.", defaultReadLimit)
 }
 
 func (*ReadFile) NeedsConfirm() bool { return false }

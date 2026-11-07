@@ -71,7 +71,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{read(0), read(1), read(2), read(3), read(4), sse("", "done", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4000}, &captureSink{decision: Allow}, dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4500}, &captureSink{decision: Allow}, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read both files twice"); err != nil {

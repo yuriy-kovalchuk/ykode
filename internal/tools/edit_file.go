@@ -41,7 +41,7 @@ func NewEditFile(root *os.Root, dir string) *EditFile {
 func (*EditFile) Name() string { return "edit_file" }
 
 func (*EditFile) Description() string {
-	return "Replace exact text: old_string -> new_string. Pairs default to style all, so every match is replaced and one call renames a call site everywhere; count=true reports matches without changing the file. A pair that matches nothing, or several times when expected is 1, fails and says how many - re-read the file to get the text exact. All pairs apply, or none."
+	return "Replace exact text: edits is a list of {old_text, new_text}, each matched against the file as it is now. old_text has to land in one place - if it is missing, or appears more than once, the call fails and says how many, so re-read and copy the exact text. All pairs apply, or none."
 }
 
 func (*EditFile) NeedsConfirm() bool { return true }
