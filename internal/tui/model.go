@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -48,7 +49,7 @@ type model struct {
 	running  bool
 	queue    []string // what was typed while the run was busy
 	cancel   context.CancelFunc
-	pending  *question
+	pending  []*question // questions waiting for an answer, oldest first
 	err      string
 	expanded bool // tool rows also show what they were asked to do
 	history  []string
@@ -92,7 +93,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handle(msg.ev)
 		return m, nil
 	case confirmMsg:
-		m.pending = &question{text: msg.ev.Text, target: msg.ev.Target, reply: msg.reply}
+		// parallel calls can ask at once: the first asks, the rest wait their turn
+		m.pending = append(m.pending, &question{text: msg.ev.Text, target: msg.ev.Target, reply: msg.reply})
 		m.refresh()
 		return m, nil
 	case compactDoneMsg:
@@ -120,7 +122,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.pending != nil {
+	if len(m.pending) > 0 {
 		switch msg.String() {
 		case "y", "Y":
 			m.reply(agent.Allow)
@@ -185,13 +187,13 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// reply answers the question the run is waiting on.
+// reply answers the question on the screen; the run that asked it is blocked until then.
 func (m *model) reply(d agent.Decision) {
-	if m.pending == nil {
+	if len(m.pending) == 0 {
 		return
 	}
-	m.pending.reply <- d
-	m.pending = nil
+	m.pending[0].reply <- d
+	m.pending = m.pending[1:]
 }
 
 func (m *model) submit() (tea.Model, tea.Cmd) {
@@ -322,12 +324,17 @@ func (m *model) statusArea(status string) string {
 }
 
 func (m *model) bottomArea() string {
-	if m.pending != nil {
+	if len(m.pending) > 0 {
+		q := m.pending[0]
 		targets := ""
-		if len(m.pending.target) > 0 {
-			targets = "\n  \x1b[33moutside the project: " + strings.Join(m.pending.target, ", ") + "\x1b[0m"
+		if len(q.target) > 0 {
+			targets = "\n  \x1b[33moutside the project: " + strings.Join(q.target, ", ") + "\x1b[0m"
 		}
-		return "⚠ " + m.pending.text + " \x1b[1m[y/N/a]\x1b[0m" + targets + "\n" + rule(m.width)
+		more := ""
+		if len(m.pending) > 1 {
+			more = fmt.Sprintf(" \x1b[2m(%d more waiting)\x1b[0m", len(m.pending)-1)
+		}
+		return "⚠ " + q.text + " \x1b[1m[y/N/a]\x1b[0m" + targets + more + "\n" + rule(m.width)
 	}
 	return "❯ " + m.input.View() + "\n" + "\x1b[2menter sends · ctrl+j newline · esc stops · ctrl+o tool rows · ctrl+c quits\x1b[0m"
 }

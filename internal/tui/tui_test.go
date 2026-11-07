@@ -201,7 +201,7 @@ func TestTheAnswerTravelsBackToTheRun(t *testing.T) {
 	if got := <-reply; got != agent.AllowAlways {
 		t.Errorf("answering 'a' came back as %v", got)
 	}
-	if m.pending != nil {
+	if len(m.pending) > 0 {
 		t.Error("the question is still open after it was answered")
 	}
 }
@@ -510,5 +510,50 @@ func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	}
 	if !strings.Contains(w.m.log.render(80, false), "tokens smaller") {
 		t.Errorf("no report of what compaction saved:\n%s", w.m.log.render(80, false))
+	}
+}
+
+// answered says whether a question was replied to, without waiting forever if it was not.
+func answered(ch <-chan agent.Decision) (agent.Decision, bool) {
+	select {
+	case d := <-ch:
+		return d, true
+	default:
+		return 0, false
+	}
+}
+
+func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
+	m := newTestModel()
+	first, second := make(chan agent.Decision, 1), make(chan agent.Decision, 1)
+	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/a.go?"}, reply: first})
+	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/b.go?"}, reply: second})
+
+	screen := m.View()
+	if !strings.Contains(screen, "write src/a.go?") {
+		t.Errorf("the second question cut in front:\n%s", screen)
+	}
+	if !strings.Contains(screen, "1 more waiting") {
+		t.Error("the screen hides that another call is waiting")
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	got, ok := answered(first)
+	if !ok {
+		t.Fatal("the first question is still waiting: its caller is blocked")
+	}
+	if got != agent.Allow {
+		t.Errorf("the first question got %v", got)
+	}
+	if !strings.Contains(m.View(), "write src/b.go?") {
+		t.Error("the second question never came up")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	got, ok = answered(second)
+	if !ok {
+		t.Fatal("the second question is still waiting")
+	}
+	if got != agent.Refuse {
+		t.Errorf("the second question got %v", got)
 	}
 }
