@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -148,7 +147,7 @@ func (t FindFiles) withFd(ctx context.Context, h handle, in findInput, limit int
 }
 
 func (t FindFiles) withGoWalker(ctx context.Context, h handle, in findInput, limit int) ([]string, error) {
-	re, err := compileGlob(in.Pattern)
+	nameMatch, err := newGlob(in.Pattern)
 	if err != nil {
 		return nil, fmt.Errorf("find_files: bad pattern %q: %v", in.Pattern, err)
 	}
@@ -161,7 +160,7 @@ func (t FindFiles) withGoWalker(ctx context.Context, h handle, in findInput, lim
 	var found []string
 	err = walk(func(path string, _ []byte) error {
 		name, isDir := strings.CutSuffix(path, "/")
-		if !re.MatchString(name) {
+		if !nameMatch.match(name) {
 			return nil
 		}
 		_ = isDir // a directory keeps its trailing slash, which is how the model reads it
@@ -172,18 +171,4 @@ func (t FindFiles) withGoWalker(ctx context.Context, h handle, in findInput, lim
 		return nil
 	})
 	return found, err
-}
-
-// compileGlob anchors a glob at the end of a slash path but lets it start at any depth.
-func compileGlob(pattern string) (*regexp.Regexp, error) {
-	body := globRegexp(strings.TrimPrefix(pattern, "./"))
-	if body == "" {
-		return nil, errors.New("empty pattern")
-	}
-	if strings.Contains(pattern, "/") {
-		body = `(^|/)` + body
-	} else {
-		body = `(^|.*/)` + body
-	}
-	return regexp.Compile(body + `$`)
 }

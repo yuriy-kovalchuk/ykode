@@ -105,13 +105,17 @@ func TestCompileGlobMatchesWholePaths(t *testing.T) {
 		{"a[bc].go", "ab.go", true},
 		{"a[bc].go", "ad.go", false},
 		{"./main.go", "main.go", true},
+		{"src/*.go", "internal/src/a.go", true},
+		{"src/*.go", "src/a.go", true},
+		{"src/*.go", "src/deep/a.go", false},
+		{"**/gen/*.go", "a/gen/x.go", true},
 	}
 	for _, c := range cases {
-		re, err := compileGlob(c.pattern)
+		g, err := newGlob(c.pattern)
 		if err != nil {
 			t.Fatalf("%q: %v", c.pattern, err)
 		}
-		if got := re.MatchString(c.path); got != c.want {
+		if got := g.match(c.path); got != c.want {
 			t.Errorf("%q vs %q = %v, want %v", c.pattern, c.path, got, c.want)
 		}
 	}

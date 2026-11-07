@@ -383,7 +383,7 @@ func (t SearchText) withGoWalker(ctx context.Context, h handle, in searchInput, 
 }
 
 // matcher compiles the search pattern and the optional glob filter.
-func (t SearchText) matcher(in searchInput) (*regexp.Regexp, *regexp.Regexp, error) {
+func (t SearchText) matcher(in searchInput) (*regexp.Regexp, *glob, error) {
 	pattern := in.Pattern
 	if in.Literal {
 		pattern = regexp.QuoteMeta(pattern)
@@ -395,19 +395,19 @@ func (t SearchText) matcher(in searchInput) (*regexp.Regexp, *regexp.Regexp, err
 	if err != nil {
 		return nil, nil, fmt.Errorf("search_text: bad pattern %q: %v", in.Pattern, err)
 	}
-	var globRe *regexp.Regexp
+	var nameMatch *glob
 	if in.Glob != "" {
-		globRe, err = compileGlob(in.Glob)
+		nameMatch, err = newGlob(in.Glob)
 		if err != nil {
 			return nil, nil, fmt.Errorf("search_text: bad glob %q: %v", in.Glob, err)
 		}
 	}
-	return re, globRe, nil
+	return re, nameMatch, nil
 }
 
 // wanted applies the optional glob filter to a walked path.
-func wanted(globRe *regexp.Regexp, path string) bool {
-	return globRe == nil || globRe.MatchString(path) || globRe.MatchString(path[strings.LastIndex(path, "/")+1:])
+func wanted(nameMatch *glob, path string) bool {
+	return nameMatch == nil || nameMatch.match(path)
 }
 
 // scanOne searches the single file the path names, reporting false when it is a directory.

@@ -1,44 +1,41 @@
 package tools
 
 import (
-	"regexp"
+	"errors"
+	"fmt"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
-// globRegexp compiles a glob to regexp source: ** spans directories, * and ? do not.
-func globRegexp(glob string) string {
-	var b strings.Builder
-	for i := 0; i < len(glob); i++ {
-		switch c := glob[i]; c {
-		case '*':
-			if strings.HasPrefix(glob[i+1:], "*") {
-				i++
-				if strings.HasPrefix(glob[i+1:], "/") {
-					i++
-					b.WriteString(`([^/]*/)*`) // "**/" matches zero or more directories
-					continue
-				}
-				b.WriteString(".*")
-				continue
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		case '[':
-			end := strings.Index(glob[i+1:], "]")
-			if end < 0 {
-				b.WriteString(`\[`)
-				continue
-			}
-			class := glob[i+1 : i+end+1]
-			if strings.HasPrefix(class, "!") {
-				class = "^" + class[1:]
-			}
-			b.WriteString("[" + strings.ReplaceAll(class, `\`, `\\`) + "]")
-			i += end + 1
-		default:
-			b.WriteString(regexp.QuoteMeta(string(c)))
+// glob matches the slash paths the walkers produce. The two rules the model relies on are
+// older than this code: a pattern without "/" names a file at any depth, and a pattern with
+// "/" may start at any directory boundary, so "src/*.go" finds "internal/src/a.go".
+type glob struct {
+	patterns []string
+}
+
+// newGlob compiles a pattern. An empty one is a caller bug, not a match-everything.
+func newGlob(pattern string) (*glob, error) {
+	pattern = strings.TrimPrefix(pattern, "./")
+	if strings.TrimSpace(pattern) == "" {
+		return nil, errors.New("empty pattern")
+	}
+	if !doublestar.ValidatePattern(pattern) {
+		return nil, fmt.Errorf("bad pattern %q", pattern)
+	}
+	if strings.Contains(pattern, "/") {
+		return &glob{patterns: []string{pattern, "**/" + pattern}}, nil
+	}
+	return &glob{patterns: []string{"**/" + pattern, pattern}}, nil
+}
+
+// match reports whether a walked path is one the pattern names.
+func (g *glob) match(path string) bool {
+	for _, pattern := range g.patterns {
+		if ok, err := doublestar.Match(pattern, path); err == nil && ok {
+			return true
 		}
 	}
-	return b.String()
+	return false
 }
