@@ -33,6 +33,7 @@ type Options struct {
 	Session       *session.Log      // append-only copy of the conversation, for --continue
 	Root          string            // the project root, recorded with every call
 	Allow         []string          // what never to ask about: a tool name, or "exec:go test"
+	Undo          Undoer            // the stack /undo reads; wired where the tools are built
 }
 
 // Stats summarises one model round-trip for the user.

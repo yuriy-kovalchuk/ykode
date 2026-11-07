@@ -50,22 +50,15 @@ func (l *LineSource) readLine(ctx context.Context, sigs chan os.Signal) (line st
 }
 
 // REPL is the interactive prompt.
-// Undoer puts the most recent file change back. tools.UndoStack is the real thing.
-type Undoer interface {
-	Undo() (string, error)
-	Empty() bool
-}
-
 type REPL struct {
 	agent *agent.Agent
 	lines *LineSource
 	out   io.Writer // answers and prompts
 	log   io.Writer // errors and tool progress
-	undo  Undoer
 }
 
-func NewREPL(a *agent.Agent, lines *LineSource, out, log io.Writer, undo Undoer) *REPL {
-	return &REPL{agent: a, lines: lines, out: out, log: log, undo: undo}
+func NewREPL(a *agent.Agent, lines *LineSource, out, log io.Writer) *REPL {
+	return &REPL{agent: a, lines: lines, out: out, log: log}
 }
 
 // Run reads until EOF, /exit or Ctrl-C at the prompt; mid-request Ctrl-C cancels the request.
@@ -102,54 +95,11 @@ func (r *REPL) Run(ctx context.Context) error {
 	}
 }
 
-// historyLimit caps how many logged calls one /history shows.
-const historyLimit = 20
-
-// helpText lists the commands; the model does the work, so this stays short.
-const helpText = `commands:
-  /help   show this
-  /usage    what the conversation has cost the server
-  /compact  fold the older turns into a summary the model writes
-  /history [what]  what this run did: a tool name, "failed" or "outside"
-  /undo     put the most recent file change back
-  /reset    forget the conversation
-  /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
-
-// command handles a slash command and reports whether the REPL should stop.
+// command hands a slash command to the agent and prints what it answers.
 func (r *REPL) command(line string) (quit bool, err error) {
-	if strings.HasPrefix(line, "/history") {
-		filter := strings.TrimSpace(strings.TrimPrefix(line, "/history"))
-		fmt.Fprint(r.out, r.agent.History(filter, historyLimit))
-		return false, nil
-	}
-	switch line {
-	case "/exit", "/quit":
-		return true, nil
-	case "/reset":
-		r.agent.Reset()
-		fmt.Fprintln(r.out, "history cleared")
-	case "/usage":
-		fmt.Fprintln(r.out, usageLine(r.agent.Usage(), r.agent.CtxSize()))
-	case "/compact":
-		freed := r.agent.Compact(context.Background())
-		fmt.Fprintf(r.out, "older tool results shortened; the conversation is about %d tokens smaller\n", freed)
-	case "/undo":
-		if r.undo == nil || r.undo.Empty() {
-			fmt.Fprintln(r.out, "nothing to undo: ykode has not changed a file yet")
-			return false, nil
-		}
-		said, err := r.undo.Undo()
-		if err != nil {
-			fmt.Fprintln(r.log, "ykode:", err)
-			return false, nil
-		}
-		fmt.Fprintln(r.out, said)
-	case "/help":
-		fmt.Fprintln(r.out, helpText)
-	default:
-		fmt.Fprintf(r.log, "unknown command %q; try /help, /reset or /exit\n", line)
-	}
-	return false, nil
+	text, quit, err := r.agent.Command(line)
+	fmt.Fprint(r.out, text)
+	return quit, err
 }
 
 // ask runs one agent turn, cancelling it if the user presses Ctrl-C.

@@ -150,7 +150,7 @@ func run() error {
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(registry.All()), a.SpecBytes())
 
 	if cfg.Prompt == "" {
-		return cli.NewREPL(a, lines, os.Stdout, os.Stderr, undo).Run(context.Background())
+		return cli.NewREPL(a, lines, os.Stdout, os.Stderr).Run(context.Background())
 	}
 	return answerOnce(a, events, cfg, ctxSize)
 }
