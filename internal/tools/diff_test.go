@@ -110,3 +110,62 @@ func TestWriteANewFileReportsCreationInsteadOfADiff(t *testing.T) {
 		t.Errorf("a new file has no diff to show:\n%s", got)
 	}
 }
+
+func TestADiffCarriesNoFileHeaders(t *testing.T) {
+	// the tool result already names the file; "--- before / +++ after" is tokens for nothing
+	diff := diffText("one\ntwo\n", "one\nTWO\n")
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
+			t.Errorf("a file header reached the model in:\n%s", diff)
+		}
+	}
+	if !strings.HasPrefix(diff, "@@") {
+		t.Errorf("a diff should start at a hunk:\n%s", diff)
+	}
+}
+
+func TestADiffOfACRLFFileStaysSmall(t *testing.T) {
+	// a CRLF file whose \r is not normalised looks like every line changed
+	tool, current := editToolFixture(t, "one\r\ntwo\r\nthree\r\n")
+	args := []byte(`{"path":"target.txt","edits":[{"old_string":"two","new_string":"TWO"}]}`)
+	out, err := tool.Run(t.Context(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "large change") {
+		t.Errorf("one line changed but the diff gave up: %s", out)
+	}
+	if !strings.Contains(out, "-two") || !strings.Contains(out, "+TWO") {
+		t.Errorf("the change is not in the diff: %s", out)
+	}
+	if strings.Contains(current(), "\n\r") {
+		t.Errorf("the file was mangled: %q", current())
+	}
+}
+
+func TestOverwritingACRLFFileShowsOneChangeNotEveryLine(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"notes.txt": "one\r\ntwo\r\nthree\r\n"})
+	write, ok := BuiltIn(root, dir, Options{MaxResultBytes: 4000}).Get("write_file")
+	if !ok {
+		t.Fatal("no write_file")
+	}
+	out, err := write.Run(t.Context(), []byte(`{"path":"notes.txt","content":"one\nTWO\nthree\n"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "large change") {
+		t.Errorf("three lines, one changed, diff gave up: %s", out)
+	}
+	if !strings.Contains(out, "-two") || !strings.Contains(out, "+TWO") {
+		t.Errorf("the change is not in the diff: %s", out)
+	}
+	var changed int
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "+") {
+			changed++
+		}
+	}
+	if changed != 2 {
+		t.Errorf("%d lines in the diff for a one-line change (the line endings were not normalised):\n%s", changed, out)
+	}
+}
