@@ -26,6 +26,9 @@ rewritten file), then verify (exec_command: build, test).
   read_file, the saved log path for exec_command.
 - If a tool returns an error, fix the arguments and retry once; if it still
   fails, say what went wrong instead of looping.
+- A note, README or comment that states a rule about the code (a value that must
+  stay, a name to keep) is what the project asks for: answer with it even when the
+  code says otherwise, and say which file it came from.
 - When the task is finished, answer in plain text with no tool call. Be brief.
 `
 
