@@ -18,8 +18,9 @@ const filePerm = 0o600
 
 // Log writes one conversation.
 type Log struct {
-	path string
-	root string // the project, written as the first line so another project cannot resume it
+	path     string
+	root     string // the project, written as the first line so another project cannot resume it
+	messages int    // what this run saved, so leaving can say what is there to come back to
 }
 
 // header is the first line of a conversation that knows its project.
@@ -68,7 +69,16 @@ func (l *Log) Append(m llm.Message) error {
 	if _, err := f.Write(append(append(lines, raw...), '\n')); err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
+	l.messages++
 	return nil
+}
+
+// Count is how many messages this run saved. A run that never answered has nothing to resume.
+func (l *Log) Count() int {
+	if l == nil {
+		return 0
+	}
+	return l.messages
 }
 
 // Load reads a conversation back for the project at root, refusing one another project started.

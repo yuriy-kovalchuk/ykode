@@ -50,3 +50,6 @@ func (a *Agent) Root() string { return a.opts.Root }
 
 // Model is the model id this agent talks to.
 func (a *Agent) Model() string { return a.model }
+
+// SavedMessages counts the conversation this run wrote to its session file.
+func (a *Agent) SavedMessages() int { return a.opts.Session.Count() }

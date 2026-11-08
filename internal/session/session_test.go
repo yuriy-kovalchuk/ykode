@@ -159,3 +159,24 @@ func TestAConversationOnlyResumesInTheProjectItBelongsTo(t *testing.T) {
 		t.Errorf("another project resumed it: %v", err)
 	}
 }
+
+// a session that never answered is not worth resuming, so the log counts what it saved
+func TestTheLogCountsWhatItSaved(t *testing.T) {
+	dir := t.TempDir()
+	log := New(dir, "s20260101-101010", dir)
+	if log.Count() != 0 {
+		t.Fatalf("a fresh log counts %d messages", log.Count())
+	}
+	for _, m := range []llm.Message{{Role: "user", Content: "one"}, {Role: "assistant", Content: "two"}} {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if log.Count() != 2 {
+		t.Errorf("Count = %d, want the two messages saved", log.Count())
+	}
+	var off *Log
+	if off.Count() != 0 {
+		t.Error("a log that is off counts something")
+	}
+}

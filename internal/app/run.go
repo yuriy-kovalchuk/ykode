@@ -81,7 +81,20 @@ func Run(args []string, version string) error {
 	}
 	// what actually goes out each turn: a tool that is not offered yet is not paid for
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(a.Specs()), a.SpecBytes())
-	return front.Run(a, cfg, ctxSize)
+	if err := front.Run(a, cfg, ctxSize); err != nil {
+		return err
+	}
+	fmt.Fprint(os.Stderr, resumeNote(cfg, a.SavedMessages()))
+	return nil
+}
+
+// resumeNote tells a leaving session where the conversation went, so it can be picked up again:
+// the file is written as you work, but nothing else says it is there.
+func resumeNote(cfg config.Config, saved int) string {
+	if saved == 0 {
+		return ""
+	}
+	return fmt.Sprintf("ykode: %d messages saved in %s\nykode: resume with --continue %s\n", saved, cfg.SessionFile, cfg.Session)
 }
 
 // startupConfig resolves the settings and asks about an untrusted project's file; done means nothing is left to run.
