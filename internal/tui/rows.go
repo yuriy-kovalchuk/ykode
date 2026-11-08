@@ -54,6 +54,9 @@ func draw(e entry, width int, expanded bool) string {
 		return styleDim.Render(indent(wrap(oneLine(e.text, noticeChars), width-2), "· ")) + "\n"
 	case whoTool:
 		row := toolRow(e, width) + "\n"
+		if rows := diffRows(e.result, width, expanded); rows != nil {
+			row += strings.Join(rows, "\n") + "\n"
+		}
 		if expanded && e.args != "" {
 			row += openArgs(e.args, width) + "\n"
 		}
@@ -97,7 +100,12 @@ func toolRow(e entry, width int) string {
 	case e.failed:
 		row.mark, row.note, row.markStyle, row.noteStyle = "✗", e.result, styleBad, styleBad
 	case e.result != "":
-		row.mark, row.note, row.markStyle, row.noteStyle = "✓", e.result, styleOK, styleResult
+		// a change is a block of its own under the row, so the row keeps only what the call said
+		note := e.result
+		if holdsDiff(note) {
+			note = summaryLine(note)
+		}
+		row.mark, row.note, row.markStyle, row.noteStyle = "✓", note, styleOK, styleResult
 	}
 	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(row.note)
 	if room < toolRowArgs {

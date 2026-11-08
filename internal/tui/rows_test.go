@@ -213,3 +213,27 @@ func TestAWideToolRowStopsAtTheScreenEdge(t *testing.T) {
 		}
 	}
 }
+
+// a call that changed a file keeps its summary on its row and shows the change on the rows under it
+func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
+	var log transcript
+	log.toolStart("edit_file", `{"path":"src/parser.go"}`)
+	log.toolEnd("edit_file", `{"path":"src/parser.go"}`, editResult)
+	rows := strings.Split(strings.TrimSuffix(log.render(80, false), "\n"), "\n")
+
+	var summary, change string
+	for _, row := range rows {
+		switch {
+		case strings.Contains(row, "edit_file"):
+			summary = row
+		case strings.Contains(row, "@@"):
+			change = row
+		}
+	}
+	if summary == "" || change == "" {
+		t.Fatalf("the call row and its change are not both drawn:\n%s", strings.Join(rows, "\n"))
+	}
+	if strings.Contains(summary, "@@") || strings.Contains(summary, "if line ==") {
+		t.Errorf("the call row carries the change as one flat line: %q", stripCodes(summary))
+	}
+}

@@ -94,7 +94,7 @@ screen opens when the configured server does not answer, with the error on it.
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
-| `ctrl+o` | shows and hides the arguments of each tool call |
+| `ctrl+o` | shows and hides each tool call's arguments and the rest of its change |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
@@ -136,6 +136,12 @@ Each call the model makes is one row: the tool, what it touches in plain words �
 `"styleBar" in internal *.go`, the command as typed — and what came back. `ctrl+o` opens a call and puts
 each argument on a row of its own, long text as the lines it holds rather than escaped JSON. A question
 about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
+
+A call that changed a file puts the change on the rows under its row instead of flattening it into
+one: what came in is kept, what went is marked, the unchanged context stays quiet, and where a line
+stayed but a word inside it changed, only that word is reversed out, so a one word edit reads without
+counting characters. Fourteen rows of a change are shown while the session runs and the row says how
+much was left; `ctrl+o` shows the rest.
 
 ## Tools
 

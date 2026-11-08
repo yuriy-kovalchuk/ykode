@@ -26,6 +26,11 @@ var (
 	// right on a light theme as well as a dark one.
 	styleUserLine = lipgloss.NewStyle().Reverse(true).Bold(true)
 	styleResult   = lipgloss.NewStyle() // what a call answered is shown as the tool wrote it
+	// a change reads at a glance: what came in is kept, what went is marked, and what changed inside
+	// a line that stayed is reversed out.
+	styleDiffAdd  = lipgloss.NewStyle().Foreground(colorOK)
+	styleDiffDel  = lipgloss.NewStyle().Foreground(colorBad)
+	styleDiffMark = lipgloss.NewStyle().Reverse(true)
 	styleCode     = lipgloss.NewStyle().Foreground(colorAccent)
 	styleItalic   = lipgloss.NewStyle().Italic(true)
 	styleKey      = lipgloss.NewStyle().Foreground(colorAccent)
