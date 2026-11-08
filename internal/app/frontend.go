@@ -50,7 +50,7 @@ func (f FrontEnd) Run(a *agent.Agent, cfg config.Config, ctxSize int) error {
 	case cfg.Prompt != "":
 		return answerOnce(a, f.events, cfg, ctxSize)
 	case cfg.TUI:
-		return tui.Run(context.Background(), a, f.hub, cfg.Mouse)
+		return tui.Run(context.Background(), a, f.hub, cfg)
 	default:
 		return cli.NewREPL(a, f.lines, os.Stdout, os.Stderr).Run(context.Background())
 	}

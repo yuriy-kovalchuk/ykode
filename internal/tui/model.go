@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
 // defaultSize is what the screen assumes until the terminal reports its own.
@@ -45,6 +46,7 @@ type model struct {
 	// made from: a different line brings a cleared list back.
 	suggest    []agent.CommandSpec
 	suggestFor string
+	cfg        config.Config // what this run reads, which /settings shows and changes
 	history    []string
 	histIdx    int
 	unsent     string // what is in the box while the earlier prompts are being read
@@ -58,7 +60,7 @@ type model struct {
 	redrawQueued bool
 }
 
-func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
+func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
 	input := textarea.New()
 	input.Placeholder = "ask for a change, /help lists the commands"
 	input.Prompt = ""
@@ -73,16 +75,18 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
 
 	// a terminal that will not say its size still gets a screen
 	return &model{
-		spin:   spin,
-		ctx:    ctx,
-		hub:    hub,
-		agent:  a,
-		root:   a.Root(),
-		branch: agent.GitBranch(a.Root()),
-		input:  input,
-		view:   viewport.New(defaultWidth, defaultHeight),
-		width:  defaultWidth,
-		height: defaultHeight,
+		spin:    spin,
+		ctx:     ctx,
+		hub:     hub,
+		agent:   a,
+		cfg:     cfg,
+		mouseOn: cfg.Mouse,
+		root:    a.Root(),
+		branch:  agent.GitBranch(a.Root()),
+		input:   input,
+		view:    viewport.New(defaultWidth, defaultHeight),
+		width:   defaultWidth,
+		height:  defaultHeight,
 	}
 }
 

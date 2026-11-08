@@ -1,0 +1,139 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// a change is written where it belongs, and the file's comments and other keys survive it
+func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
+	user := fakeHome(t)
+	path := filepath.Join(user, "settings.yaml")
+	writeSettings(t, path, "# mine\nmodel: qwen3-coder\nmax_turns: 9\n")
+
+	if _, err := Set("mouse", "true"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, keep := range []string{"# mine", "model: qwen3-coder", "max_turns: 9"} {
+		if !strings.Contains(body, keep) {
+			t.Errorf("%s was lost by the change:\n%s", keep, body)
+		}
+	}
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := findSetting(cfg.Catalogue(), "mouse")
+	if got.Value != "on" || got.From != FromFile {
+		t.Errorf("mouse = %s from %s, want on from file", got.Value, got.From)
+	}
+}
+
+// a number and a switch are written as the file spells them, not as words in quotes
+func TestANumberIsWrittenAsANumberAndASwitchAsASwitch(t *testing.T) {
+	fakeHome(t)
+	if _, err := Set("max_turns", "40"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Set("sandbox", "on"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("YKODE_HOME"), "settings.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, "max_turns: 40") || !strings.Contains(body, "sandbox: true") {
+		t.Errorf("written as:\n%s", body)
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxTurns != 40 || !cfg.Sandbox {
+		t.Errorf("read back as max_turns=%d sandbox=%v", cfg.MaxTurns, cfg.Sandbox)
+	}
+}
+
+// a key inside a section is written inside that section
+func TestASectionKeyIsWrittenInsideItsSection(t *testing.T) {
+	fakeHome(t)
+	if _, err := Set("tools.read_lines", "40"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadLines != 40 {
+		t.Errorf("read_lines = %d, want 40", cfg.ReadLines)
+	}
+}
+
+// a value the knob cannot use is refused, and the file is left alone
+func TestAValueThatWouldNotWorkIsRefused(t *testing.T) {
+	user := fakeHome(t)
+	path := filepath.Join(user, "settings.yaml")
+	writeSettings(t, path, "stream_idle_sec: 120\n")
+
+	for _, ask := range []struct{ key, value string }{
+		{"stream_idle_sec", "soon"},
+		{"thinking_level", "sideways"},
+		{"mouse", "maybe"},
+		{"max_turns", "-5"},
+		{"keep_sessions", "a week"},
+		{"no_such_thing", "1"},
+	} {
+		if _, err := Set(ask.key, ask.value); err == nil {
+			t.Errorf("%s %s was accepted", ask.key, ask.value)
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "stream_idle_sec: 120\n" {
+		t.Errorf("the file was rewritten anyway:\n%s", raw)
+	}
+}
+
+// the never-ask list grows one item at a time, and says so when the item is already there
+func TestTheNeverAskListGrowsOneAtATime(t *testing.T) {
+	fakeHome(t)
+	if _, err := Set("permissions.allow", "exec:go test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Set("permissions.allow", "exec:go test"); err == nil {
+		t.Error("the same item was added twice")
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Allow) != 1 || cfg.Allow[0] != "exec:go test" {
+		t.Errorf("allow = %v, want the one item", cfg.Allow)
+	}
+}
+
+// a change lands in the file that holds a token, and that file stays readable only by you
+func TestTheFileWrittenStaysPrivate(t *testing.T) {
+	user := fakeHome(t)
+	if _, err := Set("model", "qwen3-coder"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(user, "settings.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("settings.yaml is mode %o, want 600", info.Mode().Perm())
+	}
+}

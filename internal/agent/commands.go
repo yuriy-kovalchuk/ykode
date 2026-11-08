@@ -34,6 +34,7 @@ func Commands() []CommandSpec {
 		{Name: "/usage", Note: "what the conversation has cost the server"},
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
 		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
+		{Name: "/settings", Args: "[key] [value]", Note: "what ykode is set to, and change one knob"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
 		{Name: "/model", Args: "[id]", Note: "which model this run asks, or ask a different one", Waits: true},

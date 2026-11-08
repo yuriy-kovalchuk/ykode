@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -117,7 +118,7 @@ func newWiredModel(t *testing.T, answers ...string) *wired {
 	hub := NewHub()
 	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
-	m := newModel(context.Background(), a, hub)
+	m := newModel(context.Background(), a, hub, config.Config{})
 	msgs := make(chan tea.Msg, 32)
 	hub.send = func(msg tea.Msg) { msgs <- msg }
 	return &wired{m: m, msgs: msgs}
@@ -174,7 +175,9 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	screen := &lockedBuffer{}
 
 	done := make(chan error, 1)
-	go func() { done <- run(context.Background(), a, hub, false, tea.WithInput(in), tea.WithOutput(screen)) }()
+	go func() {
+		done <- run(context.Background(), a, hub, config.Config{}, tea.WithInput(in), tea.WithOutput(screen))
+	}()
 
 	writeKeys(t, keys, "first\r")
 	waitFor(t, screen, "answer one")
@@ -260,7 +263,9 @@ func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 	screen := &lockedBuffer{}
 
 	done := make(chan error, 1)
-	go func() { done <- run(context.Background(), a, hub, false, tea.WithInput(in), tea.WithOutput(screen)) }()
+	go func() {
+		done <- run(context.Background(), a, hub, config.Config{}, tea.WithInput(in), tea.WithOutput(screen))
+	}()
 
 	writeKeys(t, keys, "count the files\r")
 	for stub.asked() == 0 { // the turn is open: its first reply has not been sent yet

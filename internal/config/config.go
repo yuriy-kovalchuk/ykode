@@ -62,6 +62,8 @@ type Config struct {
 	Continue        string                     // resume a saved conversation: "last" or its id
 	SessionDir      string                     // where conversations are saved
 	ProjectSettings string                     // <root>/.ykode/settings.yaml, when the project ships one
+	APIKeyEnv       string                     // a variable that holds the token, named by the file
+	flagsGiven      map[string]bool            // which flags the command line actually typed
 	HeldKeys        []string                   // what that file sets that only applies to a trusted project
 	HeldValues      []string                   // the same keys with what they ask for, secrets masked
 	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown
@@ -110,8 +112,9 @@ func Load(args []string) (Config, error) {
 	if err := cfg.readSettings(); err != nil {
 		return Config{}, err
 	}
+	cfg.flagsGiven = given(fs)
 	cfg.applyEnv()
-	cfg.applyFlags(f, given(fs))
+	cfg.applyFlags(f, cfg.flagsGiven)
 
 	if err := cfg.normalize(); err != nil {
 		return Config{}, err

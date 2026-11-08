@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,7 +166,7 @@ func TestTheStatusLineKeepsActivityWhenNarrow(t *testing.T) {
 func TestTheFooterReadsWhatTheAgentKnows(t *testing.T) {
 	dir := t.TempDir()
 	a := agent.New(nil, nil, "test-model", agent.Options{Root: dir, ThinkingLevel: "high"}, nil)
-	m := newModel(context.Background(), a, NewHub())
+	m := newModel(context.Background(), a, NewHub(), config.Config{})
 	s := m.status()
 	if s.root != dir || s.thinking != "high" || s.model != "test-model" {
 		t.Errorf("the footer reports %+v, want the agent's root, model and depth", s)
@@ -176,7 +177,7 @@ func TestTheFooterReadsWhatTheAgentKnows(t *testing.T) {
 // on the next frame rather than on the next reply
 func TestTheFooterReadsTheAgentsNumbersAtDrawTime(t *testing.T) {
 	a := agent.New(nil, nil, "test-model", agent.Options{CtxSize: 8000}, nil)
-	m := newModel(context.Background(), a, NewHub())
+	m := newModel(context.Background(), a, NewHub(), config.Config{})
 	before := stripCodes(statusLine(m.status()))
 	a.Resume([]llm.Message{{Role: "user", Content: strings.Repeat("a call, ", 600)}})
 	if after := stripCodes(statusLine(m.status())); after == before {

@@ -60,10 +60,11 @@ Four commands change the run rather than the conversation:
 | `/tools` | the tools the model may call, and the bytes each description adds to every request |
 | `/model [id]` | which model this run asks for, or ask a different one from now on |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
+| `/settings [key] [value]` | every knob the settings file can set, with its default and who set it; a key and a value write it into `~/.ykode/settings.yaml` |
 
 A turn owns the conversation and its own settings, so `/reset`, `/compact`, `/undo`,
-`/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage` and
-`/history` answer straight away. `Ctrl-C` during a reply cancels that request and
+`/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage`, `/history` and
+`/settings` answer straight away. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
 
 ## The full-screen session
@@ -275,6 +276,14 @@ Settings resolve in this order, later winning: built-in defaults, `~/.ykode/sett
 `<root>/.ykode/settings.yaml`, environment variables, flags. Both are YAML and meant to be edited by
 hand; a folder that still holds the old `settings.json` is read for one more release, and the YAML file
 wins when both are there.
+
+`/settings` is the way in from inside a session. Alone it lists every knob with what it is now, and
+marks the ones someone changed with what they were and whether a flag, the environment or the file
+decided it; a knob nobody chose says nothing else, so the list reads as what is unusual about this
+run. `/settings thinking_level` explains one knob — what it is for, its choices, how to change it.
+`/settings tools.read_lines 40` writes that key into `~/.ykode/settings.yaml`, comments and other keys
+kept, and says which way it moved; the next run reads it. A value the knob cannot take is refused
+before the file is touched. `api_key` is reported as set, never repeated.
 
 A project's file is not trusted just because it is there. `<root>/.ykode/settings.yaml` may set
 `max_turns`, `max_tokens`, `thinking_level`, `verify`, `context.*`, `tools.read_lines`,

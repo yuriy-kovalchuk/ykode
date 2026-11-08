@@ -24,6 +24,11 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(text, "/compact") && !m.running {
 			return m, m.compact()
 		}
+		if name, _, _ := strings.Cut(text, " "); name == "/settings" {
+			m.log.output(m.settings(text)) // the screen answers this one: it writes the settings file
+			m.refresh()
+			return m, nil
+		}
 		if m.running && !agent.CommandIsSafeDuringATurn(text) {
 			m.log.notice("that waits for the turn to finish: press esc to stop the turn first")
 			m.refresh()

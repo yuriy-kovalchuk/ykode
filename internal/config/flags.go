@@ -27,10 +27,13 @@ type flagValues struct {
 	Version       bool
 }
 
-// given reports which flags the user actually typed.
+// given reports which flags the user actually typed, and nothing at all when none of them were.
 func given(fs *flag.FlagSet) map[string]bool {
 	set := map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+	if len(set) == 0 {
+		return nil
+	}
 	return set
 }
 

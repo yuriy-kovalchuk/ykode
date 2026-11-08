@@ -10,11 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
 func newTestModel() *model {
 	a := agent.New(nil, nil, "test-model", agent.Options{}, nil)
-	return newModel(context.Background(), a, NewHub())
+	return newModel(context.Background(), a, NewHub(), config.Config{})
 }
 
 func TestAScreenThatWasNeverResizedStillDraws(t *testing.T) {

@@ -180,6 +180,7 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	}
 	// a named variable keeps the secret out of the file; api_key still works for a single-user box
 	pick(s.APIKey, &c.APIKey)
+	pick(s.APIKeyEnv, &c.APIKeyEnv)
 	if s.APIKeyEnv != nil {
 		if fromEnv := os.Getenv(*s.APIKeyEnv); fromEnv != "" {
 			c.APIKey = fromEnv
