@@ -61,6 +61,14 @@ func rightAligned(text, tag string, width int) string {
 	return text + strings.Repeat(" ", gap) + tag
 }
 
+// padTo fills a row out to width so a style laid over it covers the whole row.
+func padTo(text string, width int) string {
+	if gap := width - lipgloss.Width(text); gap > 0 {
+		return text + strings.Repeat(" ", gap)
+	}
+	return text
+}
+
 // cutToWidth keeps a plain line inside the screen, ending in … when something was cut.
 func cutToWidth(s string, width int) string {
 	if width <= 1 || lipgloss.Width(s) <= width {

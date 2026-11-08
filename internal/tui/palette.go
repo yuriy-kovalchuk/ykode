@@ -22,6 +22,8 @@ var (
 	styleBad      = lipgloss.NewStyle().Foreground(colorBad)
 	styleToolName = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
 	styleWorking  = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
-	styleUserBar  = lipgloss.NewStyle().Foreground(colorAccent)
+	// styleUserLine is the band a prompt sits in: reversing the terminal's own colours keeps it
+	// right on a light theme as well as a dark one.
+	styleUserLine = lipgloss.NewStyle().Reverse(true).Bold(true)
 	styleKey      = lipgloss.NewStyle().Foreground(colorAccent)
 )

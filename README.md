@@ -101,6 +101,11 @@ moment the turn ends. The commands of `In the session` work there too, except
 that `/reset`, `/compact` and `/undo` wait for the running turn rather than
 racing it.
 
+The box a prompt is typed in grows with what is typed, to ten rows, and past that scrolls the text
+inside itself; a long prompt therefore keeps the rows it wraps over on the screen. What was asked
+stands in a band across the whole width, so a prompt reads apart from an answer even when it runs
+over several rows.
+
 The footer is two rows. The first names where the session runs on the left — the project root and the
 branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` — and on the right the
 model and how deeply it thinks (`· high`, or `· thinking off`). The second has what the conversation
@@ -109,8 +114,8 @@ all three summed over the whole session; then `cache %` for what the last reques
 `draft %` where the server ran a draft model (how much of its work the real model kept), and last how
 full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
 keeps the window. What is happening now sits on the right of that row: the running prompt's clock
-(`✓ done in 51s` once it finishes), then the server's speed, `↑` reading the prompt and `↓` writing,
-updated while the reply streams. The cache percentage is llama.cpp's: how much of the request it already
+(`✓ done in 51s` once it finishes), then the server's speed, `↑` reading the prompt and `↓` writing, both in
+tokens per second, updated while the reply streams. The cache percentage is llama.cpp's: how much of the request it already
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
 The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 

@@ -122,7 +122,7 @@ func statusActivity(s status) []string {
 		now = append(now, styleOK.Render("✓ done in "+duration(s.took)))
 	}
 	if s.prefill > 0 {
-		now = append(now, styleDim.Render("↑ ")+fmt.Sprintf("%.0f", s.prefill))
+		now = append(now, styleDim.Render("↑ ")+fmt.Sprintf("%.0f tok/s", s.prefill))
 	}
 	if s.decode > 0 {
 		now = append(now, styleDim.Render("↓ ")+fmt.Sprintf("%.0f tok/s", s.decode))

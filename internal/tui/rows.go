@@ -33,7 +33,7 @@ func (t *transcript) render(width int, expanded bool) string {
 func draw(e entry, width int, expanded bool) string {
 	switch e.who {
 	case whoUser:
-		return fmt.Sprintf("%s\n\n", rightAligned(styleUserBar.Render("▌")+" "+styleBold.Render(e.text), styleDim.Render(clock(e.at)), width))
+		return promptBlock(e, width) + "\n\n"
 	case whoOutput:
 		return fmt.Sprintf("%s\n\n", indent(e.text, "  "))
 	case whoDone:
@@ -55,6 +55,27 @@ func draw(e entry, width int, expanded bool) string {
 	}
 	return ""
 }
+
+// promptBlock is what was asked, as a band across the whole screen: the ask then reads apart
+// from the answer even when it runs over several lines.
+func promptBlock(e entry, width int) string {
+	when := clock(e.at)
+	lines := strings.Split(wrap(strings.TrimSpace(e.text), width-promptEdge), "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	lines[len(lines)-1] = rightAligned(lines[len(lines)-1], when, width-promptEdge)
+	for i, line := range lines {
+		lines[i] = styleUserLine.Render(padTo(userMark+" "+line, width))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// promptEdge and userMark are the band's left edge: the mark and the space after it.
+const (
+	promptEdge = 2
+	userMark   = "▌"
+)
 
 // toolRow is one call on one row: the arguments give way to the result.
 func toolRow(e entry, width int) string {

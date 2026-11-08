@@ -9,8 +9,9 @@ import (
 
 const (
 	promptMark    = "❯ "
-	maxInputLines = 6  // the input grows with what is typed, up to this
+	maxInputLines = 10 // the input grows with what is typed, up to this
 	inputGap      = "" // a blank row between what the session reports and what the user reads next
+	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
 )
 
 // keys is what ? shows, as key and what it does.
@@ -37,7 +38,7 @@ func (m *model) bottomArea() string {
 	if m.err != "" {
 		rows = append(rows, styleBad.Render(oneLine(m.err, max(m.width-2, 1))))
 	}
-	return strings.Join(rows, "\n")
+	return strings.Join(append(rows, bottomGap), "\n")
 }
 
 // question is the confirmation a run waits on, in a box of its own above the input.
@@ -74,10 +75,33 @@ func (m *model) promptLines() string {
 	return strings.Join(lines, "\n")
 }
 
-// fitInput grows the input with the lines typed, so a short prompt takes one row.
+// fitInput grows the box with the rows typed, to ten, and never past the point where the session
+// would have too few rows left to read.
 func (m *model) fitInput() {
-	m.input.SetHeight(min(max(m.input.LineCount(), 1), maxInputLines))
+	rows := min(inputRows(m.input.Value(), m.input.Width()), maxInputLines)
+	if room := m.height - m.otherRows() - minTranscriptRows; rows > room {
+		rows = max(room, 1)
+	}
+	m.input.SetHeight(rows)
 }
+
+// otherRows is the bottom area apart from the box itself: the footer, the rule, the gaps.
+func (m *model) otherRows() int {
+	return lipgloss.Height(m.bottomArea()) - m.input.Height()
+}
+
+// inputRows counts the rows the text takes once the box has wrapped it: a long line typed without
+// a return is not one row on the screen.
+func inputRows(text string, width int) int {
+	rows := 0
+	for _, line := range strings.Split(text, "\n") {
+		rows += len(strings.Split(wrap(line, width), "\n"))
+	}
+	return max(rows, 1)
+}
+
+// minTranscriptRows is the least the session keeps on screen however long the prompt is.
+const minTranscriptRows = 3
 
 // keysHelp lists the keys, wrapping between entries so no row is wider than the screen.
 func (m *model) keysHelp() string {

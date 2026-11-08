@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestToolRowsShowMoreWhenOpened(t *testing.T) {
@@ -113,5 +115,25 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		log.answer("more words ")
 		_ = log.render(120, false)
+	}
+}
+
+// what was asked sits in a band across the whole screen, so it reads apart from an answer even
+// when the ask runs over several rows
+func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
+	block := strings.TrimRight(draw(entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60, false), "\n")
+	lines := strings.Split(block, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("the band does not reach over more than one row: %q", block)
+	}
+	// the test terminal has no colours, so what is checked here is the row the band style is laid
+	// over: full width, and marked at the left on every row.
+	for _, line := range lines {
+		if lipgloss.Width(line) != 60 {
+			t.Errorf("the band stops short at %d cells: %q", lipgloss.Width(line), line)
+		}
+		if !strings.HasPrefix(stripCodes(line), userMark) {
+			t.Errorf("the row does not start at the mark: %q", stripCodes(line))
+		}
 	}
 }

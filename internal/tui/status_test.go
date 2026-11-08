@@ -116,7 +116,7 @@ func TestTheStatusLineShowsWhatTheDraftModelSaved(t *testing.T) {
 // both speeds the server reports are on the line: how fast it read the prompt, and how fast it wrote
 func TestTheStatusLineShowsPrefillAndDecodeSpeed(t *testing.T) {
 	line := stripCodes(statusLine(status{prefill: 512.4, decode: 33.2}))
-	if !strings.Contains(line, "↑ 512") || !strings.Contains(line, "↓ 33 tok/s") {
+	if !strings.Contains(line, "↑ 512 tok/s") || !strings.Contains(line, "↓ 33 tok/s") {
 		t.Errorf("speeds missing from: %s", line)
 	}
 }

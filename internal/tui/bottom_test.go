@@ -105,3 +105,65 @@ func TestTheInputGrowsWithWhatIsTyped(t *testing.T) {
 		t.Errorf("three lines: input %d rows, transcript %d (was %d)", m.input.Height(), m.view.Height, short)
 	}
 }
+
+// the cursor is not squeezed against the bottom of the terminal
+func TestThePromptHasARowOfAirBelowIt(t *testing.T) {
+	m := newTestModel()
+	m.input.SetValue("count the lines")
+	rows := strings.Split(m.bottomArea(), "\n")
+	if rows[len(rows)-1] != "" {
+		t.Errorf("the last row of the screen holds the cursor: %q", rows[len(rows)-1])
+	}
+}
+
+// a prompt typed as one long line still takes the rows it wraps over
+func TestTheBoxGrowsWithWrappedRowsToo(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.input.SetValue(strings.Repeat("word ", 40))
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	if m.input.Height() < 3 {
+		t.Errorf("a prompt wrapping over several rows leaves the box at %d rows", m.input.Height())
+	}
+}
+
+// past ten rows the box keeps its height and scrolls what is typed inside itself
+func TestTheBoxHoldsTenRowsAndScrollsTheRest(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	if m.input.Height() != maxInputLines {
+		t.Errorf("twelve rows typed: the box holds %d rows, want %d", m.input.Height(), maxInputLines)
+	}
+}
+
+// a long prompt on a short screen may not push the session off it: the screen stays the terminal
+func TestALongPromptOnAShortScreenKeepsTheSessionVisible(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
+	m.log.answer("the file holds 1,204 lines")
+	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	if got := len(strings.Split(m.View(), "\n")); got != 14 {
+		t.Errorf("the screen is %d rows, want the 14 it was given", got)
+	}
+	if m.view.Height < 3 {
+		t.Errorf("the session is left with %d rows to read", m.view.Height)
+	}
+}
+
+// whatever is on the screen, the screen stays the size of the terminal
+func TestTheKeysHelpDoesNotPushTheFramePastTheTerminal(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 22})
+	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	if m.input.Height() != maxInputLines {
+		t.Fatalf("the box holds %d rows, want %d", m.input.Height(), maxInputLines)
+	}
+	if got := len(strings.Split(m.View(), "\n")); got != 22 {
+		t.Errorf("the frame is %d rows on a 22 row terminal: keys help pushed it past the screen", got)
+	}
+}
