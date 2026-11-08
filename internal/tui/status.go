@@ -160,18 +160,6 @@ func fullness(pct int) lipgloss.Style {
 	return styleOK
 }
 
-// duration reads at a glance: 7s, 1m12s, 1h03m.
-func duration(d time.Duration) string {
-	d = d.Round(time.Second)
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-	}
-	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
-}
-
 // tokCount writes a token count the way it is read at a glance: 900, 9.5k, 12k, 131k, 3.1M.
 func tokCount(n int) string {
 	switch {

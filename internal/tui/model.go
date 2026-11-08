@@ -133,15 +133,3 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
-// cutToWidth keeps a plain line inside the screen, ending in … when something was cut.
-func cutToWidth(s string, width int) string {
-	if width <= 1 || lipgloss.Width(s) <= width {
-		return s
-	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > width {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
-}
