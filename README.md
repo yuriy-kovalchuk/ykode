@@ -171,6 +171,15 @@ token counts, and `/usage` adds them up. Those numbers also calibrate the
 estimate used to set each reply's `max_tokens` (when no cap was asked for) and to
 trim old tool output, so the context budget stops guessing.
 
+What ykode does about the server's prompt cache is keep still rather than instruct: the system message
+and the tool list are built once per session so the prefix never moves, folding older turns waits
+until enough has changed to be worth the reset it costs, and `/ctx` reports what the server says it
+found. There are no `cache_control` breakpoints, no `prompt_cache_key`, no retention setting: a local
+`llama.cpp` decides what to keep from the prefix it was already handed, and asking it is a different
+server's business. The one thing every request does say is which conversation it belongs to —
+`X-Session-Id` carries the run's id, which is how a proxy in front of a server keeps one conversation
+on the slot that already holds its cache.
+
 Past 3/4 of the server's window, ykode stops paying for output the model has
 already used. In order, cheapest first:
 

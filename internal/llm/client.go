@@ -30,6 +30,10 @@ type Client struct {
 	apiKey  string
 	http    *http.Client
 	Idle    time.Duration // longest silence a stream may keep before it counts as dead
+
+	// Session names this conversation on every request. A server reached through a proxy can send
+	// one conversation to the slot that already holds its prompt cache; the server itself ignores it.
+	Session string
 }
 
 func NewClient(baseURL, apiKey string) *Client {
@@ -49,6 +53,9 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 	}
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.Session != "" {
+		req.Header.Set("X-Session-Id", c.Session)
 	}
 	return req, nil
 }

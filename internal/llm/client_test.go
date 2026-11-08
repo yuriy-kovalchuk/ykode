@@ -359,3 +359,45 @@ func TestTheWireNeverCarriesYkodeOwnResultIds(t *testing.T) {
 		t.Errorf("the server's own id went missing from the request: %s", body)
 	}
 }
+
+// a conversation is one conversation to the server: every request names the run, so a proxy in
+// front of the server can keep it on the slot that already holds its prompt cache
+func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("X-Session-Id"))
+		switch r.URL.Path {
+		case "/v1/models":
+			fmt.Fprint(w, `{"data":[{"id":"m","n_ctx":4096}]}`)
+		default:
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, frame(`{"choices":[{"delta":{"content":"hi"}}]}`)+"data: [DONE]\n\n")
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "")
+	if _, err := c.Models(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ChatStream(context.Background(), ChatRequest{Model: "m"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range seen {
+		if got != "" {
+			t.Errorf("a request carried %q before the run was named", got)
+		}
+	}
+
+	c.Session = "20261108-1930.000"
+	seen = nil
+	if _, err := c.Models(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ChatStream(context.Background(), ChatRequest{Model: "m"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0] != c.Session || seen[1] != c.Session {
+		t.Errorf("requests carried %v, want the run on both", seen)
+	}
+}

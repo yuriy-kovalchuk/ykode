@@ -140,6 +140,7 @@ func askForServer(cfg config.Config, problem string) (config.Config, error) {
 // connect finds the model and its window, and prints them unless the screen will show them.
 func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, error) {
 	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
+	client.Session = cfg.Session // so a proxy keeps one conversation on the slot holding its cache
 	client.Idle = cfg.StreamIdle
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)
 	defer cancelProbe()
