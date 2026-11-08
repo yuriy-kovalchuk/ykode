@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/size"
 )
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
@@ -21,7 +22,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		a.emit(Event{Kind: TurnStart, Turn: turn})
 		if a.underPressure() {
 			if freed := a.shrinkWhatAged(keepResults); freed > 0 {
-				a.tell(fmt.Sprintf("shortened older tool output to fit the context (%s)", byteSize(freed)))
+				a.tell(fmt.Sprintf("shortened older tool output to fit the context (%s)", size.Text(freed)))
 			}
 		}
 		// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call

@@ -91,16 +91,16 @@ func toolRow(e entry, width int) string {
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
 func draftRows(d draft, width int) string {
-	lines, written, size := d.preview()
+	shown, written, bytes := d.preview()
 	row := fmt.Sprintf("%s %s %s", styleWorking.Render("✎"), styleToolName.Render(d.tool),
-		styleDim.Render(draftHead(d.target(), written, size)))
-	for i, line := range lines {
-		lines[i] = cutToWidth(line, width-4)
+		styleDim.Render(draftHead(d.target(), written, bytes)))
+	for i, line := range shown {
+		shown[i] = cutToWidth(line, width-4)
 	}
-	if len(lines) == 0 {
+	if len(shown) == 0 {
 		return row
 	}
-	return row + "\n" + gutter(strings.Join(lines, "\n"), styleDim)
+	return row + "\n" + gutter(strings.Join(shown, "\n"), styleDim)
 }
 
 // gutter marks a block that is not the answer, such as thinking or a call's preview.

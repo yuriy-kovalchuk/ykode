@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/size"
 )
 
 const (
@@ -28,7 +30,7 @@ func (d draft) target() string {
 }
 
 // preview is the newest lines of what the call writes, and how many lines and bytes it holds so far.
-func (d draft) preview() (lines []string, total int, size int) {
+func (d draft) preview() (lines []string, total, bytes int) {
 	key, known := draftBody[d.tool]
 	if !known {
 		return tail(d.args), lineCount(d.args, "\n"), len(d.args)
@@ -52,13 +54,13 @@ func lineCount(text, newline string) int {
 // draftHead is the one-line head of a call being written: its target and how much is written so
 // far. It reports numbers the preview already counted, since a call of a hundred kilobytes is
 // redrawn while it grows.
-func draftHead(target string, lines, size int) string {
+func draftHead(target string, lines, bytes int) string {
 	parts := []string{}
 	if target != "" {
 		parts = append(parts, target)
 	}
-	if size > 0 {
-		parts = append(parts, byteSize(size), fmt.Sprintf("%d lines", lines))
+	if bytes > 0 {
+		parts = append(parts, size.Text(bytes), fmt.Sprintf("%d lines", lines))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -146,12 +148,4 @@ func unescape(s string) string {
 		}
 	}
 	return b.String()
-}
-
-// byteSize reads like a file listing: 640 B, 2.1 KB.
-func byteSize(n int) string {
-	if n < 1024 {
-		return fmt.Sprintf("%d B", n)
-	}
-	return fmt.Sprintf("%.1f KB", float64(n)/1024)
 }

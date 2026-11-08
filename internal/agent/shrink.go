@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/size"
 )
 
 const (
@@ -148,7 +149,7 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 		return nil, false
 	}
 	line := fmt.Sprintf("%s wrote %s to %s to fit the context; the file on disk has it", shrinkMark,
-		byteSize(len(payload.Content)), payload.Path)
+		size.Text(len(payload.Content)), payload.Path)
 	if name == "edit_file" {
 		written, count := len(payload.NewText)+len(payload.NewString), len(payload.Edits)
 		for _, e := range payload.Edits {
@@ -158,7 +159,7 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 			count = 1 // the one-change form: old_text and new_text at the top
 		}
 		line = fmt.Sprintf("%s changed %s: %d replacement(s), %s of new text, to fit the context; the file on disk has it",
-			shrinkMark, payload.Path, count, byteSize(written))
+			shrinkMark, payload.Path, count, size.Text(written))
 	}
 	if id != "" {
 		line += "; " + id + " was the reply"
@@ -183,9 +184,3 @@ func (a *Agent) repliesFor(assistant int) []int {
 }
 
 // byteSize reads like a file listing: 640 B, 2.1 KB.
-func byteSize(n int) string {
-	if n < 1024 {
-		return fmt.Sprintf("%d B", n)
-	}
-	return fmt.Sprintf("%.1f KB", float64(n)/1024)
-}
