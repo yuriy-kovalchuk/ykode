@@ -8,27 +8,34 @@ import (
 	"time"
 )
 
-// withEnvironment ends a prompt with where the session runs, last so the fixed rules stay a cached prefix.
-func withEnvironment(prompt, root string) string {
+// withEnvironment ends a prompt with where the session runs, last so the fixed rules stay a cached
+// prefix. It hands back the branch as well: the screen names that too, and asking git again at
+// startup is time before anything is drawn.
+func withEnvironment(prompt, root string) (text, branch string) {
+	state, branch := gitState(root)
 	return prompt + "\n<environment>\nproject root: " + root +
 		"\nos: " + runtime.GOOS + "/" + runtime.GOARCH +
 		"\nshell for exec_command: sh\ndate: " + time.Now().Format("2006-01-02") +
-		"\ngit: " + gitState(root) + "\n</environment>\n"
+		"\ngit: " + state + "\n</environment>\n", branch
 }
 
-// gitState is the branch and whether the tree has changes, or that there is no repository.
-func gitState(root string) string {
+// gitState is the branch and whether the tree has changes, or that there is no repository. The two
+// questions are asked at once: a startup that waits for git one after another waits twice.
+func gitState(root string) (state, branch string) {
 	if root == "" {
-		return "unknown"
+		return "unknown", ""
 	}
-	branch := GitBranch(root)
-	if branch == "" {
-		return "not a git repository"
+	head := make(chan string, 1)
+	go func() { head <- GitBranch(root) }()
+	changes := gitOut(root, "status", "--porcelain")
+	branch = <-head
+	switch {
+	case branch == "":
+		return "not a git repository", ""
+	case changes != "":
+		return "branch " + branch + ", uncommitted changes", branch
 	}
-	if changes := gitOut(root, "status", "--porcelain"); changes != "" {
-		return "branch " + branch + ", uncommitted changes"
-	}
-	return "branch " + branch + ", clean"
+	return "branch " + branch + ", clean", branch
 }
 
 // GitBranch is what HEAD points at in root, or "" when root is not a git repository. The screen

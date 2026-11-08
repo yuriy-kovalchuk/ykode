@@ -22,6 +22,7 @@ type Agent struct {
 	sink          Sink
 	callSeq       int          // numbers the r1, r2... ids that the summaries and the audit log share
 	prompt        string       // the system message, built once so the cached prefix never moves
+	branch        string       // the branch the prompt was built on, which the screen can show at once
 	task          string       // the prompt being answered, which compaction keeps word for word
 	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
 	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
@@ -46,7 +47,8 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
 	a.repeats = newLoopGuard()
-	a.prompt = withInstructions(withEnvironment(SystemPrompt, opts.Root), opts.Instructions)
+	environment, branch := withEnvironment(SystemPrompt, opts.Root)
+	a.prompt, a.branch = withInstructions(environment, opts.Instructions), branch
 	a.Reset()
 	return a
 }

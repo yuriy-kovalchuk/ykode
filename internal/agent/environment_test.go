@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -49,7 +50,9 @@ func TestResetKeepsTheSamePrompt(t *testing.T) {
 }
 
 // the footer asks for the branch each prompt, so a command that changed branch shows up
-func TestGitBranchNamesWhatIsCheckedOut(t *testing.T) {
+// gitRepo is a project with one commit on a branch of its own.
+func gitRepo(t *testing.T) string {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -63,10 +66,39 @@ func TestGitBranchNamesWhatIsCheckedOut(t *testing.T) {
 	git("init", "-q")
 	git("-c", "user.email=ykode@example.com", "-c", "user.name=ykode", "commit", "-q", "--allow-empty", "-m", "start")
 	git("checkout", "-q", "-b", "footer")
+	return dir
+}
+
+func TestGitBranchNamesWhatIsCheckedOut(t *testing.T) {
+	dir := gitRepo(t)
 	if got := GitBranch(dir); got != "footer" {
 		t.Errorf("GitBranch = %q, want footer", got)
 	}
 	if got := GitBranch(t.TempDir()); got != "" {
 		t.Errorf("GitBranch of a directory with no repository = %q, want empty", got)
+	}
+}
+
+// the branch the prompt was built on is kept, so the first frame does not wait for git a third time
+func TestTheAgentKeepsTheBranchItsPromptWasBuiltOn(t *testing.T) {
+	dir := gitRepo(t)
+	a := New(nil, nil, "m", Options{Root: dir}, nil)
+	if a.Branch() != "footer" {
+		t.Errorf("the agent knows branch %q, want footer", a.Branch())
+	}
+	if prompt := a.history[0].Content; !strings.Contains(prompt, "git: branch footer, clean") {
+		t.Errorf("the prompt does not say what is checked out:\n%s", prompt)
+	}
+}
+
+// a change in the tree is said, and the branch is still the branch
+func TestThePromptSaysWhenTheTreeHasChanges(t *testing.T) {
+	dir := gitRepo(t)
+	if err := os.WriteFile(dir+"/note.txt", []byte("work"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, branch := gitState(dir)
+	if state != "branch footer, uncommitted changes" || branch != "footer" {
+		t.Errorf("gitState = %q, %q", state, branch)
 	}
 }

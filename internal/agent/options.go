@@ -48,6 +48,10 @@ func (a *Agent) CtxSize() int { return a.opts.CtxSize }
 // Root is the project directory this session works in.
 func (a *Agent) Root() string { return a.opts.Root }
 
+// Branch names what HEAD pointed at when the prompt was built. The screen refreshes it before each
+// ask; this saves the run one git call before anything is on screen.
+func (a *Agent) Branch() string { return a.branch }
+
 // Model is the model id this agent talks to.
 func (a *Agent) Model() string { return a.model }
 

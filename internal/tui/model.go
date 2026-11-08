@@ -80,7 +80,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		cfg:     cfg,
 		mouseOn: cfg.Mouse,
 		root:    a.Root(),
-		branch:  agent.GitBranch(a.Root()),
+		branch:  a.Branch(), // the branch the prompt was built on; the next ask refreshes it
 		input:   input,
 		view:    window{height: defaultHeight},
 		width:   defaultWidth,
