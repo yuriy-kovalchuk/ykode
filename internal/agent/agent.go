@@ -166,6 +166,8 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			a.Compact(ctx)
 		}
 		a.trimHistory() // last resort: blank what is left, then drop whole calls
+		// what a front end reads next is what this request is built from, not what the last reply cost
+		a.publishUsage()
 		req, err := a.request(forceTool)
 		forceTool = false
 		if err != nil {

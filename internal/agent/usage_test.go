@@ -161,3 +161,25 @@ func TestTheDraftCountersReachTheUsageSnapshot(t *testing.T) {
 		t.Errorf("and /ctx does not show it: %s", a.ContextLine())
 	}
 }
+
+// the conversation's cache total is its own number, apart from what the last request cached
+func TestTheCacheTotalAddsUpOverTheWholeConversation(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		answerWithTimings("one", 900, 800, 20),
+		answerWithTimings("two", 1100, 1000, 30),
+	}}
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
+	defer cleanup()
+	for _, prompt := range []string{"first", "second"} {
+		if err := a.Ask(context.Background(), prompt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u := a.Usage()
+	if u.TotalPrompt != 3800 || u.CachedTotal != 1800 {
+		t.Errorf("totals = %d prompt, %d cached; want 3800 and 1800", u.TotalPrompt, u.CachedTotal)
+	}
+	if u.CachedTok != 1000 {
+		t.Errorf("the last request cached %d, want 1000: the total must not replace it", u.CachedTok)
+	}
+}

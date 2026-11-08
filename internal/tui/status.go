@@ -2,12 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // ctx fullness above these is shown as a warning, then as a problem
@@ -16,9 +19,12 @@ const (
 	ctxBadPct  = 85
 )
 
-// status is what the status line reports.
+// status is what the two footer rows report.
 type status struct {
+	root     string // the project the session works in
+	branch   string // what HEAD points at there; "" outside a repository
 	model    string
+	thinking string // how deeply the model thinks on the turns that follow
 	usage    agent.Usage
 	ctxSize  int
 	prefill  float64 // tokens per second the server read the prompt at
@@ -32,42 +38,70 @@ type status struct {
 	width    int  // 0 leaves the two sides unaligned
 }
 
-// statusLine puts the session's facts on the left and what is happening now on the right.
-func statusLine(s status) string {
-	sep := styleDim.Render(" · ")
-	facts, activity := statusFacts(s), strings.Join(statusActivity(s), sep)
-	if s.width == 0 {
-		return strings.Join(facts, sep) + "   " + activity
+// factSep separates the facts on the left from what is happening on the right.
+var factSep = styleDim.Render(" · ")
+
+// sessionLine is the footer's top row: where the session runs, and which model and depth answer.
+func sessionLine(s status) string {
+	where := shortenHome(s.root)
+	if s.branch != "" {
+		where += " (" + s.branch + ")"
 	}
-	// a narrow screen drops facts from the end; what is happening now always stays
-	for len(facts) > 0 {
-		left := strings.Join(facts, sep)
-		if gap := s.width - lipgloss.Width(left) - lipgloss.Width(activity); gap >= 2 {
-			return left + strings.Repeat(" ", gap) + activity
-		}
-		facts = facts[:len(facts)-1]
+	depth := s.thinking
+	if depth == llm.ThinkingOff {
+		depth = "thinking off"
 	}
-	return activity
+	return align([]string{styleDim.Render(oneLine(where, 60))},
+		[]string{styleAccent.Render(oneLine(s.model, 40)), styleDim.Render(depth)}, s.width)
 }
 
-// statusFacts change slowly: which model, how full the window is, how much the server had cached.
-func statusFacts(s status) []string {
-	facts := []string{styleAccent.Render(oneLine(s.model, 40))}
-	used := s.usage.EstTok
-	if s.usage.Turns == 0 {
-		used = 0
+// statusLine is the footer's second row: what the conversation has cost, and what is happening now.
+func statusLine(s status) string {
+	return align(statusFacts(s), statusActivity(s), s.width)
+}
+
+// align spreads the facts and the activity across the width, dropping facts from the front of
+// the left group when the screen cannot hold both; what is happening now is never dropped.
+func align(facts, activity []string, width int) string {
+	left, right := strings.Join(facts, factSep), strings.Join(activity, factSep)
+	if width == 0 {
+		return left + "   " + right
 	}
-	if s.ctxSize > 0 {
-		pct := used * 100 / s.ctxSize
-		facts = append(facts, fullness(pct).Render(fmt.Sprintf("ctx %s/%s %d%%", kilo(used), kilo(s.ctxSize), pct)))
-	} else {
-		facts = append(facts, styleDim.Render(fmt.Sprintf("ctx %s", kilo(used))))
+	for len(facts) > 0 {
+		if gap := width - lipgloss.Width(left) - lipgloss.Width(right); gap >= 2 {
+			return left + strings.Repeat(" ", gap) + right
+		}
+		facts = facts[1:]
+		left = strings.Join(facts, factSep)
+	}
+	return right
+}
+
+// statusFacts change slowly: what the session has sent and received in all, and how full the
+// window is. The window comes last, so it is the last thing a narrow screen drops.
+func statusFacts(s status) []string {
+	var facts []string
+	if s.usage.TotalPrompt > 0 {
+		facts = append(facts, styleDim.Render("↑")+tokCount(s.usage.TotalPrompt))
+	}
+	if s.usage.GenTok > 0 {
+		facts = append(facts, styleDim.Render("↓")+tokCount(s.usage.GenTok))
+	}
+	if s.usage.CachedTotal > 0 {
+		facts = append(facts, styleDim.Render("R")+tokCount(s.usage.CachedTotal))
 	}
 	if s.usage.PromptTok > 0 {
 		facts = append(facts, styleDim.Render(fmt.Sprintf("cache %d%%", s.usage.CachedTok*100/s.usage.PromptTok)))
 	}
 	if s.usage.Acceptance > 0 {
 		facts = append(facts, styleDim.Render(fmt.Sprintf("draft %d%%", int(s.usage.Acceptance*100+0.5))))
+	}
+	used := s.usage.EstTok
+	if s.ctxSize > 0 {
+		pct := used * 100 / s.ctxSize
+		facts = append(facts, fullness(pct).Render(fmt.Sprintf("ctx %s/%s %d%%", tokCount(used), tokCount(s.ctxSize), pct)))
+	} else {
+		facts = append(facts, styleDim.Render(fmt.Sprintf("ctx %s", tokCount(used))))
 	}
 	return facts
 }
@@ -99,6 +133,22 @@ func statusActivity(s status) []string {
 	return now
 }
 
+// shortenHome writes a path under $HOME from ~, so the root and its branch fit beside the model.
+func shortenHome(dir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return dir
+	}
+	if dir == home {
+		return "~"
+	}
+	sep := string(filepath.Separator)
+	if !strings.HasPrefix(dir, home+sep) {
+		return dir
+	}
+	return "~" + sep + strings.TrimPrefix(dir, home+sep)
+}
+
 // fullness colours how much of the window is used: green, then yellow, then red.
 func fullness(pct int) lipgloss.Style {
 	switch {
@@ -122,14 +172,17 @@ func duration(d time.Duration) string {
 	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
-// kilo writes 131072 as 131k: the numbers are read at a glance, not compared.
-func kilo(n int) string {
+// tokCount writes a token count the way it is read at a glance: 900, 9.5k, 12k, 131k, 3.1M.
+func tokCount(n int) string {
 	switch {
-	case n >= 100000:
+	case n >= 10000000:
+		return fmt.Sprintf("%dM", n/1000000)
+	case n >= 1000000:
+		return fmt.Sprintf("%.1fM", float64(n)/1000000)
+	case n >= 10000:
 		return fmt.Sprintf("%dk", n/1000)
 	case n >= 1000:
 		return fmt.Sprintf("%.1fk", float64(n)/1000)
-	default:
-		return fmt.Sprintf("%d", n)
 	}
+	return fmt.Sprintf("%d", n)
 }

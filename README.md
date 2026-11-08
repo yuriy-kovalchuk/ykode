@@ -55,7 +55,7 @@ Four commands change the run rather than the conversation:
 
 | command | what it does |
 |---|---|
-| `/ctx` | how full the window is, what the server had cached, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
+| `/ctx` | how full the window is, what the server had cached in the last request and in all of them, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
 | `/tools` | the tools the model may call, and the bytes each description adds to every request |
 | `/model [id]` | which model this run asks for, or ask a different one from now on |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
@@ -69,7 +69,7 @@ returns to the prompt.
 
 A plain `ykode` opens an alternate-screen session: the transcript scrolls, the thinking and
 the answer arrive as one block each, a tool call shows while the model is still writing it, and
-one line at the bottom reports what the session costs. `--no-tui` keeps the line prompt; so does
+two rows at the bottom report where the session runs and what it costs. `--no-tui` keeps the line prompt; so does
 a run that is not on a terminal, and `-p`/`--json`, which write to stdout.
 
 ```
@@ -101,12 +101,18 @@ moment the turn ends. The commands of `In the session` work there too, except
 that `/reset`, `/compact` and `/undo` wait for the running turn rather than
 racing it.
 
-The bottom line has the session's facts on the left — `model · ctx used/total % · cache % · draft %`
-— and what is happening on the right: the running prompt's clock (`✓ done in 51s` once it
-finishes), then the server's speed, `↑` reading the prompt and `↓` writing, updated while the reply
-streams. `draft %` only appears when the server ran a draft model: how much of its work the real
-model kept. The cache percentage is llama.cpp's: how much of the request it already had. Each
-prompt shows the time it was sent, and each finished one when it ended and how long it took.
+The footer is two rows. The first names where the session runs on the left — the project root and the
+branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` — and on the right the
+model and how deeply it thinks (`· high`, or `· thinking off`). The second has what the conversation
+has cost on the left: `↑` prompt tokens, `↓` generated, and `R` of them served from the server's cache,
+all three summed over the whole session; then `cache %` for what the last request found already cached,
+`draft %` where the server ran a draft model (how much of its work the real model kept), and last how
+full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
+keeps the window. What is happening now sits on the right of that row: the running prompt's clock
+(`✓ done in 51s` once it finishes), then the server's speed, `↑` reading the prompt and `↓` writing,
+updated while the reply streams. The cache percentage is llama.cpp's: how much of the request it already
+had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
+The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 
 ## Tools
 

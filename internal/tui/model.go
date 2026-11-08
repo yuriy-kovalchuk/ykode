@@ -40,10 +40,11 @@ type model struct {
 	ctx      context.Context
 	hub      *Hub // what a run reports to, including that it finished
 	agent    *agent.Agent
+	root     string // the project the footer names
+	branch   string // what HEAD points at there, read again with each prompt
 	input    textarea.Model
 	view     viewport.Model
 	log      transcript
-	usage    agent.Usage
 	decode   float64 // tokens per second of the last answer
 	prefill  float64 // tokens per second the last prompt was read at
 	started  time.Time
@@ -84,6 +85,8 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
 		ctx:    ctx,
 		hub:    hub,
 		agent:  a,
+		root:   a.Root(),
+		branch: agent.GitBranch(a.Root()),
 		input:  input,
 		view:   viewport.New(defaultWidth, defaultHeight),
 		width:  defaultWidth,
@@ -309,6 +312,8 @@ func (m *model) start(prompt string) tea.Cmd {
 // begin marks the screen busy and starts the clock the status line counts.
 func (m *model) begin() {
 	m.running, m.started, m.took = true, time.Now(), 0
+	m.err = ""                         // what failed last turn is not a notice to keep reading next turn
+	m.branch = agent.GitBranch(m.root) // the run may have changed branch with a command
 	m.refresh()
 }
 
@@ -339,7 +344,6 @@ func (m *model) handle(ev agent.Event) {
 	case agent.Answer:
 		m.log.answer(ev.Text)
 	case agent.TurnEnd:
-		m.usage = m.agent.Usage()
 		m.decode, m.prefill = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec
 		m.log.dropDrafts()
 	case agent.ToolDraft:
@@ -405,9 +409,10 @@ func cutToWidth(s string, width int) string {
 	return string(r) + "…"
 }
 
-// status is what the status line reports right now.
+// status is what the footer reports right now.
 func (m *model) status() status {
-	s := status{model: m.agent.Model(), usage: m.usage, ctxSize: m.agent.CtxSize(), prefill: m.prefill,
+	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
+		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
 		decode: m.decode, running: m.running, queued: len(m.queue), took: m.took, spinner: m.spin.View(),
 		keysHint: !m.showKeys, width: m.width}
 	if m.running {

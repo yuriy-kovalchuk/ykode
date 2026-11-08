@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 func newTestModel() *model {
@@ -352,5 +353,41 @@ func TestTheSpeedsUpdateWhileTheReplyStreams(t *testing.T) {
 	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{DecodeTokSec: 0}})
 	if s := m.status(); s.prefill != 430 || s.decode != 41 {
 		t.Errorf("status = prefill %.0f decode %.0f, want 430 and 41", s.prefill, s.decode)
+	}
+}
+
+// the footer names the project the agent works in, and the depth it thinks at
+func TestTheFooterReadsWhatTheAgentKnows(t *testing.T) {
+	dir := t.TempDir()
+	a := agent.New(nil, nil, "test-model", agent.Options{Root: dir, ThinkingLevel: "high"}, nil)
+	m := newModel(context.Background(), a, NewHub())
+	s := m.status()
+	if s.root != dir || s.thinking != "high" || s.model != "test-model" {
+		t.Errorf("the footer reports %+v, want the agent's root, model and depth", s)
+	}
+}
+
+// the footer reads the agent's numbers as it draws, so a command that changed the conversation shows
+// on the next frame rather than on the next reply
+func TestTheFooterReadsTheAgentsNumbersAtDrawTime(t *testing.T) {
+	a := agent.New(nil, nil, "test-model", agent.Options{CtxSize: 8000}, nil)
+	m := newModel(context.Background(), a, NewHub())
+	before := stripCodes(statusLine(m.status()))
+	a.Resume([]llm.Message{{Role: "user", Content: strings.Repeat("a call, ", 600)}})
+	if after := stripCodes(statusLine(m.status())); after == before {
+		t.Errorf("the footer kept its numbers after the conversation grew:\n%s\n%s", before, after)
+	}
+}
+
+// what failed last turn is not a notice the screen keeps reading: the next prompt clears the row
+func TestANewRunClearsTheErrorRow(t *testing.T) {
+	m := newTestModel()
+	m.err = "the server hung up mid-turn"
+	if !strings.Contains(m.bottomArea(), "the server hung up") {
+		t.Fatal("a failed run left no row to clear")
+	}
+	m.begin()
+	if strings.Contains(m.bottomArea(), "the server hung up") {
+		t.Error("the old failure is still on screen while a new turn runs")
 	}
 }

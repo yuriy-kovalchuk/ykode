@@ -396,3 +396,28 @@ func TestTheSummariserIsNeverHandedMoreThanTheWindowHolds(t *testing.T) {
 		t.Error("the cut lost the start (an earlier summary) or the end (the latest work)")
 	}
 }
+
+// what a front end reads about the cost follows the fold, instead of waiting for the next reply
+func TestCompactionRepublishesWhatTheConversationCosts(t *testing.T) {
+	dir := t.TempDir()
+	name := writeLines(t, dir, "first.txt", 60)
+	stub := &stubServer{scripts: []string{
+		sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + name + `"}`}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
+	defer done()
+	if err := a.Ask(context.Background(), "read it"); err != nil {
+		t.Fatal(err)
+	}
+
+	before := a.Usage().EstTok
+	freed := a.Compact(context.Background())
+	if freed <= 0 {
+		t.Fatalf("Compact freed %d tokens with a multi-kilobyte result in the history", freed)
+	}
+	if after := a.Usage().EstTok; after >= before {
+		t.Errorf("the published estimate is still %d after folding %d away; the history now estimates %d",
+			after, freed, a.estimateTokens())
+	}
+}

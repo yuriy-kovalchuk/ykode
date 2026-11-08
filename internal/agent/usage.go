@@ -14,6 +14,7 @@ type Usage struct {
 	CachedTok   int // of those, served from the server's prompt cache
 	GenTok      int // tokens generated over the whole conversation
 	TotalPrompt int // prompt tokens over the whole conversation
+	CachedTotal int // of those, what the cache served over the whole conversation
 	EstTok      int // estimate for the request that would go out next
 	BytesPerTok float64
 	Draft       int // tokens a draft model proposed, where the server runs one
@@ -29,9 +30,9 @@ const (
 
 // meter adds up the turns and learns the byte ratio the server counts with.
 type meter struct {
-	turns, prompt, cached, generated, totalPrompt int
-	draft, draftOK                                int
-	bytesPerTok                                   float64
+	turns, prompt, cached, generated, totalPrompt, cachedTotal int
+	draft, draftOK                                             int
+	bytesPerTok                                                float64
 }
 
 // percent of part in whole, 0 when there was nothing to compare against.
@@ -53,7 +54,7 @@ func acceptance(kept, proposed int) float64 {
 func newMeter() meter { return meter{bytesPerTok: defaultBytesPerTok} }
 
 func (m *meter) clearCost() {
-	m.turns, m.prompt, m.cached, m.generated, m.totalPrompt = 0, 0, 0, 0, 0
+	m.turns, m.prompt, m.cached, m.generated, m.totalPrompt, m.cachedTotal = 0, 0, 0, 0, 0, 0
 	m.draft, m.draftOK = 0, 0
 }
 
@@ -64,6 +65,7 @@ func (m *meter) observe(stats Stats, sentBytes int) {
 	m.draft, m.draftOK = stats.DraftN, stats.DraftNAccepted
 	m.generated += stats.OutputTokens
 	m.totalPrompt += stats.PromptTokens
+	m.cachedTotal += stats.CachedTokens
 	if stats.PromptTokens <= 0 || sentBytes <= 0 {
 		return
 	}
@@ -84,6 +86,7 @@ func (a *Agent) publishUsage() {
 		CachedTok:   a.meter.cached,
 		GenTok:      a.meter.generated,
 		TotalPrompt: a.meter.totalPrompt,
+		CachedTotal: a.meter.cachedTotal,
 		EstTok:      est,
 		BytesPerTok: a.meter.bytesPerTok,
 		Draft:       a.meter.draft,
@@ -113,6 +116,7 @@ func (a *Agent) ContextLine() string {
 	if u.Turns > 0 {
 		fmt.Fprintf(&b, "last request %d tokens, %d of them cached (%d%%)\n",
 			u.PromptTok, u.CachedTok, percent(u.CachedTok, u.PromptTok))
+		fmt.Fprintf(&b, "%d prompt tokens in all, %d of them served from the cache\n", u.TotalPrompt, u.CachedTotal)
 	}
 	if a.opts.MaxResult > 0 {
 		fmt.Fprintf(&b, "one tool result is capped at %d bytes\n", a.opts.MaxResult)
@@ -126,6 +130,9 @@ func (a *Agent) ContextLine() string {
 
 // CtxSize is the context window the budget is measured against; 0 when the server never reported one.
 func (a *Agent) CtxSize() int { return a.opts.CtxSize }
+
+// Root is the project directory this session works in.
+func (a *Agent) Root() string { return a.opts.Root }
 
 // Model is the model id this agent talks to.
 func (a *Agent) Model() string { return a.model }

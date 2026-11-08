@@ -9,7 +9,8 @@ import (
 
 const (
 	promptMark    = "❯ "
-	maxInputLines = 6 // the input grows with what is typed, up to this
+	maxInputLines = 6  // the input grows with what is typed, up to this
+	inputGap      = "" // a blank row between what the session reports and what the user reads next
 )
 
 // keys is what ? shows, as key and what it does.
@@ -21,17 +22,18 @@ var keys = [][2]string{
 
 var questionBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1)
 
-// bottomArea is everything under the transcript: a question if one waits, the rule, the prompt, the status.
+// bottomArea is everything under the transcript: the two footer rows, a blank row, the rule,
+// the keys if ? asked for them, the question if one waits, and the prompt.
 func (m *model) bottomArea() string {
-	var rows []string
-	if len(m.pending) > 0 {
-		rows = append(rows, m.question())
-	}
-	rows = append(rows, ruleWith(m.width, m.scrollMark()))
+	s := m.status()
+	rows := []string{sessionLine(s), statusLine(s), inputGap, ruleWith(m.width, m.scrollMark())}
 	if m.showKeys {
 		rows = append(rows, m.keysHelp())
 	}
-	rows = append(rows, m.promptLines(), statusLine(m.status()))
+	if len(m.pending) > 0 {
+		rows = append(rows, m.question())
+	}
+	rows = append(rows, m.promptLines())
 	if m.err != "" {
 		rows = append(rows, styleBad.Render(oneLine(m.err, max(m.width-2, 1))))
 	}

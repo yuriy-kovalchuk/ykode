@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -44,5 +45,28 @@ func TestResetKeepsTheSamePrompt(t *testing.T) {
 	a.Reset()
 	if a.history[0].Content != before {
 		t.Error("the system message was rebuilt by /reset")
+	}
+}
+
+// the footer asks for the branch each prompt, so a command that changed branch shows up
+func TestGitBranchNamesWhatIsCheckedOut(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("-c", "user.email=ykode@example.com", "-c", "user.name=ykode", "commit", "-q", "--allow-empty", "-m", "start")
+	git("checkout", "-q", "-b", "footer")
+	if got := GitBranch(dir); got != "footer" {
+		t.Errorf("GitBranch = %q, want footer", got)
+	}
+	if got := GitBranch(t.TempDir()); got != "" {
+		t.Errorf("GitBranch of a directory with no repository = %q, want empty", got)
 	}
 }

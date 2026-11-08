@@ -46,7 +46,7 @@ func TestQuestionMarkInAPromptIsTyped(t *testing.T) {
 	}
 }
 
-// a question sits in its own box between the transcript and the prompt, which stays visible
+// a question sits in its own box between the rule and the prompt, which stays visible
 func TestAQuestionHasItsOwnBoxAboveThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -56,11 +56,38 @@ func TestAQuestionHasItsOwnBoxAboveThePrompt(t *testing.T) {
 	if question < 0 || prompt < 0 || question > prompt {
 		t.Errorf("the question is not above the prompt:\n%s", area)
 	}
-	if !strings.Contains(area, "y yes · a always · n no") || !strings.Contains(area, "╭") {
-		t.Errorf("the question is not in a box with its answers:\n%s", area)
+	box := stripCodes(m.question())
+	if !strings.Contains(box, "y yes · a always · n no") || !strings.Contains(box, "╭") {
+		t.Errorf("the question is not in a box with its answers:\n%s", box)
 	}
-	if box := strings.Split(area, "\n")[0]; lipgloss.Width(box) >= 80 {
+	if boxWidth := lipgloss.Width(strings.Split(box, "\n")[0]); boxWidth >= 80 {
 		t.Errorf("the box spans the screen instead of fitting its question: %q", box)
+	}
+}
+
+// the footer's two rows sit above the rule, the prompt under it, with a blank row between
+func TestTheFooterSitsAboveTheRuleAndThePrompt(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.root, m.branch = "/home/user/project", "main"
+	rows := strings.Split(stripCodes(m.bottomArea()), "\n")
+	at := func(needle string) int {
+		for i, row := range rows {
+			if strings.Contains(row, needle) {
+				return i
+			}
+		}
+		return -1
+	}
+	project, costs, ruled, prompt := at("/home/user/project (main)"), at("ctx "), at("─"), at(promptMark)
+	if project < 0 || costs != project+1 || rows[project+1] == "" {
+		t.Errorf("the costs are not the row under the project:\n%s", strings.Join(rows, "\n"))
+	}
+	if ruled != costs+2 || rows[costs+1] != "" {
+		t.Errorf("the rule is not two rows under the costs, across a blank row:\n%s", strings.Join(rows, "\n"))
+	}
+	if prompt < ruled {
+		t.Errorf("the prompt sits above the rule:\n%s", strings.Join(rows, "\n"))
 	}
 }
 

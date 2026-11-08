@@ -21,18 +21,32 @@ func gitState(root string) string {
 	if root == "" {
 		return "unknown"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	git := func(args ...string) (string, error) {
-		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...).Output()
-		return strings.TrimSpace(string(out)), err
-	}
-	branch, err := git("rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
+	branch := GitBranch(root)
+	if branch == "" {
 		return "not a git repository"
 	}
-	if changes, _ := git("status", "--porcelain"); changes != "" {
+	if changes := gitOut(root, "status", "--porcelain"); changes != "" {
 		return "branch " + branch + ", uncommitted changes"
 	}
 	return "branch " + branch + ", clean"
+}
+
+// GitBranch is what HEAD points at in root, or "" when root is not a git repository. The screen
+// asks for it each turn; the prompt asked for it once, when it was built.
+func GitBranch(root string) string {
+	if root == "" {
+		return ""
+	}
+	return gitOut(root, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
+// gitOut runs one git command in root and returns its trimmed output, "" when it fails.
+func gitOut(root string, args ...string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

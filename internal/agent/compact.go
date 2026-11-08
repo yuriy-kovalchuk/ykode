@@ -29,14 +29,14 @@ func (a *Agent) Compact(ctx context.Context) int {
 	if start < 2 {
 		a.shrinkForCompaction()
 		a.trimHistory()
-		return before - a.estimateTokens()
+		return a.foldFreed(before)
 	}
 	summary, err := a.summariseWithModel(ctx, a.transcriptOf(a.dropping(start, task)))
 	if err != nil {
 		a.tell("the model could not summarise the older turns; shortening tool results instead")
 		a.shrinkForCompaction()
 		a.trimHistory()
-		return before - a.estimateTokens()
+		return a.foldFreed(before)
 	}
 	dropped := a.dropping(start, task)
 	a.forget(dropped...)
@@ -48,6 +48,13 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}
 	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
 	a.compactedAt = callBlocks(a.history)
+	return a.foldFreed(before)
+}
+
+// foldFreed reports what the fold saved, and republishes the conversation's cost so the footer and
+// /ctx show the history as it now stands rather than as it was when the last reply arrived.
+func (a *Agent) foldFreed(before int) int {
+	a.publishUsage()
 	return before - a.estimateTokens()
 }
 

@@ -234,7 +234,7 @@ func (m *setupModel) View() string {
 		for i, model := range m.models {
 			line := model.ID
 			if model.CtxSize > 0 {
-				line += setupDim.Render(fmt.Sprintf("  %s context", kilo(model.CtxSize)))
+				line += setupDim.Render(fmt.Sprintf("  %s context", tokCount(model.CtxSize)))
 			}
 			if i == m.pick {
 				b.WriteString(setupPick.Render("❯ ") + setupPick.Render(model.ID) + strings.TrimPrefix(line, model.ID) + "\n")
