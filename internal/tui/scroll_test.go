@@ -50,13 +50,20 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 }
 
 // the arrows still walk the history: only the wheel changed meaning
-func TestTheArrowsStillWalkTheHistory(t *testing.T) {
+// the arrows and the wheel move the session; the earlier prompts are reached with ctrl+p, so a
+// scroll gesture cannot write one into the box
+func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 	m := longSession(t)
-	m.mouseOn = true // the wheel only reaches the screen when it was given the mouse
+	m.mouseOn = true
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
+
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := m.input.Value(); got != "" {
+		t.Errorf("an arrow wrote into the box: %q", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
 	if got := m.input.Value(); got != "an earlier prompt" {
-		t.Errorf("up with an empty box gave %q, want the earlier prompt", got)
+		t.Errorf("ctrl+p gave %q, want the earlier prompt", got)
 	}
 }
 

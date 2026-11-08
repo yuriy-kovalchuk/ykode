@@ -78,7 +78,14 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submit()
 	}
 
-	// with an empty box the arrows walk the prompts you sent; with text they move the cursor
+	switch msg.String() {
+	case "ctrl+p", "ctrl+n":
+		m.walkHistory(msg.String() == "ctrl+p")
+		m.trackSuggestions()
+		m.refresh()
+		return m, nil
+	}
+
 	if m.input.Value() == "" {
 		switch msg.String() {
 		case "?":
@@ -89,22 +96,20 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view.GotoBottom()
 			m.unseen = false
 			return m, nil
+		}
+	}
+
+	// a trackpad or wheel in a terminal that is not holding the mouse arrives as arrow keys, so
+	// the arrows move the session: a gesture must never write an old prompt into the box. With
+	// more than one line in the box there is a caret to move, and it gets the arrows instead.
+	if m.input.LineCount() <= 1 {
+		switch msg.String() {
 		case "up":
-			if m.histIdx > 0 {
-				m.histIdx--
-				m.input.SetValue(m.history[m.histIdx])
-				m.trackSuggestions()
-			}
+			m.view.ScrollUp(wheelStep)
 			return m, nil
 		case "down":
-			if m.histIdx < len(m.history)-1 {
-				m.histIdx++
-				m.input.SetValue(m.history[m.histIdx])
-			} else {
-				m.histIdx = len(m.history)
-				m.input.SetValue("")
-				m.trackSuggestions()
-			}
+			m.view.ScrollDown(wheelStep)
+			m.seenIfAtBottom()
 			return m, nil
 		}
 	}
@@ -115,6 +120,25 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.trackSuggestions()
 	m.layout()
 	return m, cmd
+}
+
+// walkHistory steps through the prompts sent this session. What was typed but never sent waits at
+// the end of the walk, so reading earlier prompts cannot lose the one being written.
+func (m *model) walkHistory(older bool) {
+	if m.histIdx >= len(m.history) || m.input.Value() != m.history[m.histIdx] {
+		m.unsent = m.input.Value() // the box holds a line being written, not a prompt it stopped on
+	}
+	if older && m.histIdx > 0 {
+		m.histIdx--
+	} else if !older && m.histIdx < len(m.history) {
+		m.histIdx++
+	}
+	if m.histIdx < len(m.history) {
+		m.input.SetValue(m.history[m.histIdx])
+		return
+	}
+	m.histIdx = len(m.history)
+	m.input.SetValue(m.unsent)
 }
 
 // reply answers the question on the screen; the run that asked it is blocked until then.

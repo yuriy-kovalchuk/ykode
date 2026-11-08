@@ -23,9 +23,14 @@ func (m *model) refresh() {
 	}
 }
 
-// layout shrinks the transcript, because the question, the keys and the input can all grow.
+// layout shrinks the transcript, because the question, the keys and the input can all grow. A
+// reader at the end of the session stays there: the box growing must not lift them off it.
 func (m *model) layout() {
+	atBottom := m.view.AtBottom()
 	m.view.Height = max(m.height-lipgloss.Height(m.bottomArea()), 3)
+	if atBottom {
+		m.view.GotoBottom()
+	}
 }
 
 func (m *model) View() string {

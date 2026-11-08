@@ -87,7 +87,8 @@ screen opens when the configured server does not answer, with the error on it.
 |---|---|
 | `enter` | sends the prompt |
 | `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines |
-| `up`, `down` | walks the prompts you sent this session (with an empty box) |
+| `up`, `down` | scroll the transcript; with more than one line in the box they move the caret. A trackpad or wheel in a terminal that is not holding the mouse arrives as these keys, so they never write into the box |
+| `ctrl+p`, `ctrl+n` | walk the prompts you sent this session; a line you were writing waits at the end of the walk |
 | mouse wheel | scrolls the transcript, once the screen has the mouse (`ctrl+t`, or `mouse: true`); scrolled up, the rule above the status says where you are and when new output arrived below |
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |

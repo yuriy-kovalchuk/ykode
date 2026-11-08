@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -75,25 +76,92 @@ func TestCtrlCCancelsARunBeforeItQuits(t *testing.T) {
 	}
 }
 
-func TestTheArrowsWalkOlderPromptsOnlyWithAnEmptyBox(t *testing.T) {
+// ctrl+p and ctrl+n walk the prompts sent this session, and what was typed but not sent waits at
+// the end of the walk instead of being overwritten
+func TestCtrlPWalksOlderPromptsAndKeepsWhatWasTyped(t *testing.T) {
 	m := newTestModel()
 	m.history = []string{"first question", "second question"}
 	m.histIdx = len(m.history)
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
 	if m.input.Value() != "second question" {
-		t.Errorf("up gave %q", m.input.Value())
+		t.Errorf("ctrl+p gave %q", m.input.Value())
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	if m.input.Value() != "second question" {
-		t.Errorf("down gave %q", m.input.Value())
+		t.Errorf("ctrl+n gave %q", m.input.Value())
 	}
 
+	m.histIdx = len(m.history) // as it sits after a prompt was sent
 	m.input.SetValue("typing")
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	if m.input.Value() != "typing" {
-		t.Errorf("up overwrote what was being typed: %q", m.input.Value())
+		t.Errorf("walking back past the end lost the line being typed: %q", m.input.Value())
+	}
+}
+
+// a trackpad scroll reaches a terminal that is not holding the mouse as arrow keys: it moves the
+// session, and never writes a prompt into the box
+func TestAScrollMovesTheSessionNotThePrompt(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	for i := 0; i < 40; i++ {
+		m.log.notice(fmt.Sprintf("row %d of a long session", i))
+	}
+	m.refresh()
+	if !m.view.AtBottom() {
+		t.Fatal("the session did not start at its end")
+	}
+
+	for i := 0; i < 4; i++ {
+		m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	}
+	if m.view.AtBottom() {
+		t.Error("the arrows did not move the session")
+	}
+	if m.input.Value() != "" {
+		t.Errorf("a scroll wrote into the box: %q", m.input.Value())
+	}
+	if m.histIdx != len(m.history) {
+		t.Errorf("a scroll walked the prompt history to %d", m.histIdx)
+	}
+}
+
+// with more than one line in the box the arrows move the caret through that text, not the session
+func TestTheArrowsMoveTheCaretInAMultiLinePrompt(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	for i := 0; i < 40; i++ {
+		m.log.notice(fmt.Sprintf("row %d of a long session", i))
+	}
+	m.refresh()
+	m.input.SetValue("one\ntwo")
+	m.refresh()
+
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.input.Line() != 1 {
+		t.Errorf("the caret is on line %d, want it moved down through the prompt", m.input.Line())
+	}
+	if m.input.Value() != "one\ntwo" {
+		t.Errorf("the box changed: %q", m.input.Value())
+	}
+}
+
+// growing the box while reading the end of the session keeps the end on screen
+func TestGrowingTheBoxKeepsTheEndOfTheSession(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
+	for i := 0; i < 40; i++ {
+		m.log.notice(fmt.Sprintf("row %d of a long session", i))
+	}
+	m.refresh()
+
+	m.input.SetValue("one\ntwo")
+	m.refresh()
+	if !m.view.AtBottom() {
+		t.Errorf("the session lifted off its end as the box grew: scrolled to %.0f%%", m.view.ScrollPercent()*100)
 	}
 }
 

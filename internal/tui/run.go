@@ -18,7 +18,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	}
 	m.input.Reset()
 	m.history = append(m.history, text)
-	m.histIdx = len(m.history)
+	m.histIdx, m.unsent = len(m.history), ""
 
 	if strings.HasPrefix(text, "/") {
 		if strings.HasPrefix(text, "/compact") && !m.running {

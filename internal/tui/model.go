@@ -47,6 +47,7 @@ type model struct {
 	suggestFor string
 	history    []string
 	histIdx    int
+	unsent     string // what is in the box while the earlier prompts are being read
 	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
 	showKeys   bool   // ? lists the keys above the prompt
 	unseen     bool   // output arrived below while the reader was scrolled up
