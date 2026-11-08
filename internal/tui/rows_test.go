@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,30 +11,58 @@ import (
 )
 
 func TestToolRowsShowMoreWhenOpened(t *testing.T) {
+	args := `{"path":"src/a.go","old_string":"one very long argument list that does not fit a line","new_string":"a shorter one"}`
 	var log transcript
-	log.toolStart("edit_file", `{"path":"src/a.go","old_string":"one very long argument list that does not fit a line"}`)
-	log.toolEnd("edit_file", `{"path":"src/a.go","old_string":"one very long argument list that does not fit a line"}`, "1 edit applied")
+	log.toolStart("edit_file", args)
+	log.toolEnd("edit_file", args, "1 edit applied")
 
-	long := `{"path":"src/a.go","old_string":"one very long argument list that does not fit a line"}`
 	collapsed := log.render(80, false)
 	if strings.Contains(collapsed, "does not fit a line") {
 		t.Errorf("a closed row ran past the result:\n%s", collapsed)
 	}
+	if !strings.Contains(collapsed, "src/a.go") {
+		t.Errorf("a closed row does not say what the call touches:\n%s", collapsed)
+	}
+
 	opened := log.render(80, true)
-	if !strings.Contains(opened, `a line"}`) {
+	if !strings.Contains(opened, "old_string:") || !strings.Contains(opened, "does not fit a line") {
 		t.Errorf("opening the row did not show what it was asked to do:\n%s", opened)
 	}
-	for _, line := range strings.Split(collapsed, "\n") {
+	for _, line := range strings.Split(opened, "\n") {
 		if len(stripCodes(line)) > 80 {
-			t.Errorf("a row is wider than the screen: %q", stripCodes(line))
+			t.Errorf("an opened row is wider than the screen: %q", stripCodes(line))
 		}
 	}
 	if log.render(40, false) == "" {
 		t.Error("a narrow screen rendered nothing")
 	}
-	if !strings.Contains(log.render(40, false), long[:12]) {
+	if !strings.Contains(log.render(40, false), "src/a.go") {
 		t.Error("even a narrow row lost the path")
 	}
+}
+
+// an opened call shows the text an argument holds, and says how much of it it left out
+func TestAnOpenedCallShowsTheTextItsArgumentHolds(t *testing.T) {
+	content := strings.Repeat("a line of the file\n", 40)
+	row := stripCodes(openArgs(`{"path":"big.go","content":`+jsonQuote(content)+`}`, 60))
+	if !strings.Contains(row, "path:") || !strings.Contains(row, "a line of the file") {
+		t.Errorf("the fields are not on rows of their own:\n%s", row)
+	}
+	if !strings.Contains(row, "rows more") {
+		t.Errorf("long text was not reported as cut:\n%s", row)
+	}
+	if strings.Contains(row, `\n`) {
+		t.Errorf("the text is still escaped JSON:\n%s", row)
+	}
+}
+
+// jsonQuote puts text in JSON quotes the way the model does
+func jsonQuote(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
 }
 
 func TestAFailedCallIsMarkedAsOne(t *testing.T) {

@@ -42,11 +42,14 @@ func (a *Agent) record(id, name, argsText string, targets []tools.Target, outsid
 	}
 }
 
+// describe is what a confirmation asks the user about: the call in the words the tools use, and
+// the paths that fall outside the project when any do.
 func describe(name, argsText string, outside []string) string {
+	what := tools.Describe(name, argsText)
 	if len(outside) == 0 {
-		return name + " " + argsText
+		return name + " " + what
 	}
-	return fmt.Sprintf("%s OUTSIDE the project root: %s\n  %s", name, strings.Join(outside, ", "), oneLine(argsText, 120))
+	return fmt.Sprintf("%s OUTSIDE the project root: %s\n  %s", name, strings.Join(outside, ", "), what)
 }
 
 // oneLine squashes s onto one short line for logging.

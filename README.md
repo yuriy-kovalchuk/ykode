@@ -119,6 +119,11 @@ tokens per second, updated while the reply streams. The cache percentage is llam
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
 The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 
+Each call the model makes is one row: the tool, what it touches in plain words — `internal/tui/rows.go:40-159`,
+`"styleBar" in internal *.go`, the command as typed — and what came back. `ctrl+o` opens a call and puts
+each argument on a row of its own, long text as the lines it holds rather than escaped JSON. A question
+about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
+
 ## Tools
 
 `find_files`, `search_text`, `read_file`, `write_file`, `edit_file` and

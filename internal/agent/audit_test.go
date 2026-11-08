@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -207,5 +208,24 @@ func TestAParallelBatchReportsABrokenAuditLogOnce(t *testing.T) {
 	}
 	if reported != 1 {
 		t.Errorf("a log that cannot write was reported %d times: it is meant to be said once per run", reported)
+	}
+}
+
+// what a person is asked to approve names the file and says how much, not the JSON the model wrote
+func TestAConfirmationNamesTheFileNotTheJSON(t *testing.T) {
+	body, err := json.Marshal(map[string]string{"path": "web/index.html", "content": strings.Repeat("<p>x</p>\n", 200)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := describe("write_file", string(body), nil)
+	if strings.Contains(text, `"content"`) {
+		t.Errorf("the question shows raw JSON: %s", oneLine(text, 120))
+	}
+	if !strings.Contains(text, "web/index.html") || !strings.Contains(text, "200 lines") {
+		t.Errorf("the question does not say what would be written: %q", oneLine(text, 160))
+	}
+	warning := describe("write_file", string(body), []string{"/etc/hosts"})
+	if !strings.Contains(warning, "OUTSIDE the project root: /etc/hosts") || !strings.Contains(warning, "web/index.html") {
+		t.Errorf("the warning lost its point: %q", oneLine(warning, 160))
 	}
 }

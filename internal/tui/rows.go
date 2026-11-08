@@ -1,10 +1,15 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
@@ -47,7 +52,7 @@ func draw(e entry, width int, expanded bool) string {
 	case whoTool:
 		row := toolRow(e, width) + "\n"
 		if expanded && e.args != "" {
-			row += fmt.Sprintf("%s\n", indent(wrap(e.args, width-2), "  "))
+			row += openArgs(e.args, width) + "\n"
 		}
 		return row
 	case whoDraft:
@@ -86,8 +91,75 @@ func toolRow(e entry, width int) string {
 	case e.result != "":
 		mark, tail = styleOK.Render("✓"), e.result
 	}
-	return fmt.Sprintf("%s %s %s  %s", mark, styleToolName.Render(e.tool), styleDim.Render(oneLine(e.args, rowArgs(width, e.result))), tail)
+	return fmt.Sprintf("%s %s %s  %s", mark, styleToolName.Render(e.tool),
+		styleDim.Render(oneLine(tools.Describe(e.tool, e.args), rowArgs(width, e.result))), tail)
 }
+
+// expandedRows is how much of one argument an opened call shows before saying how much more there is.
+const expandedRows = 14
+
+// openArgs is a call's arguments opened up under ctrl+o: a field per row, and long text shown as
+// the lines it holds rather than as escaped JSON.
+func openArgs(args string, width int) string {
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(args), &fields); err != nil {
+		return indent(wrap(oneLine(args, argChars), width-4), "    ")
+	}
+	var rows []string
+	for _, key := range argOrder(fields) {
+		if text, isText := fields[key].(string); isText {
+			lines := strings.Split(text, "\n")
+			if len(lines) > expandedRows {
+				lines = append(lines[:expandedRows], fmt.Sprintf("… %d rows more", len(lines)-expandedRows))
+			}
+			rows = append(rows, styleDim.Render("  "+key+":"))
+			for _, line := range lines {
+				rows = append(rows, "    "+cutToWidth(line, width-4))
+			}
+			continue
+		}
+		rows = append(rows, styleDim.Render("  "+key+":")+" "+cutToWidth(plain(fields[key]), max(width-8, 10)))
+	}
+	return strings.Join(rows, "\n")
+}
+
+// argOrder puts what a call touches first, so an opened call starts where the risk is.
+func argOrder(fields map[string]any) []string {
+	risky := []string{"path", "pattern", "command", "glob", "offset", "limit"}
+	order := make([]string, 0, len(fields))
+	for _, key := range risky {
+		if _, ok := fields[key]; ok {
+			order = append(order, key)
+		}
+	}
+	rest := make([]string, 0, len(fields))
+	for key := range fields {
+		if !slices.Contains(risky, key) {
+			rest = append(rest, key)
+		}
+	}
+	slices.Sort(rest)
+	return append(order, rest...)
+}
+
+// plain writes an argument that is not text as one line.
+func plain(value any) string {
+	switch v := value.(type) {
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return oneLine(fmt.Sprint(v), argChars)
+		}
+		return oneLine(string(raw), argChars)
+	}
+}
+
+// argChars is how much of one argument is worth keeping on a row.
+const argChars = 2000
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
 func draftRows(d draft, width int) string {
