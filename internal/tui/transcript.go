@@ -31,6 +31,8 @@ type entry struct {
 	call   int // a draft: which call of the reply it is
 	at     time.Time
 	took   time.Duration
+
+	state draftState // what has been read of a call the model is still writing; see draft.go
 }
 
 // transcript is what has been said so far. Rendering is separate so the rules can be
@@ -107,7 +109,12 @@ func (t *transcript) draft(call int, tool, fragment string) {
 			return
 		}
 	}
-	t.entries = append(t.entries, entry{who: whoDraft, tool: tool, args: fragment, call: call})
+	t.entries = append(t.entries, *newDraft(call, tool, fragment))
+}
+
+// newDraft is a call the model has begun writing: the numbers it reports start unset, not at zero.
+func newDraft(call int, tool, args string) *entry {
+	return &entry{who: whoDraft, tool: tool, args: args, call: call, state: newDraftState()}
 }
 
 // dropDrafts removes the calls being written once the reply is done: the tool rows take their

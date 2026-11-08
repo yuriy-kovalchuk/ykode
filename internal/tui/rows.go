@@ -32,7 +32,7 @@ func (t *transcript) rows(width int, expanded bool) []string {
 	}
 	from := t.stale
 	for i := t.stale; i < len(t.entries); i++ {
-		t.lines[i] = draw(t.entries[i], width, expanded)
+		t.lines[i] = draw(&t.entries[i], width, expanded)
 	}
 	t.stale = len(t.entries)
 	t.reflow(from)
@@ -69,10 +69,10 @@ func (t *transcript) render(width int, expanded bool) string {
 }
 
 // draw is one entry as the screen sees it, ending with the blank line a block leaves behind.
-func draw(e entry, width int, expanded bool) string {
+func draw(e *entry, width int, expanded bool) string {
 	switch e.who {
 	case whoUser:
-		return promptBlock(e, width) + "\n\n"
+		return promptBlock(*e, width) + "\n\n"
 	case whoSummary:
 		return styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
 	case whoOutput:
@@ -86,7 +86,7 @@ func draw(e entry, width int, expanded bool) string {
 	case whoNotice:
 		return styleDim.Render(indent(wrap(oneLine(e.text, noticeChars), width-2), "· ")) + "\n"
 	case whoTool:
-		row := toolRow(e, width) + "\n"
+		row := toolRow(*e, width) + "\n"
 		if rows := diffRows(e.result, width, expanded); rows != nil {
 			row += strings.Join(rows, "\n") + "\n"
 		}
@@ -95,7 +95,7 @@ func draw(e entry, width int, expanded bool) string {
 		}
 		return row
 	case whoDraft:
-		return draftRows(draft{call: e.call, tool: e.tool, args: e.args}, width) + "\n"
+		return draftRows(drafted(e), width) + "\n"
 	}
 	return ""
 }
