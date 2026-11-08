@@ -3,7 +3,9 @@ package tui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -178,6 +180,102 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	waitFor(t, screen, "answer one")
 	writeKeys(t, keys, "second\r")
 	waitFor(t, screen, "answer two")
+
+	writeKeys(t, keys, "/exit\r")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the session ended with an error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session would not exit")
+	}
+}
+
+// stubPaused holds its first reply open until the test lets it go, so the test can type into a
+// turn that is provably still running.
+type stubPaused struct {
+	mu       sync.Mutex
+	release  chan struct{}
+	requests []map[string]any
+}
+
+func (s *stubPaused) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		panic(fmt.Sprintf("the server got an unmarshalable request: %v", err))
+	}
+	s.mu.Lock()
+	first := len(s.requests) == 0
+	s.requests = append(s.requests, req)
+	s.mu.Unlock()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if first {
+		<-s.release
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1",`+
+			`"function":{"name":"find_files","arguments":"{}"}}]}}],"finish_reason":"tool_calls"}`+"\n\ndata: [DONE]\n\n")
+		return
+	}
+	fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"answered while you waited"},`+
+		`"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+}
+
+func (s *stubPaused) asked() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.requests)
+}
+
+func (s *stubPaused) carries(text string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, req := range s.requests[1:] { // the ask cannot be in the request that was already open
+		for _, raw := range req["messages"].([]any) {
+			if m := raw.(map[string]any); m["role"] == "user" && strings.Contains(fmt.Sprint(m["content"]), text) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// an ask typed into a turn that is still running reaches the model inside that turn, rather than
+// waiting for the whole turn to end
+func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
+	stub := &stubPaused{release: make(chan struct{})}
+	server := httptest.NewServer(stub)
+	defer server.Close()
+
+	hub := NewHub()
+	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+		agent.Options{MaxTurns: 3, MaxTokens: 64, CtxSize: 8000}, hub)
+	in, keys, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Close()
+	defer in.Close()
+	screen := &lockedBuffer{}
+
+	done := make(chan error, 1)
+	go func() { done <- run(context.Background(), a, hub, false, tea.WithInput(in), tea.WithOutput(screen)) }()
+
+	writeKeys(t, keys, "count the files\r")
+	for stub.asked() == 0 { // the turn is open: its first reply has not been sent yet
+		time.Sleep(10 * time.Millisecond)
+	}
+	writeKeys(t, keys, "and the tests too\r")
+	close(stub.release)
+
+	waitFor(t, screen, "answered while you waited")
+	if !stub.carries("and the tests too") {
+		t.Errorf("no later request carried the ask typed mid-turn:\n%s", stripCodes(screen.String()))
+	}
+	if !strings.Contains(stripCodes(screen.String()), "and the tests too") {
+		t.Errorf("the ask typed mid-turn was never drawn:\n%s", stripCodes(screen.String()))
+	}
 
 	writeKeys(t, keys, "/exit\r")
 	select {

@@ -37,7 +37,6 @@ type model struct {
 	width    int
 	height   int
 	running  bool
-	queue    []string // what was typed while the run was busy
 	cancel   context.CancelFunc
 	pending  []*question // questions waiting for an answer, oldest first
 	err      string
@@ -130,9 +129,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 		}
 		var cmd tea.Cmd
-		if len(m.queue) > 0 {
-			cmd = m.start(m.queue[0])
-			m.queue = m.queue[1:]
+		if ask, ok := m.agent.NextWaiting(); ok {
+			cmd = m.start(ask) // an ask that never reached a round-trip starts as an ordinary prompt
 		}
 		m.refresh()
 		return m, cmd

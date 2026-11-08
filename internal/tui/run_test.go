@@ -12,20 +12,58 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-func TestTypingWhileTheRunWorksQueuesTheMessage(t *testing.T) {
+// an ask typed into a running turn goes to that run, which takes it at the next round-trip, and
+// stays on the screen until it does
+func TestAnAskTypedIntoARunningTurnWaitsAboveThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 80, 24
 	m.running = true
 	m.input.SetValue("also check the tests")
 
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
-		t.Fatal("a queued message should not end the program")
+		t.Fatal("an ask handed to the run should not start another")
 	}
-	if len(m.queue) != 1 {
-		t.Fatalf("nothing was queued: %v", m.queue)
+	if got := m.agent.Waiting(); len(got) != 1 || got[0] != "also check the tests" {
+		t.Fatalf("the run was not handed the ask: %v", got)
 	}
-	if !strings.Contains(m.log.render(80, false), "queued") {
-		t.Error("the screen does not say the message is waiting")
+	out := stripCodes(m.View())
+	if !strings.Contains(out, "also check the tests") || !strings.Contains(out, "waits for the next round-trip") {
+		t.Errorf("the waiting ask is not kept above the prompt:\n%s", out)
+	}
+}
+
+// an ask the run took is drawn where the model reads it, not only as a waiting row
+func TestAnAskTheRunTookIsDrawnWhereTheModelReadsIt(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 80, 24
+	m.running = true
+	m.agent.Steer("and the tests too")
+
+	m.handle(agent.Event{Kind: agent.Steered, Text: "and the tests too", Turn: 2})
+	block := m.log.render(80, false)
+	if !strings.Contains(block, "and the tests too") {
+		t.Errorf("the ask is not in the session:\n%s", block)
+	}
+}
+
+// an ask still waiting when the run ended starts a turn of its own
+func TestAnAskLeftOverWhenTheRunEndedStartsItsOwnTurn(t *testing.T) {
+	w := newWiredModel(t, "ran them")
+	w.m.width, w.m.height = 80, 24
+	w.m.running = true
+	w.m.agent.Steer("then run the tests")
+
+	if _, cmd := w.m.Update(runDoneMsg{}); cmd == nil {
+		t.Fatal("a waiting ask should start once the run is over")
+	}
+	if !w.m.running {
+		t.Error("the ask did not start a run")
+	}
+	if !strings.Contains(w.m.log.render(80, false), "then run the tests") {
+		t.Error("the ask is not on the screen as a prompt of its own")
+	}
+	if got := w.m.agent.Waiting(); len(got) != 0 {
+		t.Errorf("the ask is still waiting after it started: %v", got)
 	}
 }
 

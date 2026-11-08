@@ -180,3 +180,29 @@ func TestTheKeysListNamesTheChordsInTheUse(t *testing.T) {
 		}
 	}
 }
+
+// an ask waiting for the next round-trip keeps its row above the prompt, however few rows the
+// screen has, and the session keeps its rows too
+func TestAWaitingAskKeepsItsRowAboveThePrompt(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 80, 12
+	m.running = true
+	m.agent.Steer("and the tests too")
+
+	rows := strings.Split(stripCodes(m.View()), "\n")
+	waiting, prompt := -1, -1
+	for i, row := range rows {
+		if strings.Contains(row, "waits for the next round-trip") {
+			waiting = i
+		}
+		if strings.Contains(row, promptMark) {
+			prompt = i
+		}
+	}
+	if waiting < 0 || prompt < 0 || waiting > prompt {
+		t.Errorf("the waiting ask is not above the prompt (row %d vs %d):\n%s", waiting, prompt, strings.Join(rows, "\n"))
+	}
+	if !strings.Contains(strings.Join(rows, "\n"), "and the tests too") {
+		t.Error("the waiting ask lost its words")
+	}
+}

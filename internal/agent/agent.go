@@ -33,6 +33,8 @@ type Agent struct {
 	meter         meter
 	usageMu       sync.Mutex // the numbers a front end reads while a turn runs elsewhere
 	report        Usage      // what the conversation cost as of the last finished turn
+	waitingMu     sync.Mutex // asks typed while a turn ran, taken between round-trips
+	waiting       []string   // what the user typed into a run that is still going
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
@@ -56,6 +58,7 @@ func (a *Agent) Reset() {
 	a.compactedAt = -1
 	a.repeats.changed() // nothing the model saw before is in front of it any more
 	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
+	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
 	a.publishUsage()
 }
 

@@ -20,6 +20,14 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	for turn := 1; ; turn++ {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
+		// an ask typed while this turn ran joins the conversation here: the round-trip in flight and
+		// the tools running are not interrupted, and a new instruction restarts what counts as a repeat
+		for _, ask := range a.takeWaiting() {
+			a.add(ask)
+			a.task = ask.Content
+			a.repeats.changed()
+			a.emit(Event{Kind: Steered, Turn: turn, Text: ask.Content})
+		}
 		if a.underPressure() {
 			if freed := a.shrinkWhatAged(keepResults); freed > 0 {
 				a.tell(fmt.Sprintf("shortened older tool output to fit the context (%s)", size.Text(freed)))

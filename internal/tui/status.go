@@ -30,7 +30,7 @@ type status struct {
 	prefill  float64 // tokens per second the server read the prompt at
 	decode   float64 // tokens per second it writes at
 	running  bool
-	queued   int
+	waiting  int
 	elapsed  time.Duration // how long the running prompt has been working
 	took     time.Duration // how long the last prompt took, once it finished
 	spinner  string
@@ -112,12 +112,12 @@ func statusActivity(s status) []string {
 	switch {
 	case s.running:
 		work := s.spinner + " " + duration(s.elapsed)
-		if s.queued > 0 {
-			work += fmt.Sprintf(", %d queued", s.queued)
+		if s.waiting > 0 {
+			work += fmt.Sprintf(", %d waiting", s.waiting)
 		}
 		now = append(now, styleWorking.Render(work))
-	case s.queued > 0:
-		now = append(now, fmt.Sprintf("%d queued", s.queued))
+	case s.waiting > 0:
+		now = append(now, fmt.Sprintf("%d waiting", s.waiting))
 	case s.took > 0:
 		now = append(now, styleOK.Render("✓ done in "+duration(s.took)))
 	}
@@ -179,7 +179,7 @@ func tokCount(n int) string {
 func (m *model) status() status {
 	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
 		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
-		decode: m.decode, running: m.running, queued: len(m.queue), took: m.took, spinner: m.spin.View(),
+		decode: m.decode, running: m.running, waiting: len(m.agent.Waiting()), took: m.took, spinner: m.spin.View(),
 		keysHint: !m.showKeys, width: m.width}
 	if m.running {
 		s.elapsed = time.Since(m.started)

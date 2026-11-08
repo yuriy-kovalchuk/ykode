@@ -34,8 +34,8 @@ func stripCodes(s string) string {
 func TestTheStatusLineSaysWhatTheSessionCosts(t *testing.T) {
 	usage := agent.Usage{Turns: 3, PromptTok: 1000, CachedTok: 900, GenTok: 17000,
 		TotalPrompt: 90000, CachedTotal: 3100000, EstTok: 12000}
-	line := stripCodes(statusLine(status{usage: usage, ctxSize: 131072, decode: 41.6, running: true, queued: 2}))
-	for _, want := range []string{"↑90k", "↓17k", "R3.1M", "cache 90%", "12k/131k", "42 tok/s", "2 queued"} {
+	line := stripCodes(statusLine(status{usage: usage, ctxSize: 131072, decode: 41.6, running: true, waiting: 2}))
+	for _, want := range []string{"↑90k", "↓17k", "R3.1M", "cache 90%", "12k/131k", "42 tok/s", "2 waiting"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q missing from: %s", want, line)
 		}

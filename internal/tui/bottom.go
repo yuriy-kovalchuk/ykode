@@ -32,6 +32,7 @@ func (m *model) bottomArea() string {
 	if m.showKeys {
 		rows = append(rows, m.keysHelp())
 	}
+	rows = append(rows, m.waitingRows()...)
 	if len(m.pending) > 0 {
 		rows = append(rows, m.question())
 	}
@@ -40,6 +41,23 @@ func (m *model) bottomArea() string {
 		rows = append(rows, styleBad.Render(oneLine(m.err, max(m.width-2, 1))))
 	}
 	return strings.Join(append(rows, bottomGap), "\n")
+}
+
+const (
+	waitingMark = "… " // an ask that has not reached the model yet
+	waitingLead = "waits for the next round-trip: "
+)
+
+// waitingRows keep what the user typed into a running turn on the screen: a notice in the
+// transcript scrolls away with the session, and an ask that has not been answered has not stopped
+// being relevant.
+func (m *model) waitingRows() []string {
+	var rows []string
+	for _, ask := range m.agent.Waiting() {
+		room := m.width - lipgloss.Width("  "+waitingMark+waitingLead) - 2
+		rows = append(rows, "  "+styleDim.Render(waitingMark+waitingLead)+oneLine(ask, max(room, 1)))
+	}
+	return rows
 }
 
 // question is the confirmation a run waits on, in a box of its own above the input.

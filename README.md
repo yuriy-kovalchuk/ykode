@@ -96,8 +96,11 @@ screen opens when the configured server does not answer, with the error on it.
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
 
-Typing while the model works is allowed: the prompt is queued and goes in the
-moment the turn ends. The commands of `In the session` work there too, except
+Typing while the model works is allowed: the ask goes to that run, which takes it at the next
+round-trip instead of waiting for the whole turn to end. The request already in flight and the
+tools already running are not interrupted. Until it is taken, an ask keeps a row of its own above
+the prompt so it cannot scroll away; one still waiting when the run ended starts a turn of its own.
+The commands of `In the session` work there too, except
 that `/reset`, `/compact` and `/undo` wait for the running turn rather than
 racing it.
 

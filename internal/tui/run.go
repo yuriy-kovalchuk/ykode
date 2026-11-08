@@ -47,8 +47,9 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	if m.running {
-		m.queue = append(m.queue, text)
-		m.log.notice("queued until this turn ends: " + oneLine(text, 80))
+		// the ask goes to the run, which takes it at the next round-trip; the rows under the prompt
+		// keep it in sight until then, so it never scrolls away
+		m.agent.Steer(text)
 		m.refresh()
 		return m, nil
 	}
@@ -136,6 +137,8 @@ func (m *model) handle(ev agent.Event) {
 		m.log.failed(ev.Tool, ev.Text)
 	case agent.Notice:
 		m.log.notice(ev.Text)
+	case agent.Steered:
+		m.log.user(ev.Text, time.Now()) // the run took it: the ask joins where the model reads it
 	}
 	m.refresh()
 }
