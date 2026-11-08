@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -149,5 +150,46 @@ func TestCommandOutputKeepsItsLines(t *testing.T) {
 	view := stripCodes(log.render(80, false))
 	if !strings.Contains(view, "\n    /help   show this\n") || !strings.Contains(view, "/usage  what it cost") {
 		t.Errorf("the output lost its lines:\n%s", view)
+	}
+}
+
+// a wider screen redraws every row: a row's own drawing was made for the width it was drawn at
+func TestWideningTheScreenDrawsEveryRowAgain(t *testing.T) {
+	var log transcript
+	log.user("a prompt short enough to fit on one row", time.Now())
+	narrow := strings.Split(log.render(60, false), "\n")[0]
+	log.notice("the run shortened an older result") // the next draw only has to reach the newest row
+	if wide := strings.Split(log.render(120, false), "\n")[0]; len(wide) <= len(narrow) {
+		t.Errorf("the prompt row kept its %d columns when the screen grew to %d", len(narrow), len(wide))
+	}
+}
+
+// rows move up when the calls being written are dropped, so none may keep another's drawing
+func TestDroppingTheCallsBeingWrittenDrawsTheRowsBelowAgain(t *testing.T) {
+	var log transcript
+	log.draft(0, "write_file", `{"path":"main.go","content":"package main"`)
+	log.toolStart("read_file", `{"path":"go.mod"}`)
+	log.dropDrafts()
+	if out := log.render(80, false); strings.Contains(out, "✎") {
+		t.Errorf("a dropped call is still on the screen:\n%s", out)
+	}
+}
+
+// BenchmarkStreamingRedraw draws the screen as one streamed token does: a session with a long past
+// and one block still growing. Only the block being written may need drawing again.
+func BenchmarkStreamingRedraw(b *testing.B) {
+	var log transcript
+	for i := 0; i < 100; i++ {
+		log.user(fmt.Sprintf("task %d, with a question long enough to wrap over a row or two", i), time.Now())
+		log.thinking(strings.Repeat("considering how the pieces fit and what to read next. ", 30))
+		log.answer(strings.Repeat("the change goes in the status line, drawn per frame. ", 20))
+		log.toolStart("search_text", `{"pattern":"status","path":"internal"}`)
+		log.toolEnd("search_text", `{"pattern":"status","path":"internal"}`, "41 matches in 9 files")
+	}
+	log.answer("a few words of the answer so far ")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		log.answer("more words ")
+		_ = log.render(120, false)
 	}
 }

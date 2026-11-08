@@ -356,6 +356,9 @@ func (m *model) handle(ev agent.Event) {
 		if ev.Stats.PrefillTokSec > 0 {
 			m.prefill = ev.Stats.PrefillTokSec
 		}
+		// a timings chunk moves only the footer, and every draw builds the footer from what is
+		// here now, so the transcript is not drawn again for it
+		return
 	case agent.ToolStart:
 		m.log.toolStart(ev.Tool, ev.Args)
 	case agent.ToolEnd:

@@ -37,9 +37,14 @@ type entry struct {
 }
 
 // transcript is what has been said so far. Rendering is separate so the rules can be
-// tested without a screen.
+// tested without a screen. What each entry drew is kept, because a stream redraws the screen per
+// token and only the entry still open changes between draws.
 type transcript struct {
-	entries []entry
+	entries  []entry
+	lines    []string // what each entry drew last, with the blank line a block leaves behind
+	stale    int      // the first entry that may need drawing again; len(entries) when none do
+	width    int      // the screen the rows were drawn for
+	expanded bool     // whether call arguments were shown
 }
 
 const (
@@ -75,9 +80,18 @@ func (t *transcript) answer(text string)   { t.open(whoAnswer, text) }
 func (t *transcript) open(who kind, text string) {
 	if n := len(t.entries); n > 0 && t.entries[n-1].who == who {
 		t.entries[n-1].text += text
+		t.mark(n - 1)
 		return
 	}
 	t.entries = append(t.entries, entry{who: who, text: text})
+}
+
+// mark says an entry has changed since it was drawn. Entries are only ever added at the end or
+// changed in place, so naming the earliest one changed covers the rest: drawing starts there.
+func (t *transcript) mark(at int) {
+	if at < t.stale {
+		t.stale = at
+	}
 }
 
 // draft adds a fragment of a call being written to that call's row.
@@ -85,13 +99,15 @@ func (t *transcript) draft(call int, tool, fragment string) {
 	for i := len(t.entries) - 1; i >= 0 && t.entries[i].who == whoDraft; i-- {
 		if t.entries[i].call == call {
 			t.entries[i].args += fragment
+			t.mark(i)
 			return
 		}
 	}
 	t.entries = append(t.entries, entry{who: whoDraft, tool: tool, args: fragment, call: call})
 }
 
-// dropDrafts removes the calls being written once the reply is done: the tool rows take their place.
+// dropDrafts removes the calls being written once the reply is done: the tool rows take their
+// place, and every row after the first one removed moves up, so nothing keeps its drawing.
 func (t *transcript) dropDrafts() {
 	kept := t.entries[:0]
 	for _, e := range t.entries {
@@ -99,7 +115,7 @@ func (t *transcript) dropDrafts() {
 			kept = append(kept, e)
 		}
 	}
-	t.entries = kept
+	t.entries, t.lines, t.stale = kept, nil, 0
 }
 
 func (t *transcript) toolStart(name, args string) {
@@ -113,6 +129,7 @@ func (t *transcript) toolEnd(name, args, result string) {
 		e := &t.entries[i]
 		if e.who == whoTool && e.result == "" && e.tool == name && e.args == args {
 			e.result = result
+			t.mark(i)
 			return
 		}
 	}
@@ -120,33 +137,47 @@ func (t *transcript) toolEnd(name, args, result string) {
 }
 
 // render turns the transcript into lines for the viewport. A tool row is one line by
-// default; expanded, it also shows what the call was asked to do.
+// default; expanded, it also shows what the call was asked to do. Rows keep their drawing between
+// draws; a different screen, or rows that moved, starts them again.
 func (t *transcript) render(width int, expanded bool) string {
-	var b strings.Builder
-	for _, e := range t.entries {
-		switch e.who {
-		case whoUser:
-			fmt.Fprintf(&b, "%s\n\n", rightAligned(styleUserBar.Render("▌")+" "+styleBold.Render(e.text), styleDim.Render(clock(e.at)), width))
-		case whoOutput:
-			fmt.Fprintf(&b, "%s\n\n", indent(e.text, "  "))
-		case whoDone:
-			fmt.Fprintf(&b, "%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
-		case whoThink:
-			fmt.Fprintf(&b, "%s\n\n", gutter(wrap(e.text, width-4), styleThink))
-		case whoAnswer:
-			fmt.Fprintf(&b, "%s\n\n", e.text)
-		case whoNotice:
-			fmt.Fprintf(&b, "%s\n", styleDim.Render("· "+oneLine(e.text, noticeChars)))
-		case whoTool:
-			b.WriteString(toolRow(e, width) + "\n")
-			if expanded && e.args != "" {
-				fmt.Fprintf(&b, "%s\n", indent(wrap(e.args, width-2), "  "))
-			}
-		case whoDraft:
-			b.WriteString(draftRows(draft{call: e.call, tool: e.tool, args: e.args}, width) + "\n")
-		}
+	if width != t.width || expanded != t.expanded {
+		t.width, t.expanded, t.lines, t.stale = width, expanded, nil, 0
 	}
-	return strings.TrimRight(b.String(), "\n")
+	for len(t.lines) < len(t.entries) {
+		t.lines = append(t.lines, "")
+	}
+	for i := t.stale; i < len(t.entries); i++ {
+		t.lines[i] = draw(t.entries[i], width, expanded)
+	}
+	t.stale = len(t.entries)
+	return strings.TrimRight(strings.Join(t.lines, ""), "\n")
+}
+
+// draw is one entry as the screen sees it, ending with the blank line a block leaves behind.
+func draw(e entry, width int, expanded bool) string {
+	switch e.who {
+	case whoUser:
+		return fmt.Sprintf("%s\n\n", rightAligned(styleUserBar.Render("▌")+" "+styleBold.Render(e.text), styleDim.Render(clock(e.at)), width))
+	case whoOutput:
+		return fmt.Sprintf("%s\n\n", indent(e.text, "  "))
+	case whoDone:
+		return fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
+	case whoThink:
+		return fmt.Sprintf("%s\n\n", gutter(wrap(e.text, width-4), styleThink))
+	case whoAnswer:
+		return fmt.Sprintf("%s\n\n", e.text)
+	case whoNotice:
+		return fmt.Sprintf("%s\n", styleDim.Render("· "+oneLine(e.text, noticeChars)))
+	case whoTool:
+		row := toolRow(e, width) + "\n"
+		if expanded && e.args != "" {
+			row += fmt.Sprintf("%s\n", indent(wrap(e.args, width-2), "  "))
+		}
+		return row
+	case whoDraft:
+		return draftRows(draft{call: e.call, tool: e.tool, args: e.args}, width) + "\n"
+	}
+	return ""
 }
 
 // toolRow is one call on one row: the arguments give way to the result.
