@@ -71,7 +71,6 @@ type Config struct {
 	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown
 	SessionFile     string                     // the conversation this run reads and writes
 	Version         bool                       // print the version and exit
-	NewPrompt       bool                       // try the candidate system prompt
 	modelReasoning  map[string]bool            // per-model send_reasoning
 	modelSampling   map[string][2]llm.Sampling // per model: with thinking, without
 }
@@ -95,7 +94,6 @@ type flagValues struct {
 	TUI           bool
 	Continue      string
 	Version       bool
-	NewPrompt     bool
 }
 
 // Load parses args (os.Args[1:]). flag.ErrHelp is returned for -h.
@@ -124,7 +122,6 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.TUI, "tui", false, "full-screen session: scrolling transcript, input box, status bar")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
-	fs.BoolVar(&f.NewPrompt, "new-prompt", false, "use the candidate system prompt, to compare it with the evals")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -192,7 +189,6 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 		"tui":            func() { c.TUI = c.TUI || f.TUI },
 		"continue":       func() { c.Continue = f.Continue },
 		"version":        func() { c.Version = f.Version },
-		"new-prompt":     func() { c.NewPrompt = f.NewPrompt },
 	}
 	for name := range set {
 		if apply, ok := setters[name]; ok {

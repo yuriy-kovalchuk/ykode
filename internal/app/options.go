@@ -26,7 +26,6 @@ func Options(cfg config.Config, model string, ctxSize int, store tools.ResultSto
 		SafetyMargin:  cfg.SafetyMargin,
 		CtxSize:       ctxSize,
 		ThinkingLevel: cfg.ThinkingLevel,
-		NewPrompt:     cfg.NewPrompt,
 		AssumeYes:     cfg.AssumeYes,
 		NoVerify:      cfg.NoVerify,
 		SendReasoning: cfg.SendReasoningFor(model),

@@ -28,7 +28,6 @@ type Options struct {
 	SafetyMargin  int          // tokens left free for the chat template; 0 means ctxSafetyTok
 	CtxSize       int          // server context window; 0 = unknown, no budgeting
 	ThinkingLevel string       // off, minimal, low, medium, high, xhigh, max; empty is medium
-	NewPrompt     bool         // newSystemPrompt instead of SystemPrompt, until the evals pick one
 	Thinking      llm.Sampling // sent while the model thinks
 	NoThink       llm.Sampling // sent with thinking off; Qwen's cards recommend different values
 	AssumeYes     bool
@@ -86,11 +85,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
 	a.repeats = newLoopGuard()
-	base := SystemPrompt
-	if opts.NewPrompt {
-		base = newSystemPrompt
-	}
-	a.prompt = withInstructions(withEnvironment(base, opts.Root), opts.Instructions)
+	a.prompt = withInstructions(withEnvironment(SystemPrompt, opts.Root), opts.Instructions)
 	a.Reset()
 	return a
 }

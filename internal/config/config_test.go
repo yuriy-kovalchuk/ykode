@@ -347,13 +347,13 @@ func TestEveryFlagReachesItsSetting(t *testing.T) {
 	tempHome(t)
 	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
 		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--no-verify", "--send-reasoning",
-		"-p", "task", "--json", "--version", "--new-prompt"})
+		"-p", "task", "--json", "--version"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
 		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes || !cfg.NoVerify ||
-		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.JSON || !cfg.Version || !cfg.NewPrompt {
+		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.JSON || !cfg.Version {
 		t.Errorf("flags did not all land: %+v", cfg)
 	}
 	off, err := Load([]string{"--yes=false", "--no-think=false"})

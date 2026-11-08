@@ -7,21 +7,21 @@ import (
 	"time"
 )
 
-func TestTheNewPromptEndsWithTheSessionsEnvironment(t *testing.T) {
+func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
 	root := t.TempDir() // not a git repository
-	a := New(nil, nil, "m", Options{NewPrompt: true, Root: root, Instructions: "<project_instructions>be terse</project_instructions>"}, nil)
+	a := New(nil, nil, "m", Options{Root: root, Instructions: "<project_instructions>be terse</project_instructions>"}, nil)
 	prompt := a.history[0].Content
 
 	for _, want := range []string{
-		"<workflow>", "project root: " + root, "os: " + runtime.GOOS + "/" + runtime.GOARCH,
+		"Guidelines:", "project root: " + root, "os: " + runtime.GOOS + "/" + runtime.GOARCH,
 		"date: " + time.Now().Format("2006-01-02"), "git: not a git repository", "be terse",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("new prompt misses %q", want)
+			t.Errorf("the prompt misses %q", want)
 		}
 	}
-	if strings.Index(prompt, "<rules>") > strings.Index(prompt, "<environment>") {
-		t.Error("the per-session environment comes before the fixed rules, so no two sessions share a cached prefix")
+	if strings.Index(prompt, "Guidelines:") > strings.Index(prompt, "<environment>") {
+		t.Error("the per-session environment comes before the fixed text, so no two sessions share a cached prefix")
 	}
 	if strings.Contains(prompt, "{{") {
 		t.Error("a placeholder was left unfilled")
@@ -39,7 +39,7 @@ func TestEveryPromptSaysWhichSystemItRunsOn(t *testing.T) {
 }
 
 func TestResetKeepsTheSamePrompt(t *testing.T) {
-	a := New(nil, nil, "m", Options{NewPrompt: true, Root: t.TempDir()}, nil)
+	a := New(nil, nil, "m", Options{Root: t.TempDir()}, nil)
 	before := a.history[0].Content
 	a.Reset()
 	if a.history[0].Content != before {

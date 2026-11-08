@@ -46,7 +46,6 @@ func newRunRecord(model string, cfg config.Config) runRecord {
 			"read_lines":     fmt.Sprint(cfg.ReadLines),
 			"search_limit":   fmt.Sprint(cfg.SearchLimit),
 			"verify":         fmt.Sprint(!cfg.NoVerify),
-			"new_prompt":     fmt.Sprint(cfg.NewPrompt),
 		},
 	}
 }

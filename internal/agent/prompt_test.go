@@ -215,35 +215,50 @@ func TestAProjectFileIsNotGivenAuthorityOverTheUser(t *testing.T) {
 	if strings.Contains(prompt, "outrank") {
 		t.Errorf("a file in a cloned repo is handed authority over the rules:\n%.400s", prompt)
 	}
-	if strings.Contains(SystemPrompt, "even when the code says otherwise") {
-		t.Error("the note rule tells the model to answer against the user instead of reporting")
+}
+
+// the prompt lists the tools by hand, so it must name exactly the tools ykode has: a tool it
+// leaves out is one the model reaches for less, and a tool it names that does not exist (recall,
+// once) is a call that can only fail
+func TestThePromptNamesEveryToolAndNoOther(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(SystemPrompt, "request comes first") {
-		t.Error("the note rule never says the user's request wins")
+	defer root.Close()
+	have := map[string]bool{}
+	for _, tool := range tools.BuiltIn(root, dir, tools.Options{}).All() {
+		have[tool.Name()] = true
+		if !strings.Contains(SystemPrompt, "- "+tool.Name()+":") {
+			t.Errorf("the prompt does not list %s", tool.Name())
+		}
+	}
+	for _, line := range strings.Split(SystemPrompt, "\n") {
+		name, _, ok := strings.Cut(strings.TrimPrefix(line, "- "), ":")
+		if ok && strings.HasPrefix(line, "- ") && !strings.Contains(name, " ") && !have[name] {
+			t.Errorf("the prompt lists %s, which is not a tool", name)
+		}
 	}
 }
 
-func TestBothPromptsBoundTheVerifyStep(t *testing.T) {
-	for name, prompt := range map[string]string{"SystemPrompt": SystemPrompt, "newSystemPrompt": newSystemPrompt} {
-		if !strings.Contains(prompt, "Exit 0 means it passed") || !strings.Contains(prompt, "throwaway") {
-			t.Errorf("%s lets verification run open-ended (task 03 spent 12 of 17 requests on it)", name)
-		}
+// the prompt is resent with every request: it stays small, the way pi's is
+func TestThePromptStaysSmall(t *testing.T) {
+	if n := len(SystemPrompt); n > 1000 {
+		t.Errorf("SystemPrompt is %d bytes; the budget is 1000 (797 when it was set)", n)
 	}
 }
 
-func TestBothPromptsHoldTheRequestedAnswerFormat(t *testing.T) {
-	for name, prompt := range map[string]string{"SystemPrompt": SystemPrompt, "newSystemPrompt": newSystemPrompt} {
-		if strings.Contains(prompt, "say so in your answer") {
-			t.Errorf("%s still asks for a note in every answer (task 05 lost 5 of 5 runs that way)", name)
-		}
-		if !strings.Contains(prompt, "Answer in the form the user asked for") {
-			t.Errorf("%s never binds the answer to the format the user asked for", name)
-		}
-		if !strings.Contains(prompt, "follow it even if the code suggests otherwise") {
-			t.Errorf("%s stopped obeying a rule a project file states about the code (the 91a675c eval)", name)
-		}
-		if !strings.Contains(prompt, "the reason for your answer") {
-			t.Errorf("%s names a project file in every answer, not only where it decides the answer (the read-the-note eval)", name)
+// each of these fixed one benchmark task and broke another (TODO.md, "Measured"); one that comes
+// back should come back with a measurement, not by drift
+func TestTheTaskRulesStayOut(t *testing.T) {
+	for _, rule := range []string{
+		"throwaway",                                     // verify once: task 03 got faster, checks got rarer
+		"Answer in the form the user asked for",         // N1: fixed 05 and 07, broke read-the-note
+		"follow it even if the code suggests otherwise", // the README decoy in 5 of 29 task-05 runs
+	} {
+		if strings.Contains(SystemPrompt, rule) {
+			t.Errorf("SystemPrompt carries the task rule %q again", rule)
 		}
 	}
 }

@@ -327,7 +327,6 @@ you are willing to let a shell touch, or in a container.
 ```sh
 make eval ARGS="--base-url https://host/v1 --only fix --repeat 5"
 make eval ARGS="--baseline last"            # mark what got worse since the previous run
-make eval ARGS="--new-prompt --baseline last" # try the candidate system prompt
 ```
 
 The tasks run with built-in defaults, not your `settings.yaml` (`--use-settings` opts back in).

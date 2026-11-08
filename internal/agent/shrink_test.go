@@ -75,7 +75,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	}
 	stub := &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4300}, sink, dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4100}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "search five files"); err != nil {
