@@ -193,3 +193,17 @@ func TestPastingTheWordEnterDoesNotSend(t *testing.T) {
 		t.Errorf("the pasted word vanished: %q", m.input.Value())
 	}
 }
+
+// the list of keys has to open while a prompt is half typed, which ? cannot do
+func TestCtrlSlashShowsTheKeysOverATypedPrompt(t *testing.T) {
+	m := newTestModel()
+	m.input.SetValue("count the lines")
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlUnderscore})
+	if !m.showKeys {
+		t.Fatal("ctrl+? over typed text did not open the list")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlUnderscore})
+	if m.showKeys {
+		t.Fatal("ctrl+? again did not hide the list")
+	}
+}

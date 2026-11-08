@@ -22,7 +22,7 @@ func TestQuestionMarkShowsTheKeys(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	view := stripCodes(m.View())
-	if !strings.Contains(view, "ctrl+o tool rows") || m.input.Value() != "" {
+	if !strings.Contains(view, "ctrl+o a call's arguments") || m.input.Value() != "" {
 		t.Errorf("? with an empty box did not list the keys:\n%s", view)
 	}
 	for i, line := range strings.Split(m.View(), "\n") {
@@ -165,5 +165,18 @@ func TestTheKeysHelpDoesNotPushTheFramePastTheTerminal(t *testing.T) {
 	}
 	if got := len(strings.Split(m.View(), "\n")); got != 22 {
 		t.Errorf("the frame is %d rows on a 22 row terminal: keys help pushed it past the screen", got)
+	}
+}
+
+// the list names what the app answers, scrolling chords included
+func TestTheKeysListNamesTheChordsInTheUse(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m.showKeys = true
+	list := stripCodes(m.keysHelp())
+	for _, chord := range []string{"ctrl+u", "ctrl+d", "pgup", "ctrl+/", "ctrl+o", "ctrl+j"} {
+		if !strings.Contains(list, chord) {
+			t.Errorf("%s is answered but not listed: %s", chord, list)
+		}
 	}
 }

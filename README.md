@@ -91,10 +91,10 @@ screen opens when the configured server does not answer, with the error on it.
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+t` | hands the mouse back to the terminal so text can be selected and copied; again to scroll with the wheel |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
-| `ctrl+o` | shows and hides the result text of each tool call |
+| `ctrl+o` | shows and hides the arguments of each tool call |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
-| `?` | shows and hides this list of keys (with an empty box) |
+| `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
 
 Typing while the model works is allowed: the prompt is queued and goes in the
 moment the turn ends. The commands of `In the session` work there too, except

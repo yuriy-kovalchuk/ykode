@@ -16,9 +16,10 @@ const (
 
 // keys is what ? shows, as key and what it does.
 var keys = [][2]string{
-	{"enter", "send"}, {"ctrl+j", "newline"}, {"↑ ↓", "earlier prompts"}, {"wheel pgup", "scroll"},
-	{"end", "back to the end"}, {"esc", "stop"}, {"ctrl+o", "tool rows"}, {"ctrl+t", "select text"},
-	{"ctrl+c", "quit"}, {"?", "hide keys"},
+	{"enter", "send"}, {"ctrl+j", "newline"}, {"↑ ↓", "earlier prompts"},
+	{"pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
+	{"esc", "stop the run"}, {"ctrl+o", "a call's arguments"}, {"ctrl+t", "terminal selects"},
+	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 
 var questionBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1)

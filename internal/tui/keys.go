@@ -36,6 +36,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.expanded = !m.expanded
 		m.refresh()
 		return m, nil
+	case "ctrl+_", "ctrl+/":
+		// the list has to open while a prompt is half typed, which ? cannot do; ctrl+/ arrives as
+		// byte 0x1f, which bubbletea names ctrl+_
+		m.showKeys = !m.showKeys
+		m.refresh()
+		return m, nil
 	case "ctrl+t":
 		// a captured mouse cannot select text, so the user can hand it back to the terminal
 		m.mouseOff = !m.mouseOff
