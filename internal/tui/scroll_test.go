@@ -32,6 +32,7 @@ func wheel(b tea.MouseButton) tea.MouseMsg {
 // the wheel scrolls the transcript; it never reaches the input box
 func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 	m := longSession(t)
+	m.mouseOn = true // the wheel only reaches the screen when it was given the mouse
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
 	before := m.view.YOffset
@@ -51,6 +52,7 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 // the arrows still walk the history: only the wheel changed meaning
 func TestTheArrowsStillWalkTheHistory(t *testing.T) {
 	m := longSession(t)
+	m.mouseOn = true // the wheel only reaches the screen when it was given the mouse
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if got := m.input.Value(); got != "an earlier prompt" {
@@ -61,6 +63,7 @@ func TestTheArrowsStillWalkTheHistory(t *testing.T) {
 // scrolled up, the screen says where the reader is and when output arrived below
 func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	m := longSession(t)
+	m.mouseOn = true
 	for i := 0; i < 5; i++ {
 		m.Update(wheel(tea.MouseButtonWheelUp))
 	}
@@ -85,20 +88,28 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	}
 }
 
-// ctrl+t hands the mouse to the terminal for selecting text, and takes it back
-func TestCtrlTHandsTheMouseBackForSelecting(t *testing.T) {
+// the terminal keeps the mouse so text can be selected; ctrl+t takes the mouse for the wheel,
+// and gives it back
+func TestCtrlTTakesTheMouseForTheWheelAndGivesItBack(t *testing.T) {
 	m := longSession(t)
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	if !m.mouseOff || cmd == nil {
-		t.Fatal("ctrl+t did not release the mouse")
+	if m.mouseOn {
+		t.Fatal("the screen starts with the mouse, so the terminal cannot select text")
 	}
 	before := m.view.YOffset
 	m.Update(wheel(tea.MouseButtonWheelUp))
 	if m.view.YOffset != before {
-		t.Error("with the mouse released, a wheel event still scrolled")
+		t.Error("a wheel event scrolled while the terminal held the mouse")
 	}
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}); m.mouseOff || cmd == nil {
-		t.Error("a second ctrl+t did not take the mouse back")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if !m.mouseOn || cmd == nil {
+		t.Fatal("ctrl+t did not take the mouse")
+	}
+	m.Update(wheel(tea.MouseButtonWheelUp))
+	if m.view.YOffset == before {
+		t.Error("with the mouse taken, the wheel does not scroll")
+	}
+	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}); m.mouseOn || cmd == nil {
+		t.Error("a second ctrl+t did not give the mouse back")
 	}
 }
 

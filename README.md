@@ -87,9 +87,9 @@ screen opens when the configured server does not answer, with the error on it.
 | `enter` | sends the prompt |
 | `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines |
 | `up`, `down` | walks the prompts you sent this session (with an empty box) |
-| mouse wheel | scrolls the transcript; scrolled up, the rule above the status says where you are and when new output arrived below |
+| mouse wheel | scrolls the transcript, once the screen has the mouse (`ctrl+t`, or `mouse: true`); scrolled up, the rule above the status says where you are and when new output arrived below |
 | `end` | back to the end of the transcript (with an empty box) |
-| `ctrl+t` | hands the mouse back to the terminal so text can be selected and copied; again to scroll with the wheel |
+| `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
 | `ctrl+o` | shows and hides the arguments of each tool call |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
@@ -279,6 +279,7 @@ model: Qwen3.6-35B-A3B-GSQ-hybrid
 max_turns: 25
 verify: true
 assume_yes: false
+mouse: false
 audit: true
 audit_retention_days: 180
 keep_sessions: 720h
@@ -305,7 +306,8 @@ when a server sends nothing while it reads a long cold prompt), `max_tokens` is 
 (0, the default, asks for no cap: the server's own context decides where the reply ends, and ykode never asks
 for more than the window has left), `thinking_level` how deeply the model thinks
 (`off` … `max`; each level asks llama.cpp for a thinking budget, and the budget is capped so the answer
-keeps room of its own), `safety_margin` what is kept free beside
+keeps room of its own), `mouse` gives the screen the mouse by default — the wheel then scrolls the
+transcript, and selecting text needs `shift` or `ctrl+t` to hand the mouse back), `safety_margin` what is kept free beside
 it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
 expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
 gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,

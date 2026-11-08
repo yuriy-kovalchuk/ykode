@@ -44,7 +44,7 @@ type model struct {
 	expanded bool // tool rows also show what they were asked to do
 	history  []string
 	histIdx  int
-	mouseOff bool   // the terminal has the mouse back, so text can be selected and copied
+	mouseOn  bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
 	showKeys bool   // ? lists the keys above the prompt
 	unseen   bool   // output arrived below while the reader was scrolled up
 	rendered string // the transcript as last drawn, to tell new output from a redraw

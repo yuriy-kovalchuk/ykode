@@ -258,7 +258,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
 	}
-	for _, key := range []string{"thinking_level", "audit", "tools", "context"} {
+	for _, key := range []string{"thinking_level", "audit", "tools", "context", "mouse"} {
 		if _, ok := seeded[key]; !ok {
 			t.Errorf("%s missing from the file that shows every key", key)
 		}
@@ -593,5 +593,25 @@ func TestAnUnknownYamlKeyNamesTheFileAndTheKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "thinking_leve") || !strings.Contains(err.Error(), "settings.yaml") {
 		t.Errorf("error = %v, want it to name the file and the key", err)
+	}
+}
+
+// the wheel belongs to the screen only when asked for: otherwise the terminal keeps selection
+func TestTheScreenKeepsItsHandsOffTheMouseUnlessAsked(t *testing.T) {
+	user := fakeHome(t)
+	cfg, err := Load([]string{"--root", t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mouse {
+		t.Error("the screen takes the mouse by default, so the terminal cannot select text")
+	}
+	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\n")
+	cfg, err = Load([]string{"--root", t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Mouse {
+		t.Error("mouse: true did not give the screen the wheel")
 	}
 }

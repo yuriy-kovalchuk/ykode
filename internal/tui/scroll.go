@@ -12,7 +12,7 @@ const wheelStep = 3 // lines one notch of the wheel moves the transcript
 
 // wheel scrolls the transcript; only the wheel is used, so a click never moves anything.
 func (m *model) wheel(msg tea.MouseMsg) {
-	if m.mouseOff || msg.Action != tea.MouseActionPress {
+	if !m.mouseOn || msg.Action != tea.MouseActionPress {
 		return
 	}
 	switch msg.Button {

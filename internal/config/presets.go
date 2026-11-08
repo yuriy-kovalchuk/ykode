@@ -26,6 +26,7 @@ func builtinSettings() fileSettings {
 	s.MaxTurns, s.MaxTokens = p(d.MaxTurns), p(d.MaxTokens)
 	s.ThinkingLevel, s.Verify, s.AssumeYes, s.Sandbox = p(d.ThinkingLevel), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
 	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
+	s.Mouse = p(d.Mouse)
 	s.Context.SafetyMargin = p(d.SafetyMargin)
 	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
 	s.KeepSessions = p(hours(d.KeepSessions))

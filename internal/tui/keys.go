@@ -43,13 +43,13 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "ctrl+t":
-		// a captured mouse cannot select text, so the user can hand it back to the terminal
-		m.mouseOff = !m.mouseOff
+		// the wheel and the terminal's own selection cannot both have the mouse
+		m.mouseOn = !m.mouseOn
 		m.refresh()
-		if m.mouseOff {
-			return m, tea.DisableMouse
+		if m.mouseOn {
+			return m, tea.EnableMouseCellMotion
 		}
-		return m, tea.EnableMouseCellMotion
+		return m, tea.DisableMouse
 	case "pgup":
 		m.view.PageUp()
 		return m, nil

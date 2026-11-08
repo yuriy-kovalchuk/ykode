@@ -39,6 +39,7 @@ type Config struct {
 	SafetyMargin    int    // tokens kept free for the reply
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	AssumeYes       bool
+	Mouse           bool // the screen takes the mouse: the wheel scrolls, and the terminal cannot select text
 	Sandbox         bool // exec_command runs confined: writes only in the project, no network
 	NoVerify        bool // do not push a text-only answer back into the tools
 	SendReasoning   bool // repeat earlier thinking back to models whose template expects it

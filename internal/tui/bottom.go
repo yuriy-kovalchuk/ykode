@@ -110,8 +110,8 @@ func (m *model) keysHelp() string {
 	row, used := "", 0
 	for _, k := range keys {
 		desc := k[1]
-		if k[0] == "ctrl+t" && m.mouseOff {
-			desc = "wheel scrolls"
+		if k[0] == "ctrl+t" && m.mouseOn {
+			desc = "give it back"
 		}
 		plain := k[0] + " " + desc
 		if used > 0 && used+3+len(plain) > m.width {

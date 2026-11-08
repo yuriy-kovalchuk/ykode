@@ -41,15 +41,21 @@ func (h *Hub) post(msg tea.Msg) bool {
 	return true
 }
 
-// Run draws the session until the user quits or ctx ends.
-func Run(ctx context.Context, a *agent.Agent, hub *Hub) error {
-	// without mouse reporting, the terminal turns the wheel into arrow keys, which walk the history
-	return run(ctx, a, hub, tea.WithAltScreen(), tea.WithMouseCellMotion())
+// Run draws the session until the user quits or ctx ends. The screen takes the mouse only when
+// asked: holding it gives the wheel to the transcript but leaves the terminal no way to select
+// text, and ctrl+t hands it over or back at any point.
+func Run(ctx context.Context, a *agent.Agent, hub *Hub, mouse bool) error {
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if mouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	return run(ctx, a, hub, mouse, opts...)
 }
 
 // run is Run with the program options a test needs: a fake terminal instead of a real one.
-func run(ctx context.Context, a *agent.Agent, hub *Hub, opts ...tea.ProgramOption) error {
+func run(ctx context.Context, a *agent.Agent, hub *Hub, mouse bool, opts ...tea.ProgramOption) error {
 	m := newModel(ctx, a, hub)
+	m.mouseOn = mouse
 	program := tea.NewProgram(m, opts...)
 	// everything a run reports reaches the screen through the hub: one wire, set before the
 	// program starts, so a finished turn can always report itself

@@ -30,6 +30,7 @@ type fileSettings struct {
 	MaxTokens     *int    `yaml:"max_tokens,omitempty"`
 	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
 	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
+	Mouse         *bool   `yaml:"mouse,omitempty"`
 	Sandbox       *bool   `yaml:"sandbox,omitempty"`
 	Verify        *bool   `yaml:"verify,omitempty"`
 	StreamIdle    *int    `yaml:"stream_idle_sec,omitempty"`
@@ -198,6 +199,7 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 		c.AssumeYes = *s.AssumeYes
 	}
 	pick(s.Sandbox, &c.Sandbox)
+	pick(s.Mouse, &c.Mouse)
 	pick(s.Tools.CommandLogDir, &c.CommandLogDir)
 	if s.Audit != nil {
 		c.LogAudit = *s.Audit

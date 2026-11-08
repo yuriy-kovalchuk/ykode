@@ -172,7 +172,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	screen := &lockedBuffer{}
 
 	done := make(chan error, 1)
-	go func() { done <- run(context.Background(), a, hub, tea.WithInput(in), tea.WithOutput(screen)) }()
+	go func() { done <- run(context.Background(), a, hub, false, tea.WithInput(in), tea.WithOutput(screen)) }()
 
 	writeKeys(t, keys, "first\r")
 	waitFor(t, screen, "answer one")
