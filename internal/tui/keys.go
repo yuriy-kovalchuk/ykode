@@ -56,17 +56,17 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.DisableMouse
 	case "pgup":
-		m.view.PageUp()
+		m.view.scroll(-m.pageRows(false))
 		return m, nil
 	case "pgdown":
-		m.view.PageDown()
+		m.view.scroll(m.pageRows(false))
 		m.seenIfAtBottom()
 		return m, nil
 	case "ctrl+u":
-		m.view.HalfPageUp()
+		m.view.scroll(-m.pageRows(true))
 		return m, nil
 	case "ctrl+d":
-		m.view.HalfPageDown()
+		m.view.scroll(m.pageRows(true))
 		m.seenIfAtBottom()
 		return m, nil
 	case "tab":
@@ -93,7 +93,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refresh()
 			return m, nil
 		case "end":
-			m.view.GotoBottom()
+			m.view.gotoBottom()
 			m.unseen = false
 			return m, nil
 		}
@@ -105,10 +105,10 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.input.LineCount() <= 1 {
 		switch msg.String() {
 		case "up":
-			m.view.ScrollUp(wheelStep)
+			m.view.scroll(-wheelStep)
 			return m, nil
 		case "down":
-			m.view.ScrollDown(wheelStep)
+			m.view.scroll(wheelStep)
 			m.seenIfAtBottom()
 			return m, nil
 		}
@@ -148,4 +148,13 @@ func (m *model) reply(d agent.Decision) {
 	}
 	m.pending[0].reply <- d
 	m.pending = m.pending[1:]
+}
+
+// pageRows is how many rows one page takes: the rows the session has room for, or half of them.
+func (m *model) pageRows(half bool) int {
+	rows := m.view.height
+	if half {
+		rows /= 2
+	}
+	return max(rows, 1)
 }

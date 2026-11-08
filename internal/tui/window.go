@@ -1,0 +1,54 @@
+package tui
+
+import "strings"
+
+// window is the session's slice of the screen. It works on rows the transcript already drew, and it
+// only ever moves a cursor through them: a session of eight thousand rows is drawn again every few
+// tokens, and splitting or measuring those rows once more per draw is what made a long session slow.
+// The rows arrive already cut to the screen's width, so nothing here measures them again.
+type window struct {
+	rows   []string
+	at     int // the first row in view
+	height int // how many rows fit above the prompt
+}
+
+// setRows takes the session as the transcript drew it. A reader at the end stays at its end as the
+// session grows, and one who scrolled up stays on the same part of it.
+func (w *window) setRows(rows []string) {
+	atEnd := w.atBottom() // where the reader stood before the session changed
+	w.rows = rows
+	if atEnd || w.at > w.last() {
+		w.at = w.last() // the end, or a session that shrank under the reader
+	}
+}
+
+// atBottom says the reader is at the end of the session, which is where output arriving belongs.
+func (w *window) atBottom() bool { return w.at >= w.last() }
+
+// last is the highest starting row that still fills the view.
+func (w *window) last() int { return max(0, len(w.rows)-w.height) }
+
+func (w *window) gotoBottom() { w.at = w.last() }
+
+// scroll moves the view, clamped at both ends.
+func (w *window) scroll(rows int) {
+	w.at = min(max(w.at+rows, 0), w.last())
+}
+
+// percent is how far into the session the view sits, for the mark beside the rule.
+func (w *window) percent() float64 {
+	if w.last() <= 0 {
+		return 1
+	}
+	return float64(w.at) / float64(w.last())
+}
+
+// view draws the rows in view and leaves the rest of the block blank, so the prompt stays at the
+// bottom of the screen whatever the session holds.
+func (w *window) view() string {
+	seen := make([]string, max(w.height, 0))
+	if len(w.rows) > 0 {
+		copy(seen, w.rows[w.at:min(w.at+w.height, len(w.rows))])
+	}
+	return strings.Join(seen, "\n")
+}

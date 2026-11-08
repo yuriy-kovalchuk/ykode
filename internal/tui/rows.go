@@ -18,21 +18,54 @@ const (
 	toolRowArgs = 12 // what the arguments keep, even when the result wants the row
 )
 
-// render turns the transcript into lines for the viewport. A tool row is one line by
-// default; expanded, it also shows what the call was asked to do. Rows keep their drawing between
-// draws; a different screen, or rows that moved, starts them again.
-func (t *transcript) render(width int, expanded bool) string {
+// rows is the session as the screen reads it: one element per row. A tool row is one row by default;
+// expanded, it also shows what the call was asked to do. Only the blocks that changed are drawn
+// again, and the rows are only rebuilt from there; a different screen, or rows that moved, starts
+// the whole session again.
+func (t *transcript) rows(width int, expanded bool) []string {
 	if width != t.width || expanded != t.expanded {
 		t.width, t.expanded, t.lines, t.stale = width, expanded, nil, 0
+		t.rowsCache, t.rowed, t.rowStart = nil, 0, nil
 	}
 	for len(t.lines) < len(t.entries) {
 		t.lines = append(t.lines, "")
 	}
+	from := t.stale
 	for i := t.stale; i < len(t.entries); i++ {
 		t.lines[i] = draw(t.entries[i], width, expanded)
 	}
 	t.stale = len(t.entries)
-	return strings.TrimRight(strings.Join(t.lines, ""), "\n")
+	t.reflow(from)
+	return t.rowsCache
+}
+
+// reflow puts drawn blocks into rows from the first block that changed. A block's own ending newline
+// is not a row of its own, so the rows read exactly as the blocks joined with "" did.
+func (t *transcript) reflow(from int) {
+	if from > t.rowed {
+		from = t.rowed
+	}
+	if from < t.rowed {
+		t.rowsCache, t.rowed = t.rowsCache[:t.rowStart[from]], from
+	}
+	for i := t.rowed; i < len(t.entries); i++ {
+		t.rowStart = append(t.rowStart, len(t.rowsCache))
+		block := strings.Split(t.lines[i], "\n")
+		if last := len(block) - 1; last >= 0 && block[last] == "" {
+			block = block[:last]
+		}
+		t.rowsCache = append(t.rowsCache, block...)
+	}
+	t.rowed = len(t.entries)
+}
+
+// hasPending says output arrived that has not been drawn yet: a reader who scrolled up is told with
+// a mark rather than by the screen jumping under them.
+func (t *transcript) hasPending() bool { return t.stale < len(t.entries) }
+
+// render is the whole session as one string, for reading it back rather than drawing it.
+func (t *transcript) render(width int, expanded bool) string {
+	return strings.TrimRight(strings.Join(t.rows(width, expanded), "\n"), "\n")
 }
 
 // draw is one entry as the screen sees it, ending with the blank line a block leaves behind.

@@ -111,14 +111,14 @@ func TestAScrollMovesTheSessionNotThePrompt(t *testing.T) {
 		m.log.notice(fmt.Sprintf("row %d of a long session", i))
 	}
 	m.refresh()
-	if !m.view.AtBottom() {
+	if !m.view.atBottom() {
 		t.Fatal("the session did not start at its end")
 	}
 
 	for i := 0; i < 4; i++ {
 		m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	}
-	if m.view.AtBottom() {
+	if m.view.atBottom() {
 		t.Error("the arrows did not move the session")
 	}
 	if m.input.Value() != "" {
@@ -160,8 +160,8 @@ func TestGrowingTheBoxKeepsTheEndOfTheSession(t *testing.T) {
 
 	m.input.SetValue("one\ntwo")
 	m.refresh()
-	if !m.view.AtBottom() {
-		t.Errorf("the session lifted off its end as the box grew: scrolled to %.0f%%", m.view.ScrollPercent()*100)
+	if !m.view.atBottom() {
+		t.Errorf("the session lifted off its end as the box grew: scrolled to %.0f%%", m.view.percent()*100)
 	}
 }
 

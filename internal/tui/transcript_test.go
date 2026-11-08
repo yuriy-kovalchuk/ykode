@@ -85,3 +85,60 @@ func TestARecapIsDrawnWhereItHappened(t *testing.T) {
 		}
 	}
 }
+
+// the screen reads rows, and they are kept between draws: a change redraws its own block and the
+// rows around it stay as they were drawn
+func TestTheRowsAreKeptBetweenDraws(t *testing.T) {
+	var log transcript
+	log.user("the first ask", time.Now())
+	log.answer("the first answer")
+	before := append([]string(nil), log.rows(60, false)...)
+
+	log.answer(", and it goes on")
+	after := log.rows(60, false)
+	if after[0] != before[0] {
+		t.Errorf("a row above the change was drawn again:\n%s\nwant\n%s", after[0], before[0])
+	}
+	if joined := strings.Join(after, "\n"); !strings.Contains(joined, "it goes on") {
+		t.Errorf("the change never reached the rows:\n%s", joined)
+	}
+	if got, want := log.render(60, false), strings.TrimRight(strings.Join(after, "\n"), "\n"); got != want {
+		t.Errorf("reading the session back differs from its rows:\n%s\nwant\n%s", got, want)
+	}
+}
+
+// a call answered after it was drawn keeps its row, so the rows below it do not move
+func TestACallAnsweredLaterKeepsItsRow(t *testing.T) {
+	var log transcript
+	log.toolStart("read_file", `{"path":"a.go"}`)
+	log.notice("something the run did on its own")
+	before := log.rows(60, false)
+
+	log.toolEnd("read_file", `{"path":"a.go"}`, "read a.go (12 lines)")
+	after := log.rows(60, false)
+	if len(after) != len(before) {
+		t.Fatalf("answering a call changed how many rows the session takes: %d was %d", len(after), len(before))
+	}
+	if !strings.Contains(after[0], "read a.go") {
+		t.Errorf("the answer did not land on the call's row: %q", after[0])
+	}
+	if !strings.Contains(after[len(after)-1], "something the run did") {
+		t.Errorf("the rows below the call moved: %q", after[len(after)-1])
+	}
+}
+
+// output that has not been drawn yet is what the "new output below" mark is for
+func TestTheSessionKnowsWhatItHasNotDrawnYet(t *testing.T) {
+	var log transcript
+	if log.hasPending() {
+		t.Error("an empty session reports output waiting")
+	}
+	log.notice("output arrived")
+	if !log.hasPending() {
+		t.Error("output that was never drawn is not reported as waiting")
+	}
+	log.rows(60, false)
+	if log.hasPending() {
+		t.Error("drawn output is still reported as waiting")
+	}
+}

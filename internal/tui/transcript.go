@@ -42,6 +42,13 @@ type transcript struct {
 	stale    int      // the first entry that may need drawing again; len(entries) when none do
 	width    int      // the screen the rows were drawn for
 	expanded bool     // whether call arguments were shown
+
+	// rows are what the screen reads: one element per row on the terminal. They are kept between
+	// draws and only rebuilt from the block that changed, because a streamed token redraws the
+	// session while only the block still open has new text in it.
+	rowsCache []string
+	rowed     int   // entries whose block is already in rowsCache
+	rowStart  []int // the row each of those blocks starts at
 }
 
 func (t *transcript) user(text string, at time.Time) {
@@ -113,6 +120,7 @@ func (t *transcript) dropDrafts() {
 		}
 	}
 	t.entries, t.lines, t.stale = kept, nil, 0
+	t.rowsCache, t.rowed, t.rowStart = nil, 0, nil
 }
 
 func (t *transcript) toolStart(name, args string) {

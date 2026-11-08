@@ -201,11 +201,11 @@ func TestACallBeingWrittenWaitsForTheTickToBeDrawn(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m.running = true
 	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"a.go","content":"the first line`})
-	if strings.Contains(stripCodes(m.view.View()), "the first line") {
+	if strings.Contains(stripCodes(m.view.view()), "the first line") {
 		t.Error("the call being written was drawn at the token's own rate")
 	}
 	m.Update(spinner.TickMsg{})
-	if !strings.Contains(stripCodes(m.view.View()), "the first line") {
+	if !strings.Contains(stripCodes(m.view.view()), "the first line") {
 		t.Error("the next tick never drew the call being written")
 	}
 }

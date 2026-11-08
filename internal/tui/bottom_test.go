@@ -101,14 +101,14 @@ func TestTheReportSitsUnderThePrompt(t *testing.T) {
 func TestTheInputGrowsWithWhatIsTyped(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	short := m.view.Height
+	short := m.view.height
 	if m.input.Height() != 1 {
 		t.Fatalf("an empty input is %d rows", m.input.Height())
 	}
 	m.input.SetValue("one\ntwo\nthree")
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
-	if m.input.Height() != 3 || m.view.Height != short-2 {
-		t.Errorf("three lines: input %d rows, transcript %d (was %d)", m.input.Height(), m.view.Height, short)
+	if m.input.Height() != 3 || m.view.height != short-2 {
+		t.Errorf("three lines: input %d rows, transcript %d (was %d)", m.input.Height(), m.view.height, short)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestALongPromptOnAShortScreenKeepsTheSessionVisible(t *testing.T) {
 	if got := len(strings.Split(m.View(), "\n")); got != 14 {
 		t.Errorf("the screen is %d rows, want the 14 it was given", got)
 	}
-	if m.view.Height < 3 {
-		t.Errorf("the session is left with %d rows to read", m.view.Height)
+	if m.view.height < 3 {
+		t.Errorf("the session is left with %d rows to read", m.view.height)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -28,7 +27,7 @@ type model struct {
 	root     string // the project the footer names
 	branch   string // what HEAD points at there, read again with each prompt
 	input    textarea.Model
-	view     viewport.Model
+	view     window
 	log      transcript
 	decode   float64 // tokens per second of the last answer
 	prefill  float64 // tokens per second the last prompt was read at
@@ -53,7 +52,6 @@ type model struct {
 	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
 	showKeys   bool   // ? lists the keys above the prompt
 	unseen     bool   // output arrived below while the reader was scrolled up
-	rendered   string // the transcript as last drawn, to tell new output from a redraw
 
 	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
 	// token of it would otherwise redraw the screen, and the stream waits for that draw.
@@ -84,7 +82,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		root:    a.Root(),
 		branch:  agent.GitBranch(a.Root()),
 		input:   input,
-		view:    viewport.New(defaultWidth, defaultHeight),
+		view:    window{height: defaultHeight},
 		width:   defaultWidth,
 		height:  defaultHeight,
 	}
@@ -102,7 +100,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.view.Width = msg.Width
 		m.input.SetWidth(m.width - lipgloss.Width(promptMark))
 		m.refresh()
 		return m, nil

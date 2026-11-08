@@ -19,7 +19,7 @@ func longSession(t *testing.T) *model {
 	for i := 0; i < 60; i++ {
 		m.handle(agent.Event{Kind: agent.Notice, Text: fmt.Sprintf("line %d of the session", i)})
 	}
-	if !m.view.AtBottom() {
+	if !m.view.atBottom() {
 		t.Fatal("a live session does not follow its own output")
 	}
 	return m
@@ -35,17 +35,17 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 	m.mouseOn = true // the wheel only reaches the screen when it was given the mouse
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
-	before := m.view.YOffset
+	before := m.view.at
 	m.Update(wheel(tea.MouseButtonWheelUp))
-	if m.view.YOffset != before-wheelStep {
-		t.Errorf("one notch up moved the transcript from %d to %d, want %d", before, m.view.YOffset, before-wheelStep)
+	if m.view.at != before-wheelStep {
+		t.Errorf("one notch up moved the transcript from %d to %d, want %d", before, m.view.at, before-wheelStep)
 	}
 	if got := m.input.Value(); got != "" {
 		t.Errorf("the wheel put %q in the input box", got)
 	}
 	m.Update(wheel(tea.MouseButtonWheelDown))
-	if m.view.YOffset != before {
-		t.Errorf("one notch down did not come back: %d, want %d", m.view.YOffset, before)
+	if m.view.at != before {
+		t.Errorf("one notch down did not come back: %d, want %d", m.view.at, before)
 	}
 }
 
@@ -77,9 +77,9 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	if !strings.Contains(stripCodes(m.View()), "↑") || !strings.Contains(stripCodes(m.View()), "end returns") {
 		t.Errorf("scrolled up, the screen does not say so:\n%s", stripCodes(m.bottomArea()))
 	}
-	offset := m.view.YOffset
+	offset := m.view.at
 	m.handle(agent.Event{Kind: agent.Notice, Text: "something new"})
-	if m.view.YOffset != offset {
+	if m.view.at != offset {
 		t.Error("new output pulled a reader who scrolled up back to the end")
 	}
 	if !strings.Contains(stripCodes(m.View()), "new output below") {
@@ -87,7 +87,7 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
-	if !m.view.AtBottom() || m.unseen {
+	if !m.view.atBottom() || m.unseen {
 		t.Error("end with an empty box did not return to the end and clear the mark")
 	}
 	if strings.Contains(stripCodes(m.View()), "end returns") {
@@ -102,9 +102,9 @@ func TestCtrlTTakesTheMouseForTheWheelAndGivesItBack(t *testing.T) {
 	if m.mouseOn {
 		t.Fatal("the screen starts with the mouse, so the terminal cannot select text")
 	}
-	before := m.view.YOffset
+	before := m.view.at
 	m.Update(wheel(tea.MouseButtonWheelUp))
-	if m.view.YOffset != before {
+	if m.view.at != before {
 		t.Error("a wheel event scrolled while the terminal held the mouse")
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
@@ -112,7 +112,7 @@ func TestCtrlTTakesTheMouseForTheWheelAndGivesItBack(t *testing.T) {
 		t.Fatal("ctrl+t did not take the mouse")
 	}
 	m.Update(wheel(tea.MouseButtonWheelUp))
-	if m.view.YOffset == before {
+	if m.view.at == before {
 		t.Error("with the mouse taken, the wheel does not scroll")
 	}
 	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}); m.mouseOn || cmd == nil {
