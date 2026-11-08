@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLongThinkingWrapsInsteadOfOverflowing(t *testing.T) {
@@ -28,5 +30,14 @@ func TestTruncatingARowKeepsWholeCharacters(t *testing.T) {
 	}
 	if !strings.HasSuffix(row, "…") {
 		t.Errorf("the cut is not marked: %q", row)
+	}
+}
+
+// what matters for a row is how much screen it takes, not how many bytes or runes it holds: a CJK
+// glyph or an emoji is two columns wide
+func TestARowOfWideCharactersStopsAtTheScreenEdge(t *testing.T) {
+	row := oneLine("コードをかく · проверка работы · 🧪 a long argument for the tool that writes files", 30)
+	if got := lipgloss.Width(stripCodes(row)); got > 30 {
+		t.Errorf("the row takes %d columns, want 30 or fewer: %q", got, row)
 	}
 }

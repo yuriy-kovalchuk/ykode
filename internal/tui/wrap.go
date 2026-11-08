@@ -8,12 +8,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// oneLine flattens text to a row of at most max columns: a CJK glyph or an emoji takes two, so the
+// measure that matters is the screen, not the runes.
 func oneLine(text string, max int) string {
-	text = strings.Join(strings.Fields(text), " ")
-	if runes := []rune(text); len(runes) > max {
-		return string(runes[:max]) + "…"
-	}
-	return text
+	return cutToWidth(strings.Join(strings.Fields(text), " "), max)
 }
 
 // wrap breaks a line to width without cutting words, keeping long words intact.

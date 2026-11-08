@@ -14,7 +14,8 @@ import (
 
 const (
 	noticeChars = 200
-	toolRowTail = 20 // what is left for the result after the tool name on a row
+	toolRowMark = 5  // the mark, the gaps around the arguments and the gap before the result
+	toolRowArgs = 12 // what the arguments keep, even when the result wants the row
 )
 
 // render turns the transcript into lines for the viewport. A tool row is one line by
@@ -84,17 +85,27 @@ const (
 	userMark   = "▌"
 )
 
-// toolRow is one call on one row: the arguments give way to the result.
+// toolRow is one call on one row: the arguments give way to the result, and a result too wide for
+// the row is cut as well, so a call never runs past the edge of the screen.
 func toolRow(e entry, width int) string {
-	mark, tail := styleAccent.Render("→"), styleDim.Render("working…")
+	row := struct {
+		mark, note string
+		markStyle  lipgloss.Style
+		noteStyle  lipgloss.Style
+	}{"→", "working…", styleAccent, styleDim}
 	switch {
 	case e.failed:
-		mark, tail = styleBad.Render("✗"), styleBad.Render(e.result)
+		row.mark, row.note, row.markStyle, row.noteStyle = "✗", e.result, styleBad, styleBad
 	case e.result != "":
-		mark, tail = styleOK.Render("✓"), e.result
+		row.mark, row.note, row.markStyle, row.noteStyle = "✓", e.result, styleOK, styleResult
 	}
-	return fmt.Sprintf("%s %s %s  %s", mark, styleToolName.Render(e.tool),
-		styleDim.Render(oneLine(tools.Describe(e.tool, e.args), rowArgs(width, e.result))), tail)
+	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(row.note)
+	if room < toolRowArgs {
+		room = toolRowArgs
+		row.note = cutToWidth(row.note, max(width-toolRowMark-lipgloss.Width(e.tool)-room, 4))
+	}
+	return fmt.Sprintf("%s %s %s  %s", row.markStyle.Render(row.mark), styleToolName.Render(e.tool),
+		styleDim.Render(oneLine(tools.Describe(e.tool, e.args), room)), row.noteStyle.Render(row.note))
 }
 
 // expandedRows is how much of one argument an opened call shows before saying how much more there is.
@@ -184,13 +195,4 @@ func gutter(text string, style lipgloss.Style) string {
 		lines[i] = styleDim.Render("  ┊ ") + style.Render(line)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// rowArgs is what of the call fits on one row once the tool name and its result are placed.
-func rowArgs(width int, result string) int {
-	room := width - len(result) - len(oneLine("", 0)) - toolRowTail
-	if room < 20 {
-		room = 20
-	}
-	return room
 }

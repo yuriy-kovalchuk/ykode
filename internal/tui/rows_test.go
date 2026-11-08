@@ -199,3 +199,17 @@ func TestACommandListKeepsItsColumns(t *testing.T) {
 		}
 	}
 }
+
+// a call row written in wide characters still stops at the edge of the screen
+func TestAWideToolRowStopsAtTheScreenEdge(t *testing.T) {
+	args := `{"path":"src/コード/モジュール.ts","content":"テキスト ".repeat(40)}`
+	var log transcript
+	log.toolStart("write_file", args)
+	log.toolEnd("write_file", args, "書き込み 12 行 · ok")
+
+	for _, line := range strings.Split(log.render(44, false), "\n") {
+		if got := lipgloss.Width(stripCodes(line)); got > 44 {
+			t.Errorf("a row takes %d columns: %q", got, stripCodes(line))
+		}
+	}
+}
