@@ -174,7 +174,7 @@ func TestTheKeysListNamesTheChordsInTheUse(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.showKeys = true
 	list := stripCodes(m.keysHelp())
-	for _, chord := range []string{"ctrl+u", "ctrl+d", "pgup", "ctrl+/", "ctrl+o", "ctrl+j"} {
+	for _, chord := range []string{"ctrl+u", "ctrl+d", "pgup", "ctrl+/", "ctrl+o", "ctrl+j", "tab"} {
 		if !strings.Contains(list, chord) {
 			t.Errorf("%s is answered but not listed: %s", chord, list)
 		}

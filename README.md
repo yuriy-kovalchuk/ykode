@@ -44,7 +44,8 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 
 ## In the session
 
-Type a request. `/help` lists the commands, `/usage` reports what the
+Type a request. A `/` lists the commands it could still be and `tab` completes one; `/help`
+lists them all with what each does. `/usage` reports what the
 conversation has cost, `/compact` folds the older turns into a summary the model
 writes, `/history [what]` shows what this run has done (a tool name, `failed`,
 `outside`, one call by id like `r12`, or `--all` for every run of this root),
@@ -95,6 +96,7 @@ screen opens when the configured server does not answer, with the error on it.
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
+| `tab`, `esc` | `tab` completes a `/command` to what the candidates share; `esc` clears the list, and stops a running turn when there is no list |
 
 Typing while the model works is allowed: the ask goes to that run, which takes it at the next
 round-trip instead of waiting for the whole turn to end. The request already in flight and the

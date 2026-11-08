@@ -20,15 +20,6 @@ func TestEveryCommandAnswersSomething(t *testing.T) {
 	}
 }
 
-func TestHelpListsEveryCommand(t *testing.T) {
-	for _, want := range []string{"/help", "/usage", "/reset", "/exit", "/undo", "/history", "/compact",
-		"/ctx", "/tools", "/model", "/think"} {
-		if !strings.Contains(Help, want) {
-			t.Errorf("help is missing %q:\n%s", want, Help)
-		}
-	}
-}
-
 func TestExitStopsTheSession(t *testing.T) {
 	a := New(nil, nil, "m", Options{}, nil)
 	if _, quit, _ := a.Command(context.Background(), "/exit"); !quit {
@@ -210,4 +201,45 @@ func TestCompactStopsWhenTheCallerCancels(t *testing.T) {
 	if strings.Contains(text, "tool results shortened") {
 		t.Errorf("/compact reported shortening whatever it did: %q", text)
 	}
+}
+
+// the list a front end completes from and the list /help prints are the same list, and it says
+// which commands wait for the turn in flight
+func TestTheCommandListIsWhatHelpAndSafetyUse(t *testing.T) {
+	a := New(nil, nil, "m", Options{}, nil)
+	help, _, err := a.Command(context.Background(), "/help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := Commands()
+	if len(list) == 0 {
+		t.Fatal("no commands to complete")
+	}
+	for _, c := range list {
+		if !strings.Contains(help, c.Name) {
+			t.Errorf("%s is completable but /help does not list it:\n%s", c.Name, help)
+		}
+		if c.Note == "" {
+			t.Errorf("%s says what it does not do", c.Name)
+		}
+		if c.Waits == CommandIsSafeDuringATurn(c.Name) {
+			t.Errorf("%s waits=%v but its safety says otherwise", c.Name, c.Waits)
+		}
+	}
+	// nothing the model of the list hides: every command the switch answers is in it
+	for _, name := range []string{"/help", "/usage", "/reset", "/exit", "/undo", "/history", "/compact",
+		"/ctx", "/tools", "/model", "/think"} {
+		if !hasCommand(list, name) {
+			t.Errorf("%s is not in the command list", name)
+		}
+	}
+}
+
+func hasCommand(list []CommandSpec, name string) bool {
+	for _, c := range list {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }

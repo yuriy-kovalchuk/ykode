@@ -17,20 +17,45 @@ type Undoer interface {
 // historyLimit caps how many logged calls one /history shows.
 const historyLimit = 20
 
-// Help lists the commands; the model does the work, so this stays short.
-const Help = `commands:
-  /help              show this
-  /usage             what the conversation has cost the server
-  /compact           fold the older turns into a summary the model writes
-  /history [what]    what this run did: a tool name, failed, outside, an id like r12,
-                     or --all for every run of this root
-  /ctx               how full the window is, and what the server is caching
-  /tools             what the model may call, and what each description costs
-  /model [id]        which model this run asks, or ask a different one
-  /think [level]     how deeply the model thinks: off, minimal, low, medium, high, xhigh, max
-  /undo [force]      put the most recent file change back; force also when it was edited since
-  /reset             forget the conversation
-  /exit              quit (ctrl+c at the prompt too; mid-request it cancels the request)`
+// CommandSpec is one slash command as a front end needs it: what to type, what may follow it,
+// what it does, and whether it waits for the turn in flight.
+type CommandSpec struct {
+	Name  string // /ctx
+	Args  string // [what]; empty when the command takes nothing
+	Note  string // how full the window is, and what the server is caching
+	Waits bool   // the turn in flight owns what this changes, so it waits
+}
+
+// Commands lists the slash commands once, in the order they are worth reading: /help prints this
+// and the screen completes from it, so neither can fall behind the other.
+func Commands() []CommandSpec {
+	return []CommandSpec{
+		{Name: "/help", Note: "show this"},
+		{Name: "/usage", Note: "what the conversation has cost the server"},
+		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
+		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
+		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
+		{Name: "/tools", Note: "what the model may call, and what each description costs"},
+		{Name: "/model", Args: "[id]", Note: "which model this run asks, or ask a different one", Waits: true},
+		{Name: "/think", Args: "[level]", Note: "how deeply the model thinks: " + strings.Join(llm.ThinkingLevels(), ", "), Waits: true},
+		{Name: "/undo", Args: "[force]", Note: "put the most recent file change back; force also when it was edited since", Waits: true},
+		{Name: "/reset", Note: "forget the conversation", Waits: true},
+		{Name: "/exit", Note: "quit (ctrl+c at the prompt too; mid-request it cancels the request)"},
+	}
+}
+
+// helpText is /help: the command list laid out, notes in a column.
+func helpText() string {
+	width := 0
+	for _, c := range Commands() {
+		width = max(width, len(strings.TrimSpace(c.Name+" "+c.Args)))
+	}
+	rows := []string{"commands:"}
+	for _, c := range Commands() {
+		rows = append(rows, fmt.Sprintf("  %-*s %s", width, strings.TrimSpace(c.Name+" "+c.Args), c.Note))
+	}
+	return strings.Join(rows, "\n")
+}
 
 // UsageLine reports what the conversation has cost, in the server's own numbers.
 func UsageLine(u Usage, ctxSize int) string {
@@ -45,12 +70,6 @@ func UsageLine(u Usage, ctxSize int) string {
 		u.Turns, u.PromptTok, u.CachedTok, u.GenTok, u.TotalPrompt, room, u.BytesPerTok)
 }
 
-// A turn uses the conversation and the files, so a command that changes them waits its turn.
-var waitsForTheTurn = map[string]bool{
-	"/reset": true, "/compact": true, "/undo": true,
-	"/model": true, "/think": true, // the turn in flight is already shaped by the old setting
-}
-
 // CommandIsSafeDuringATurn says whether a command only reads: /help, /usage and /history can
 // answer while a turn works; /reset, /compact and /undo would cut the ground from under it.
 func CommandIsSafeDuringATurn(line string) bool {
@@ -58,7 +77,12 @@ func CommandIsSafeDuringATurn(line string) bool {
 	if name == "/exit" || name == "/quit" {
 		return true // quitting cancels the turn rather than fighting it
 	}
-	return !waitsForTheTurn[name]
+	for _, c := range Commands() {
+		if c.Name == name {
+			return !c.Waits
+		}
+	}
+	return true // an unknown command changes nothing
 }
 
 // CompactReport is what /compact says when it is done.
@@ -81,7 +105,7 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 	case "/exit", "/quit":
 		return "", true, nil
 	case "/help":
-		return Help + "\n", false, nil
+		return helpText() + "\n", false, nil
 	case "/reset":
 		a.Reset()
 		return "history cleared\n", false, nil

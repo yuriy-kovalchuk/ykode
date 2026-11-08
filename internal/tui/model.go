@@ -41,12 +41,16 @@ type model struct {
 	pending  []*question // questions waiting for an answer, oldest first
 	err      string
 	expanded bool // tool rows also show what they were asked to do
-	history  []string
-	histIdx  int
-	mouseOn  bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
-	showKeys bool   // ? lists the keys above the prompt
-	unseen   bool   // output arrived below while the reader was scrolled up
-	rendered string // the transcript as last drawn, to tell new output from a redraw
+	// suggest is what the typed line could still become, and suggestFor the line that list was
+	// made from: a different line brings a cleared list back.
+	suggest    []agent.CommandSpec
+	suggestFor string
+	history    []string
+	histIdx    int
+	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
+	showKeys   bool   // ? lists the keys above the prompt
+	unseen     bool   // output arrived below while the reader was scrolled up
+	rendered   string // the transcript as last drawn, to tell new output from a redraw
 
 	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
 	// token of it would otherwise redraw the screen, and the stream waits for that draw.

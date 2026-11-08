@@ -28,6 +28,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
+		if m.suggest != nil {
+			m.dismissSuggestions() // a list on the screen is dismissed before a run is stopped
+			m.refresh()
+			return m, nil
+		}
 		if m.running {
 			m.cancelRun()
 			return m, nil
@@ -64,7 +69,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view.HalfPageDown()
 		m.seenIfAtBottom()
 		return m, nil
+	case "tab":
+		m.completeCommand()
+		m.refresh()
+		return m, nil
 	case "enter":
+		m.suggest = nil
 		return m.submit()
 	}
 
@@ -83,6 +93,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.histIdx > 0 {
 				m.histIdx--
 				m.input.SetValue(m.history[m.histIdx])
+				m.trackSuggestions()
 			}
 			return m, nil
 		case "down":
@@ -92,6 +103,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.histIdx = len(m.history)
 				m.input.SetValue("")
+				m.trackSuggestions()
 			}
 			return m, nil
 		}
@@ -100,6 +112,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.fitInput()
+	m.trackSuggestions()
 	m.layout()
 	return m, cmd
 }
