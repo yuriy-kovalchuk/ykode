@@ -76,3 +76,15 @@ type Sink interface {
 type nullSink struct{}
 
 func (nullSink) Emit(Event) Decision { return Refuse }
+
+// Stats summarises one model round-trip for the user.
+type Stats struct {
+	FinishReason   string
+	PromptTokens   int
+	CachedTokens   int
+	OutputTokens   int
+	PrefillTokSec  float64
+	DecodeTokSec   float64
+	DraftN         int // tokens a draft model proposed, when the server has one
+	DraftNAccepted int
+}

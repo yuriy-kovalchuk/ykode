@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const trimMarker = "(older tool output trimmed to fit the server context)"
@@ -136,4 +137,54 @@ func historyBytes(history []llm.Message) int {
 		}
 	}
 	return bytes
+}
+
+// forget tells the tools that these results are no longer in front of the model, so their memory
+// of having shown them must go with them: the next ask brings the text back, not a pointer to it.
+func (a *Agent) forget(messages ...llm.Message) {
+	if a.tools == nil {
+		return
+	}
+	for _, m := range messages {
+		if m.Role != "tool" {
+			continue
+		}
+		if a.repeats != nil && m.CallID != "" {
+			a.repeats.forgetID(m.CallID) // the same call again is now the only way back to that text
+		}
+		tool, ok := a.tools.Get(m.Name)
+		if !ok {
+			continue
+		}
+		if f, ok := tool.(tools.Forgetter); ok {
+			f.Forget(tools.Shown{CallID: m.CallID, Text: m.Content})
+		}
+	}
+}
+
+// forgetAll clears every tool's memory, which is what a reset does to the conversation.
+func (a *Agent) forgetAll() {
+	if a.tools == nil {
+		return
+	}
+	for _, tool := range a.tools.All() {
+		if f, ok := tool.(tools.Forgetter); ok {
+			f.ForgetAll()
+		}
+	}
+}
+
+// splitAll takes --all out of the query, wherever the user put it.
+func splitAll(query string) (string, bool) {
+	fields := strings.Fields(query)
+	kept := fields[:0]
+	all := false
+	for _, f := range fields {
+		if f == "--all" {
+			all = true
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return strings.Join(kept, " "), all
 }

@@ -1,0 +1,52 @@
+package agent
+
+import (
+	"cmp"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/audit"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
+)
+
+// Options configures one agent.
+type Options struct {
+	MaxTurns      int
+	MaxTokens     int          // cap on one response
+	SafetyMargin  int          // tokens left free for the chat template; 0 means ctxSafetyTok
+	CtxSize       int          // server context window; 0 = unknown, no budgeting
+	ThinkingLevel string       // off, minimal, low, medium, high, xhigh, max; empty is medium
+	Thinking      llm.Sampling // sent while the model thinks
+	NoThink       llm.Sampling // sent with thinking off; Qwen's cards recommend different values
+	AssumeYes     bool
+	Instructions  string            // what the project's AGENTS.md / CLAUDE.md said
+	NoVerify      bool              // never push a text-only answer back into the tools
+	SendReasoning bool              // repeat earlier thinking to templates that expect it back
+	MaxResult     int               // byte cap on one tool result; 0 means the tools' own default
+	Store         tools.ResultStore // where shortened command output is kept for the model to grep
+	Audit         *audit.Logger     // append-only record of every tool call; nil turns it off
+	Session       *session.Log      // append-only copy of the conversation, for --continue
+	Root          string            // the project root, recorded with every call
+	Allow         []string          // what never to ask about: a tool name, or "exec:go test"
+	Undo          Undoer            // the stack /undo reads; wired where the tools are built
+}
+
+// tell reports something the run did that is not a tool call.
+// add extends the conversation and, when one is configured, the on-disk copy of it.
+// SetModel changes what the next request asks for; the server may still be loading it.
+func (a *Agent) SetModel(id string) { a.model = id }
+
+// SetThink decides whether the model gets a thinking phase on the turns that follow.
+func (a *Agent) SetThinkingLevel(level string) { a.opts.ThinkingLevel = level }
+
+// ThinkingLevel is how deeply the model is allowed to think before it answers.
+func (a *Agent) ThinkingLevel() string { return cmp.Or(a.opts.ThinkingLevel, llm.DefaultThinkingLevel) }
+
+// CtxSize is the context window the budget is measured against; 0 when the server never reported one.
+func (a *Agent) CtxSize() int { return a.opts.CtxSize }
+
+// Root is the project directory this session works in.
+func (a *Agent) Root() string { return a.opts.Root }
+
+// Model is the model id this agent talks to.
+func (a *Agent) Model() string { return a.model }
