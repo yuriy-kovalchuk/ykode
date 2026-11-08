@@ -15,11 +15,14 @@ const (
 	compactPrompt = `Summarise the earlier part of a coding session so it can be dropped from the context.
 Answer in four short sections - Goal, Files touched, What was decided, Next step.
 Only state what the transcript shows. Under 150 words.`
-	compactMessage   = "[ykode compacted the earlier turns into this summary]"
 	compactLineCap   = 300  // bytes of one message in the transcript handed to the summariser
 	compactMaxTokens = 400  // the summary is meant to be short
 	maxSummaryChars  = 2000 // a runaway summary is cut, not kept
 )
+
+// FoldMark starts the message a fold leaves in the conversation: the recap of what was put away. A
+// front end that draws a whole conversation reads it to tell a recap from something the user typed.
+const FoldMark = "[ykode compacted the earlier turns into this summary]"
 
 // Compact replaces the older turns with a summary the model writes, keeping the newest calls intact.
 // It returns the tokens freed; if the summary cannot be made, it falls back to shortening tool results.
@@ -41,7 +44,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}
 	dropped := a.dropping(start, task)
 	a.forget(dropped...)
-	kept := []llm.Message{{Role: "user", Content: compactMessage + "\n" + summary}}
+	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary}}
 	if task > 0 {
 		// the job in hand is kept word for word: a summary is for what happened, and a model
 		// working from a paraphrase of the request starts answering a question nobody asked

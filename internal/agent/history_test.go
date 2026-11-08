@@ -349,3 +349,22 @@ func TestACallThatNeverRanIsAnsweredBeforeTheServerSeesIt(t *testing.T) {
 		t.Errorf("sanitizing twice invented another reply: %d messages, want 5", len(a.history))
 	}
 }
+
+// the screen asks what the model is being sent, so a run that came back can show what it came back with
+func TestTheConversationIsReadableBack(t *testing.T) {
+	a, done := newStoringAgent(t, &stubServer{}, Options{}, &captureSink{}, t.TempDir())
+	defer done()
+	a.add(llm.Message{Role: "user", Content: "an ask from before"})
+
+	saved := a.Conversation()
+	if saved[0].Role != "system" {
+		t.Errorf("the conversation starts with %q, not the system prompt", saved[0].Role)
+	}
+	if last := saved[len(saved)-1]; last.Role != "user" || last.Content != "an ask from before" {
+		t.Errorf("the ask is not at the end: %+v", last)
+	}
+	saved[len(saved)-1].Content = "changed somewhere else"
+	if got := a.Conversation()[len(saved)-1].Content; got != "an ask from before" {
+		t.Errorf("reading the conversation hands out the conversation itself: %q", got)
+	}
+}

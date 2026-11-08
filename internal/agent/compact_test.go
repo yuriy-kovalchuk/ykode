@@ -125,7 +125,7 @@ func TestCompactStillFreesRoomWhenTheSummariserFails(t *testing.T) {
 	if !shortened {
 		t.Error("the fallback left the tool results untouched")
 	}
-	if strings.HasPrefix(a.history[1].Content, compactMessage) {
+	if strings.HasPrefix(a.history[1].Content, FoldMark) {
 		t.Error("a summary was inserted even though the summariser answered with nothing")
 	}
 	if !sink.noticed("shortening tool results") {
@@ -373,7 +373,7 @@ func lastFoldSawTheEarlierSummary(stub *stubServer) bool {
 		}
 		seen = false
 		for _, raw := range messages[1:] {
-			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), compactMessage) {
+			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), FoldMark) {
 				seen = true
 			}
 		}

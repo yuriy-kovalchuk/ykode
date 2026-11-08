@@ -249,6 +249,9 @@ enough (`--continue 2137`), and `ykode sessions` or `/sessions` lists what there
 with what each was about. The resumed run keeps the same id, so its results and its
 audit entries stay with its conversation.
 
+The screen opens with the conversation it came back to — the asks, the calls with what they
+answered, and the recap of any fold — and `ctrl+p` still walks the earlier prompts of it.
+
 A resume reads back what the last run *ended with*: a fold and the recap the model
 wrote for it are saved with the conversation, and `/reset` marks the saved log as
 started over, so nothing that was put away comes back. What a resume cannot save is

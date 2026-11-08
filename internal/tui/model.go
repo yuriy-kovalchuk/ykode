@@ -74,7 +74,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(styleWorking))
 
 	// a terminal that will not say its size still gets a screen
-	return &model{
+	m := &model{
 		spin:    spin,
 		ctx:     ctx,
 		hub:     hub,
@@ -88,6 +88,12 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		width:   defaultWidth,
 		height:  defaultHeight,
 	}
+	m.history = append(m.history, resume(&m.log, cfg.Session, a.Conversation())...)
+	m.histIdx = len(m.history)
+	if len(m.history) > 0 {
+		m.refresh() // a carried-over conversation is on the screen before the first keystroke
+	}
+	return m
 }
 
 func (m *model) Init() tea.Cmd { return textarea.Blink }

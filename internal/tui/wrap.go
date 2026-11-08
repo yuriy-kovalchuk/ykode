@@ -83,7 +83,13 @@ func indent(text, pad string) string {
 }
 
 // clock is a message's time of day; the date is the session's, so it is left out.
-func clock(at time.Time) string { return at.Format("15:04") }
+// clock is the hour of a turn. A turn carried over from an earlier run has no hour to show.
+func clock(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	return at.Format("15:04")
+}
 
 // rightAligned puts tag at the end of the row when it fits, after the text when it does not.
 func rightAligned(text, tag string, width int) string {

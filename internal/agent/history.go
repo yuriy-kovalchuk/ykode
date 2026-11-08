@@ -188,3 +188,10 @@ func splitAll(query string) (string, bool) {
 	}
 	return strings.Join(kept, " "), all
 }
+
+// Conversation returns the turns the model is being sent, system prompt first: a run that came back
+// to a saved conversation draws what it already knows. Read it between turns, not while one runs -
+// the history belongs to the goroutine answering.
+func (a *Agent) Conversation() []llm.Message {
+	return append([]llm.Message(nil), a.history...)
+}

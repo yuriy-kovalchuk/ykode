@@ -70,12 +70,14 @@ func draw(e entry, width int, expanded bool) string {
 // promptBlock is what was asked, as a band across the whole screen: the ask then reads apart
 // from the answer even when it runs over several lines.
 func promptBlock(e entry, width int) string {
-	when := clock(e.at)
+	when := clock(e.at) // an ask carried over from an earlier run has no hour to show
 	lines := strings.Split(wrap(strings.TrimSpace(e.text), width-promptEdge), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	lines[len(lines)-1] = rightAligned(lines[len(lines)-1], when, width-promptEdge)
+	if when != "" {
+		lines[len(lines)-1] = rightAligned(lines[len(lines)-1], when, width-promptEdge)
+	}
 	for i, line := range lines {
 		lines[i] = styleUserLine.Render(padTo(userMark+" "+line, width))
 	}
