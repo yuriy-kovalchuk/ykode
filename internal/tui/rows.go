@@ -123,32 +123,32 @@ const (
 	userMark   = "▌"
 )
 
-// toolRow is one call on one row: the arguments give way to the result, and a result too wide for
-// the row is cut as well, so a call never runs past the edge of the screen.
+// toolRow is one call on one row, sitting in a band whose colour is its state: the arguments give
+// way to the result, and a result too wide for the row is cut as well, so a call never runs past the
+// edge of the screen.
 func toolRow(e entry, width int) string {
-	row := struct {
-		mark, note string
-		markStyle  lipgloss.Style
-		noteStyle  lipgloss.Style
-	}{"→", "working…", styleAccent, styleDim}
+	mark, note, band := "→", "working…", styleToolWait
 	switch {
 	case e.failed:
-		row.mark, row.note, row.markStyle, row.noteStyle = "✗", e.result, styleBad, styleBad
+		mark, note, band = "✗", e.result, styleToolFail
 	case e.result != "":
 		// a change is a block of its own under the row, so the row keeps only what the call said
-		note := e.result
+		note = e.result
 		if holdsDiff(note) {
 			note = summaryLine(note)
 		}
-		row.mark, row.note, row.markStyle, row.noteStyle = "✓", note, styleOK, styleResult
+		mark, band = "✓", styleToolDone
 	}
-	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(row.note)
+	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(note)
 	if room < toolRowArgs {
 		room = toolRowArgs
-		row.note = cutToWidth(row.note, max(width-toolRowMark-lipgloss.Width(e.tool)-room, 4))
+		note = cutToWidth(note, max(width-toolRowMark-lipgloss.Width(e.tool)-room, 4))
 	}
-	return fmt.Sprintf("%s %s %s  %s", row.markStyle.Render(row.mark), styleToolName.Render(e.tool),
-		styleDim.Render(oneLine(tools.Describe(e.tool, e.args), room)), row.noteStyle.Render(row.note))
+	// the band does the quieting, so nothing inside it is also faded: a faded mark on a coloured
+	// ground is near invisible on some terminals
+	head := fmt.Sprintf("%s %s %s  %s", mark, styleBold.Render(e.tool),
+		oneLine(tools.Describe(e.tool, e.args), room), note)
+	return band.Width(width).Render(head)
 }
 
 // expandedRows is how much of one argument an opened call shows before saying how much more there is.
@@ -220,8 +220,8 @@ const argChars = 2000
 // draftRows is a call being written: its head, then the newest lines of what it writes.
 func draftRows(d draft, width int) string {
 	shown, written, bytes := d.preview()
-	row := fmt.Sprintf("%s %s %s", styleWorking.Render("✎"), styleToolName.Render(d.tool),
-		styleDim.Render(draftHead(d.target(), written, bytes)))
+	head := fmt.Sprintf("%s %s %s", "✎", styleBold.Render(d.tool), draftHead(d.target(), written, bytes))
+	row := styleToolWait.Width(width).Render(head)
 	for i, line := range shown {
 		shown[i] = cutToWidth(line, width-4)
 	}

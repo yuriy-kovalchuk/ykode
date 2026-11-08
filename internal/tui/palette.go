@@ -9,7 +9,14 @@ const (
 	colorWarn   = lipgloss.Color("3")
 	colorBad    = lipgloss.Color("1")
 	colorTool   = lipgloss.Color("5") // magenta
-	colorMuted  = lipgloss.Color("8")
+
+	// a call sits in a band of its own, the way pi paints a tool execution: the band carries the
+	// state, so what a call did is read before its words are. The terminal's own grey, green and red
+	// keep it right on a light theme as well as a dark one.
+	colorToolWait = lipgloss.Color("8")
+	colorToolDone = lipgloss.Color("2")
+	colorToolFail = lipgloss.Color("1")
+	colorMuted    = lipgloss.Color("8")
 )
 
 var (
@@ -20,12 +27,13 @@ var (
 	styleOK       = lipgloss.NewStyle().Foreground(colorOK)
 	styleWarn     = lipgloss.NewStyle().Foreground(colorWarn)
 	styleBad      = lipgloss.NewStyle().Foreground(colorBad)
-	styleToolName = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
 	styleWorking  = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
+	styleToolWait = lipgloss.NewStyle().Background(colorToolWait)
+	styleToolDone = lipgloss.NewStyle().Background(colorToolDone)
+	styleToolFail = lipgloss.NewStyle().Background(colorToolFail)
 	// styleUserLine is the band a prompt sits in: reversing the terminal's own colours keeps it
 	// right on a light theme as well as a dark one.
 	styleUserLine = lipgloss.NewStyle().Reverse(true).Bold(true)
-	styleResult   = lipgloss.NewStyle() // what a call answered is shown as the tool wrote it
 	// a change reads at a glance: what came in is kept, what went is marked, and what changed inside
 	// a line that stayed is reversed out.
 	styleDiffAdd  = lipgloss.NewStyle().Foreground(colorOK)

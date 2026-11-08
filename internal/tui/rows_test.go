@@ -29,8 +29,10 @@ func TestToolRowsShowMoreWhenOpened(t *testing.T) {
 		t.Errorf("opening the row did not show what it was asked to do:\n%s", opened)
 	}
 	for _, line := range strings.Split(opened, "\n") {
-		if len(stripCodes(line)) > 80 {
-			t.Errorf("an opened row is wider than the screen: %q", stripCodes(line))
+		// measured in columns: the band pads a row out to the width of the screen, and the marks in a
+		// row take more bytes than they do columns
+		if got := lipgloss.Width(stripCodes(line)); got > 80 {
+			t.Errorf("an opened row is wider than the screen: %d columns %q", got, stripCodes(line))
 		}
 	}
 	if log.render(40, false) == "" {
@@ -237,3 +239,40 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 		t.Errorf("the call row carries the change as one flat line: %q", stripCodes(summary))
 	}
 }
+
+// a call is read as an execution of its own: it sits in a band of colour that says what it did, the
+// way pi paints a tool execution.
+func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
+	withColour(t)
+	running := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60, false))
+	done := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60, false))
+	failed := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60, false))
+	writing := firstRow(draw(newDraft(1, "write_file", `{"path":"a.go","content":"package main`), 60, false))
+
+	checks := []struct {
+		what  string
+		row   string
+		style lipgloss.Style
+	}{
+		{"a call waiting", running, styleToolWait},
+		{"a call finished", done, styleToolDone},
+		{"a call that failed", failed, styleToolFail},
+		{"a call being written", writing, styleToolWait},
+	}
+	for _, c := range checks {
+		if !strings.Contains(c.row, codeOf(c.style)) {
+			t.Errorf("%s is not drawn in a band of its own: %q", c.what, stripCodes(c.row))
+		}
+	}
+	if codeOf(styleToolWait) == codeOf(styleToolDone) || codeOf(styleToolDone) == codeOf(styleToolFail) {
+		t.Error("waiting, finished and failed share a colour, so the band says nothing")
+	}
+	for _, row := range []string{running, done, failed, writing} {
+		if got := lipgloss.Width(stripCodes(row)); got != 60 {
+			t.Errorf("the band takes %d columns of a 60 column screen: %q", got, stripCodes(row))
+		}
+	}
+}
+
+// firstRow is the first row of a block, which is what carries the call.
+func firstRow(block string) string { return strings.SplitN(block, "\n", 2)[0] }
