@@ -3,8 +3,6 @@ package agent
 import (
 	"fmt"
 	"strings"
-
-	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // Usage is what the conversation has cost, in the server's own numbers.
@@ -126,34 +124,4 @@ func (a *Agent) ContextLine() string {
 			int(u.Acceptance*100+0.5), u.DraftOK, u.Draft)
 	}
 	return b.String()
-}
-
-// CtxSize is the context window the budget is measured against; 0 when the server never reported one.
-func (a *Agent) CtxSize() int { return a.opts.CtxSize }
-
-// Root is the project directory this session works in.
-func (a *Agent) Root() string { return a.opts.Root }
-
-// Model is the model id this agent talks to.
-func (a *Agent) Model() string { return a.model }
-
-// sendingBytes counts every byte a request carries; the system prompt already sits at the head of history.
-func (a *Agent) sendingBytes() int {
-	bytes := 0
-	for _, s := range a.specs() {
-		bytes += len(s.Type) + len(s.Function.Name) + len(s.Function.Description) + len(s.Function.Parameters)
-	}
-	bytes += historyBytes(a.history)
-	return bytes
-}
-
-func historyBytes(history []llm.Message) int {
-	bytes := 0
-	for _, m := range history {
-		bytes += len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.WireReasoning)
-		for _, c := range m.ToolCalls {
-			bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
-		}
-	}
-	return bytes
 }

@@ -396,3 +396,12 @@ func (a *Agent) note(text string) {
 func (a *Agent) modelNote(text string) {
 	a.add(llm.Message{Role: "user", Content: text})
 }
+
+// CtxSize is the context window the budget is measured against; 0 when the server never reported one.
+func (a *Agent) CtxSize() int { return a.opts.CtxSize }
+
+// Root is the project directory this session works in.
+func (a *Agent) Root() string { return a.opts.Root }
+
+// Model is the model id this agent talks to.
+func (a *Agent) Model() string { return a.model }
