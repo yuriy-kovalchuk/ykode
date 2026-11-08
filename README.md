@@ -119,6 +119,12 @@ tokens per second, updated while the reply streams. The cache percentage is llam
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
 The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 
+An answer is drawn as the model shaped it: headings, lists, tables, block quotes and fenced code
+(language named once above the block), and the marks it wrote turned into the terminal's own bold,
+italic and colour. goldmark parses the CommonMark; ykode draws it, so the palette and the width stay
+the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
+arrived, and only the drawing interprets it.
+
 Each call the model makes is one row: the tool, what it touches in plain words — `internal/tui/rows.go:40-159`,
 `"styleBar" in internal *.go`, the command as typed — and what came back. `ctrl+o` opens a call and puts
 each argument on a row of its own, long text as the lines it holds rather than escaped JSON. A question

@@ -98,10 +98,16 @@ func (m *model) cancelRun() {
 
 func (m *model) handle(ev agent.Event) {
 	switch ev.Kind {
-	case agent.Thinking:
-		m.log.thinking(ev.Text)
-	case agent.Answer:
-		m.log.answer(ev.Text)
+	case agent.Thinking, agent.Answer:
+		// a streamed block is drawn once per spin, not once per token: the answer is re-laid out
+		// as a whole, and the stream that feeds the footer's speeds waits for every draw
+		if ev.Kind == agent.Thinking {
+			m.log.thinking(ev.Text)
+		} else {
+			m.log.answer(ev.Text)
+		}
+		m.redrawQueued = true
+		return
 	case agent.TurnEnd:
 		m.decode, m.prefill = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec
 		m.log.dropDrafts()

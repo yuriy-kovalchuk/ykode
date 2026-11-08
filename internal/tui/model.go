@@ -104,12 +104,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case spinner.TickMsg:
-		if !m.running {
-			return m, nil // the spinner stops with the run, and so does the timer it redraws
-		}
 		if m.redrawQueued {
 			m.redrawQueued = false
-			m.refresh() // a call being written is drawn once per tick, not once per token
+			m.refresh() // what streamed since the last tick is drawn here, once
+		}
+		if !m.running {
+			return m, nil // the spinner stops with the run, and so does the timer it redraws
 		}
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)

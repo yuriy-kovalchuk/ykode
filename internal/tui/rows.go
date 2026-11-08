@@ -46,7 +46,7 @@ func draw(e entry, width int, expanded bool) string {
 	case whoThink:
 		return fmt.Sprintf("%s\n\n", gutter(wrap(e.text, width-4), styleThink))
 	case whoAnswer:
-		return fmt.Sprintf("%s\n\n", e.text)
+		return markdown(e.text, width) + "\n\n"
 	case whoNotice:
 		return fmt.Sprintf("%s\n", styleDim.Render("· "+oneLine(e.text, noticeChars)))
 	case whoTool:
