@@ -53,6 +53,10 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 
 // Reset keeps the system prompt and forgets the rest of the conversation; the learned byte ratio stays.
 func (a *Agent) Reset() {
+	if len(a.history) > 1 {
+		// the saved conversation starts over too, or --continue hands back what was just cleared
+		a.reportSave(a.opts.Session.Cleared())
+	}
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.meter.clearCost()
 	a.compactedAt = -1
@@ -62,13 +66,19 @@ func (a *Agent) Reset() {
 	a.publishUsage()
 }
 
+// reportSave passes on the one thing a session log can answer with, and says it only once per run:
+// a log that will not write is a fact about the run, not about one call.
+func (a *Agent) reportSave(err error) {
+	if err == nil || a.sessionBroken.Swap(true) {
+		return
+	}
+	a.tell(err.Error())
+}
+
 func (a *Agent) add(m llm.Message) {
 	m = storable(m)
 	a.history = append(a.history, m)
-	if err := a.opts.Session.Append(m); err != nil && !a.sessionBroken.Swap(true) {
-		// a session that will not save is reported once, not per message
-		a.tell(err.Error())
-	}
+	a.reportSave(a.opts.Session.Append(m))
 }
 
 // Resume continues where a saved conversation stopped.

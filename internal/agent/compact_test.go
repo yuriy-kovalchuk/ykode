@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -483,4 +484,56 @@ func TestAFoldThatWasNotNeededSaysSo(t *testing.T) {
 			t.Errorf("a conversation that was not folded reported a recap: %q", ev.Text)
 		}
 	}
+}
+
+// a fold belongs to the saved conversation as well: a resume should start from the recap, not
+// reload the turns that were folded away and trim them again
+func TestAFoldReachesTheSavedConversation(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		sse("", "Goal: read the files. Files: file0.go. Decisions: none. Next: stop", "", nil, "stop"),
+	}}
+	saved := session.New(dir, "s20260101-120000", dir)
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000, Session: saved}, &captureSink{decision: Allow}, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
+		t.Fatal(err)
+	}
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatalf("compaction freed %d tokens", freed)
+	}
+
+	back, err := session.Load(filepath.Join(dir, "s20260101-120000.jsonl"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recap bool
+	for _, m := range back {
+		if strings.Contains(m.Content, "Goal: read the files") {
+			recap = true
+		}
+		if strings.HasPrefix(m.Content, "line 1\nline 2") {
+			t.Errorf("what was folded away is still saved: %q", firstChars(m.Content))
+		}
+	}
+	if !recap {
+		t.Errorf("the saved conversation holds no recap of the fold: %d messages", len(back))
+	}
+}
+
+func firstChars(s string) string {
+	if len(s) > 40 {
+		return s[:40]
+	}
+	return s
 }

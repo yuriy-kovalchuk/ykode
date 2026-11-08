@@ -180,3 +180,69 @@ func TestTheLogCountsWhatItSaved(t *testing.T) {
 		t.Error("a log that is off counts something")
 	}
 }
+
+// starting over has to reach the saved conversation too: a resume must not hand back what was cleared
+func TestStartingOverLeavesNothingToResume(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions", "s20260101-120000.jsonl")
+	log := New(filepath.Dir(path), "s20260101-120000", "")
+	for _, ask := range []string{"an ask that was cleared", "an answer that was cleared"} {
+		if err := log.Append(llm.Message{Role: "user", Content: ask}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := log.Cleared(); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Append(llm.Message{Role: "user", Content: "a fresh ask"}); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 1 || back[0].Content != "a fresh ask" {
+		t.Errorf("the resume hands back what was cleared: %+v", back)
+	}
+}
+
+// a fold is what the run ended with, so a resume starts there rather than reloading and re-trimming
+// what the last run already put away
+func TestAFoldIsSavedSoAResumeStartsFromIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions", "s20260101-120000.jsonl")
+	log := New(filepath.Dir(path), "s20260101-120000", "")
+	for _, old := range []string{"an older ask", "its long answer", "the tool result it needed"} {
+		if err := log.Append(llm.Message{Role: "user", Content: old}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kept := []llm.Message{
+		{Role: "user", Content: "[ykode compacted the earlier turns into this summary]\nGoal: the fix"},
+		{Role: "user", Content: "the ask still in hand"},
+	}
+	if err := log.Folded(kept); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Append(llm.Message{Role: "assistant", Content: "kept answer"}); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 3 {
+		t.Fatalf("a resume reads back %d messages, want the two kept plus the one that followed: %+v", len(back), back)
+	}
+	if !strings.Contains(back[0].Content, "Goal: the fix") {
+		t.Errorf("the fold's recap was lost: %q", back[0].Content)
+	}
+	if back[2].Content != "kept answer" {
+		t.Errorf("what followed the fold is out of order: %+v", back)
+	}
+	for _, m := range back {
+		if strings.Contains(m.Content, "the tool result it needed") {
+			t.Error("what was folded away is back")
+		}
+	}
+}

@@ -28,6 +28,18 @@ type header struct {
 	Root string `json:"root"`
 }
 
+// A boundary line says the conversation before it no longer counts: a cleared one starts again, and
+// a folded one continues from the messages the fold kept. The log stays append-only either way.
+type boundary struct {
+	Boundary string        `json:"boundary"`
+	Kept     []llm.Message `json:"kept,omitempty"`
+}
+
+const (
+	boundaryCleared = "cleared"
+	boundaryFolded  = "folded"
+)
+
 // New points a log at <dir>/<id>.jsonl for the project at root; an empty id means sessions are off.
 func New(dir, id, root string) *Log {
 	if dir == "" || id == "" {
@@ -49,6 +61,34 @@ func (l *Log) Append(m llm.Message) error {
 	if l == nil {
 		return nil
 	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
+	if err := l.write(raw); err != nil {
+		return err
+	}
+	l.messages++
+	return nil
+}
+
+// Cleared marks the saved conversation as started over: a resume reads what follows the mark, not
+// what came before it.
+func (l *Log) Cleared() error {
+	return l.write(mustJSON(boundary{Boundary: boundaryCleared}))
+}
+
+// Folded saves what a fold left standing, so a resume starts from the recap rather than reloading
+// the turns that were folded away and trimming them again.
+func (l *Log) Folded(kept []llm.Message) error {
+	return l.write(mustJSON(boundary{Boundary: boundaryFolded, Kept: kept}))
+}
+
+// write appends JSON lines, opening the file with its project header when it is new.
+func (l *Log) write(lines ...[]byte) error {
+	if l == nil {
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(l.path), dirPerm); err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
@@ -57,19 +97,17 @@ func (l *Log) Append(m llm.Message) error {
 		return fmt.Errorf("session: %w", err)
 	}
 	defer f.Close()
-	var lines []byte
+	var out []byte
 	if info, err := f.Stat(); err == nil && info.Size() == 0 && l.root != "" {
-		lines, _ = json.Marshal(header{Root: l.root})
-		lines = append(lines, '\n')
+		head, _ := json.Marshal(header{Root: l.root})
+		out = append(out, append(head, '\n')...)
 	}
-	raw, err := json.Marshal(m)
-	if err != nil {
+	for _, line := range lines {
+		out = append(out, append(line, '\n')...)
+	}
+	if _, err := f.Write(out); err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
-	if _, err := f.Write(append(append(lines, raw...), '\n')); err != nil {
-		return fmt.Errorf("session: %w", err)
-	}
-	l.messages++
 	return nil
 }
 
@@ -101,6 +139,11 @@ func Load(path, root string) ([]llm.Message, error) {
 			}
 			continue
 		}
+		var b boundary
+		if json.Unmarshal([]byte(line), &b) == nil && b.Boundary != "" {
+			messages = b.Kept // what came before the mark no longer counts
+			continue
+		}
 		var m llm.Message
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			if i == len(lines)-1 {
@@ -126,4 +169,13 @@ func List(dir string) ([]string, error) {
 		ids[i] = strings.TrimSuffix(filepath.Base(name), ".jsonl")
 	}
 	return ids, nil
+}
+
+// mustJSON renders a line the log writes; these types are internal, so it cannot fail.
+func mustJSON(v any) []byte {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return []byte(`{}`)
+	}
+	return raw
 }

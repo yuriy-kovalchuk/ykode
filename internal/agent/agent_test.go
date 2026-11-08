@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -293,4 +295,26 @@ func assistantReasoning(t *testing.T, request map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// starting over has to reach the saved conversation too, or --continue hands back what was cleared
+func TestStartingOverClearsTheSavedConversation(t *testing.T) {
+	dir := t.TempDir()
+	saved := session.New(dir, "s20260101-120000", dir)
+	a, done := newStoringAgent(t, &stubServer{}, Options{Session: saved}, &captureSink{}, dir)
+	defer done()
+
+	a.add(llm.Message{Role: "user", Content: "an ask that will be cleared"})
+	a.add(llm.Message{Role: "assistant", Content: "and its answer"})
+	if _, _, err := a.Command(context.Background(), "/reset"); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := session.Load(filepath.Join(dir, "s20260101-120000.jsonl"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 0 {
+		t.Errorf("a resume reads back what was cleared: %d messages", len(back))
+	}
 }

@@ -57,6 +57,8 @@ func (a *Agent) Compact(ctx context.Context) int {
 // /ctx show the history as it now stands rather than as it was when the last reply arrived.
 func (a *Agent) foldFreed(before int) int {
 	a.publishUsage()
+	// what the fold left standing is what a resume should read back, not what was folded away from it
+	a.reportSave(a.opts.Session.Folded(a.history[1:]))
 	return before - a.estimateTokens()
 }
 
