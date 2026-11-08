@@ -8,6 +8,7 @@ import (
 
 // refresh keeps a reader who scrolled up in place and marks the output arriving below.
 func (m *model) refresh() {
+	m.redrawQueued = false
 	atBottom := m.view.AtBottom()
 	m.layout()
 	content := m.log.render(m.width, m.expanded)

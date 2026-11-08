@@ -107,6 +107,10 @@ func (m *model) handle(ev agent.Event) {
 		m.log.dropDrafts()
 	case agent.ToolDraft:
 		m.log.draft(ev.Call, ev.Tool, ev.Text)
+		// the rows of a call being written wait for the spinner's next tick: drawing them at the
+		// rate of the tokens would hold up the stream that carries the speeds the footer shows
+		m.redrawQueued = true
+		return
 	case agent.Progress:
 		// the first token reports no decode speed yet; keep the last one rather than show 0
 		if ev.Stats.DecodeTokSec > 0 {

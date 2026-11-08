@@ -49,13 +49,15 @@ func lineCount(text, newline string) int {
 	return n
 }
 
-// summary is the one-line head of a call being written: the tool, its target, how much so far.
-func (d draft) summary() string {
+// draftHead is the one-line head of a call being written: its target and how much is written so
+// far. It reports numbers the preview already counted, since a call of a hundred kilobytes is
+// redrawn while it grows.
+func draftHead(target string, lines, size int) string {
 	parts := []string{}
-	if target := d.target(); target != "" {
+	if target != "" {
 		parts = append(parts, target)
 	}
-	if _, lines, size := d.preview(); size > 0 {
+	if size > 0 {
 		parts = append(parts, byteSize(size), fmt.Sprintf("%d lines", lines))
 	}
 	return strings.Join(parts, " · ")

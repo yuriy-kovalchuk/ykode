@@ -15,12 +15,12 @@ func TestADraftShowsAWriteBeingWritten(t *testing.T) {
 	if d.target() != "web/index.html" {
 		t.Errorf("target = %q", d.target())
 	}
-	lines, total, _ := d.preview()
+	lines, total, size := d.preview()
 	if total != 4 || !strings.Contains(strings.Join(lines, "\n"), "<body>") { // three written, one half-written
 		t.Errorf("preview = %q (%d lines), want the written lines so far", lines, total)
 	}
-	if !strings.Contains(d.summary(), "web/index.html") || !strings.Contains(d.summary(), "lines") {
-		t.Errorf("summary = %q", d.summary())
+	if head := draftHead(d.target(), total, size); !strings.Contains(head, "web/index.html") || !strings.Contains(head, "lines") {
+		t.Errorf("head = %q", head)
 	}
 }
 

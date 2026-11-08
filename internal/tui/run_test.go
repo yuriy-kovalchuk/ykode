@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/bubbles/spinner"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,5 +153,49 @@ func TestANewRunClearsTheErrorRow(t *testing.T) {
 	m.begin()
 	if strings.Contains(m.bottomArea(), "the server hung up") {
 		t.Error("the old failure is still on screen while a new turn runs")
+	}
+}
+
+// a call being written is drawn once per spin, not once per token: the stream that feeds it would
+// otherwise wait for the screen every time a fragment arrives
+func TestACallBeingWrittenWaitsForTheTickToBeDrawn(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m.running = true
+	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"a.go","content":"the first line`})
+	if strings.Contains(stripCodes(m.view.View()), "the first line") {
+		t.Error("the call being written was drawn at the token's own rate")
+	}
+	m.Update(spinner.TickMsg{})
+	if !strings.Contains(stripCodes(m.view.View()), "the first line") {
+		t.Error("the next tick never drew the call being written")
+	}
+}
+
+// what the server reports stays on the screen while a call is still being written
+func TestTheSpeedsStayLiveWhileACallIsBeingWritten(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 30})
+	m.running = true
+	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"a.go","content":"x`})
+	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{PrefillTokSec: 512.4, DecodeTokSec: 71.3}})
+	line := stripCodes(m.View())
+	if !strings.Contains(line, "↑ 512 tok/s") || !strings.Contains(line, "↓ 71 tok/s") {
+		t.Errorf("a queued transcript draw hid the speeds: %s", line)
+	}
+}
+
+// one token of a long write: a fragment joins the record, the screen follows on the tick
+func BenchmarkWriteAFileToken(b *testing.B) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.running = true
+	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"src/big.go","content":"`})
+	tick := spinner.TickMsg{}
+	for i := 0; i < b.N; i++ {
+		m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: "a line of source, byte after byte\\n"})
+		if i%10 == 0 {
+			m.Update(tick)
+		}
 	}
 }

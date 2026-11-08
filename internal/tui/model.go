@@ -48,6 +48,10 @@ type model struct {
 	showKeys bool   // ? lists the keys above the prompt
 	unseen   bool   // output arrived below while the reader was scrolled up
 	rendered string // the transcript as last drawn, to tell new output from a redraw
+
+	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
+	// token of it would otherwise redraw the screen, and the stream waits for that draw.
+	redrawQueued bool
 }
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
@@ -102,6 +106,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		if !m.running {
 			return m, nil // the spinner stops with the run, and so does the timer it redraws
+		}
+		if m.redrawQueued {
+			m.redrawQueued = false
+			m.refresh() // a call being written is drawn once per tick, not once per token
 		}
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
