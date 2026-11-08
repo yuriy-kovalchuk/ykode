@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"context"
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // a code ends at its final byte (@ to ~), not at the next "m": \x1b[?25l has none
@@ -156,5 +158,28 @@ func TestTheStatusLineKeepsActivityWhenNarrow(t *testing.T) {
 	middle := stripCodes(statusLine(s))
 	if strings.Contains(middle, "↑90k") || !strings.Contains(middle, "ctx") {
 		t.Errorf("at 45 the totals went before the window: %q", middle)
+	}
+}
+
+// the footer names the project the agent works in, and the depth it thinks at
+func TestTheFooterReadsWhatTheAgentKnows(t *testing.T) {
+	dir := t.TempDir()
+	a := agent.New(nil, nil, "test-model", agent.Options{Root: dir, ThinkingLevel: "high"}, nil)
+	m := newModel(context.Background(), a, NewHub())
+	s := m.status()
+	if s.root != dir || s.thinking != "high" || s.model != "test-model" {
+		t.Errorf("the footer reports %+v, want the agent's root, model and depth", s)
+	}
+}
+
+// the footer reads the agent's numbers as it draws, so a command that changed the conversation shows
+// on the next frame rather than on the next reply
+func TestTheFooterReadsTheAgentsNumbersAtDrawTime(t *testing.T) {
+	a := agent.New(nil, nil, "test-model", agent.Options{CtxSize: 8000}, nil)
+	m := newModel(context.Background(), a, NewHub())
+	before := stripCodes(statusLine(m.status()))
+	a.Resume([]llm.Message{{Role: "user", Content: strings.Repeat("a call, ", 600)}})
+	if after := stripCodes(statusLine(m.status())); after == before {
+		t.Errorf("the footer kept its numbers after the conversation grew:\n%s\n%s", before, after)
 	}
 }

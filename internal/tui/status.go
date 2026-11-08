@@ -186,3 +186,15 @@ func tokCount(n int) string {
 	}
 	return fmt.Sprintf("%d", n)
 }
+
+// status is what the footer reports right now.
+func (m *model) status() status {
+	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
+		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
+		decode: m.decode, running: m.running, queued: len(m.queue), took: m.took, spinner: m.spin.View(),
+		keysHint: !m.showKeys, width: m.width}
+	if m.running {
+		s.elapsed = time.Since(m.started)
+	}
+	return s
+}
