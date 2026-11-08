@@ -10,10 +10,10 @@ import (
 
 func oneLine(text string, max int) string {
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) <= max {
-		return text
+	if runes := []rune(text); len(runes) > max {
+		return string(runes[:max]) + "…"
 	}
-	return text[:max] + "…"
+	return text
 }
 
 // wrap breaks a line to width without cutting words, keeping long words intact.
