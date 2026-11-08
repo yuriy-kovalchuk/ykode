@@ -10,6 +10,7 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"testing"
+	"time"
 )
 
 // TestMain keeps the package away from the developer's own ~/.ykode: a settings file that is
@@ -401,5 +402,46 @@ func TestTheFullScreenSessionIsTheDefault(t *testing.T) {
 	}
 	if _, err := Load([]string{"--tui"}); err == nil {
 		t.Error("--tui is still accepted though it is the default now")
+	}
+}
+
+func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
+	fakeHome(t)
+	if err := SeedSettings(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ThinkingLevel != defaultThinkingLevel {
+		t.Errorf("the written defaults set thinking to %q, want %q", cfg.ThinkingLevel, defaultThinkingLevel)
+	}
+	if cfg.NoVerify {
+		t.Error("the written defaults turned the tool nudge off")
+	}
+
+	root := t.TempDir()
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking_level": "off", "verify": false}`)
+	cfg, err = Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
+		t.Errorf("turning both off in a file did not take: thinking=%q no-verify=%v", cfg.ThinkingLevel, cfg.NoVerify)
+	}
+}
+
+func TestTheAuditLogIsOnAndKeptForSixMonthsByDefault(t *testing.T) {
+	fakeHome(t)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LogAudit {
+		t.Error("the audit log should be on unless a setting says otherwise")
+	}
+	if cfg.KeepAudit != 180*24*time.Hour {
+		t.Errorf("default keep: want 180 days, got %s", cfg.KeepAudit)
 	}
 }

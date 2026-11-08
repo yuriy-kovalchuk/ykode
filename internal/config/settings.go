@@ -53,35 +53,6 @@ type fileSettings struct {
 	} `yaml:"models,omitempty"`
 }
 
-// builtinSettings are the defaults ykode ships with, in the shape of the file, so the
-// settings.yaml a first run writes cannot disagree with what the code would have done.
-func builtinSettings() fileSettings {
-	d := defaults() // the same list the code resolves from, so the file cannot contradict it
-	var s fileSettings
-	// left out, so the first full-screen run asks which server to use
-	s.MaxTurns, s.MaxTokens = p(d.MaxTurns), p(d.MaxTokens)
-	s.ThinkingLevel, s.Verify, s.AssumeYes, s.Sandbox = p(d.ThinkingLevel), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
-	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
-	s.Context.SafetyMargin = p(d.SafetyMargin)
-	s.Tools.ReadLines, s.Tools.SearchLimit = p(d.ReadLines), p(d.SearchLimit)
-	s.KeepSessions = p(hours(d.KeepSessions))
-	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
-	s.StreamIdle = p(int(d.StreamIdle / time.Second))
-	s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(""), p(hours(d.KeepCommandLogs))
-	return s
-}
-
-// hours writes a duration the way the settings file spells it: 24h, not 24h0m0s.
-func hours(d time.Duration) string {
-	if h := int(d / time.Hour); time.Duration(h)*time.Hour == d {
-		return fmt.Sprintf("%dh", h)
-	}
-	return d.String()
-}
-
-// p keeps a default addressable: a non-nil pointer is what tells the layers "this was set".
-func p[T any](v T) *T { return &v }
-
 // settingsIn is the settings file a directory holds: the YAML one, or the JSON name for a file written
 // before settings moved to YAML.
 func settingsIn(dir string) string {

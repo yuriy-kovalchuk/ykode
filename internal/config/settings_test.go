@@ -173,20 +173,6 @@ func TestTheAuditLogCanBeTurnedOffAndItsKeepShortened(t *testing.T) {
 	}
 }
 
-func TestTheAuditLogIsOnAndKeptForSixMonthsByDefault(t *testing.T) {
-	fakeHome(t)
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.LogAudit {
-		t.Error("the audit log should be on unless a setting says otherwise")
-	}
-	if cfg.KeepAudit != 180*24*time.Hour {
-		t.Errorf("default keep: want 180 days, got %s", cfg.KeepAudit)
-	}
-}
-
 func TestANonsenseRetentionIsRefusedByName(t *testing.T) {
 	user := fakeHome(t)
 	writeSettings(t, filepath.Join(user, "settings.json"), `{"audit_retention_days": 0}`)
@@ -330,33 +316,6 @@ func TestThePerUserDirectoryIsPrivate(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o700 {
 		t.Errorf("~/.ykode holds sessions and audit lines: mode %v", info.Mode().Perm())
-	}
-}
-
-func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
-	fakeHome(t)
-	if err := SeedSettings(); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ThinkingLevel != defaultThinkingLevel {
-		t.Errorf("the written defaults set thinking to %q, want %q", cfg.ThinkingLevel, defaultThinkingLevel)
-	}
-	if cfg.NoVerify {
-		t.Error("the written defaults turned the tool nudge off")
-	}
-
-	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking_level": "off", "verify": false}`)
-	cfg, err = Load([]string{"--root", root})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
-		t.Errorf("turning both off in a file did not take: thinking=%q no-verify=%v", cfg.ThinkingLevel, cfg.NoVerify)
 	}
 }
 
@@ -554,28 +513,6 @@ func TestTheStreamSilenceLimitIsASetting(t *testing.T) {
 	writeSettings(t, filepath.Join(user, "settings.json"), `{"stream_idle_sec": 0}`)
 	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "stream_idle_sec") {
 		t.Errorf("a zero silence limit was accepted: %v", err)
-	}
-}
-
-func TestSamplingIsSetPerModelAndThinkingMode(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"models": {"qwen": {
-		"thinking": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0, "presence_penalty": 1.5},
-		"no_think": {"temperature": 0.7, "top_p": 0.8}
-	}}}`)
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	thinking, noThink := cfg.SamplingFor("qwen")
-	if *thinking.Temperature != 0.6 || *thinking.TopK != 20 || *thinking.MinP != 0 || *thinking.PresencePenalty != 1.5 {
-		t.Errorf("thinking sampling = %+v", thinking)
-	}
-	if *noThink.Temperature != 0.7 || noThink.TopK != nil {
-		t.Errorf("no-think sampling = %+v", noThink)
-	}
-	if other, _ := cfg.SamplingFor("other"); other.Temperature != nil {
-		t.Error("another model got qwen's sampling")
 	}
 }
 

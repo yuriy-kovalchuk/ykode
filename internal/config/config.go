@@ -4,16 +4,10 @@ package config
 import (
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
-	"regexp"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
-	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"strings"
 	"time"
-
-	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
 // Defaults used when no setting, env var or flag says otherwise.
@@ -74,27 +68,6 @@ type Config struct {
 	Version         bool                       // print the version and exit
 	modelReasoning  map[string]bool            // per-model send_reasoning
 	modelSampling   map[string][2]llm.Sampling // per model: with thinking, without
-}
-
-// flagValues carries only what the command line said; unset fields stay zero.
-type flagValues struct {
-	BaseURL       string
-	APIKey        string
-	Model         string
-	Root          string
-	MaxTurns      int
-	MaxTokens     int
-	CtxSize       int
-	ThinkingLevel string
-	NoThink       bool
-	Yes           bool
-	NoVerify      bool
-	SendReasoning bool
-	Prompt        string
-	JSON          bool
-	NoTUI         bool
-	Continue      string
-	Version       bool
 }
 
 // Load parses args (os.Args[1:]). flag.ErrHelp is returned for -h.
@@ -164,142 +137,4 @@ func defaults() Config {
 		modelReasoning:  map[string]bool{},
 		modelSampling:   map[string][2]llm.Sampling{},
 	}
-}
-
-// given reports which flags the user actually typed.
-func given(fs *flag.FlagSet) map[string]bool {
-	set := map[string]bool{}
-	fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
-	return set
-}
-
-// applyFlags applies the flags the user typed; a bool flag only ever switches its setting on (or thinking off).
-func (c *Config) applyFlags(f flagValues, set map[string]bool) {
-	setters := map[string]func(){
-		"base-url":       func() { c.BaseURL, c.EndpointSet = f.BaseURL, true },
-		"api-key":        func() { c.APIKey = f.APIKey },
-		"model":          func() { c.Model = f.Model },
-		"max-turns":      func() { c.MaxTurns = f.MaxTurns },
-		"max-tokens":     func() { c.MaxTokens = f.MaxTokens },
-		"ctx":            func() { c.CtxSize = f.CtxSize },
-		"thinking":       func() { c.ThinkingLevel = f.ThinkingLevel },
-		"yes":            func() { c.AssumeYes = c.AssumeYes || f.Yes },
-		"no-verify":      func() { c.NoVerify = c.NoVerify || f.NoVerify },
-		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
-		"p":              func() { c.Prompt = f.Prompt },
-		"json":           func() { c.JSON = c.JSON || f.JSON },
-		"no-tui":         func() { c.TUI = c.TUI && !f.NoTUI },
-		"continue":       func() { c.Continue = f.Continue },
-		"version":        func() { c.Version = f.Version },
-	}
-	for name := range set {
-		if apply, ok := setters[name]; ok {
-			apply()
-		}
-	}
-	// --thinking and --no-think set one thing, so the shorthand is applied apart from the map: a depth
-	// spelled out wins whichever order the flags came in
-	if set["no-think"] && f.NoThink && !set["thinking"] {
-		c.ThinkingLevel = llm.ThinkingOff
-	}
-}
-
-func (c *Config) applyEnv() {
-	if v := os.Getenv("LOCAL_LLM_URL"); v != "" {
-		c.BaseURL, c.EndpointSet = v, true
-	}
-	if v := os.Getenv("LOCAL_LLM_MODEL"); v != "" {
-		c.Model = v
-	}
-	if v := os.Getenv("LOCAL_LLM_API_KEY"); v != "" {
-		c.APIKey = v
-	}
-}
-
-// normalize rejects nonsense settings and pins the root to an existing absolute directory.
-func (c *Config) normalize() error {
-	if c.MaxTurns < 1 {
-		return fmt.Errorf("--max-turns must be at least 1, got %d", c.MaxTurns)
-	}
-	if c.MaxTokens < 0 {
-		return fmt.Errorf("--max-tokens must be 0 (no cap) or a positive token count, got %d", c.MaxTokens)
-	}
-	if c.JSON || c.Prompt != "" {
-		c.TUI = false // -p and --json write to stdout; a screen would be drawn over it
-	}
-	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
-		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))
-	}
-	if c.CtxSize < 0 {
-		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)
-	}
-	if c.ReadLines < 1 || c.SearchLimit < 1 {
-		return fmt.Errorf("read_lines and search_limit must be at least 1, got %d and %d", c.ReadLines, c.SearchLimit)
-	}
-	root, err := filepath.Abs(c.Root)
-	if err != nil {
-		return fmt.Errorf("--root %q: %w", root, err)
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return fmt.Errorf("--root %q: %w", root, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("--root %q: not a directory", root)
-	}
-	c.Root = root
-	c.BaseURL = strings.TrimSuffix(c.BaseURL, "/")
-	if c.CommandLogDir == "" {
-		c.CommandLogDir = filepath.Join(home.Dir(), "logs")
-	}
-	c.Session = "s" + time.Now().Format(sessionStamp)
-	if c.Continue != "" {
-		id, err := resumeID(home.Dir(), c.Continue)
-		if err != nil {
-			return err
-		}
-		c.Session = id // the resumed run keeps writing to the same conversation, results and log
-	}
-	c.SessionDir = filepath.Join(home.Dir(), "sessions")
-	c.SessionFile = filepath.Join(c.SessionDir, c.Session+".jsonl")
-	c.ResultDir = filepath.Join(home.Dir(), "results", c.Session)
-	c.AuditDir = filepath.Join(home.Dir(), "audit")
-	return nil
-}
-
-// SamplingFor returns a model's sampling with thinking on and off; unset fields stay nil.
-func (c *Config) SamplingFor(model string) (thinking, noThink llm.Sampling) {
-	s := c.modelSampling[model]
-	return s[0], s[1]
-}
-
-// SendReasoningFor reports a per-model send_reasoning setting.
-func (c *Config) SendReasoningFor(model string) bool {
-	return c.SendReasoning || c.modelReasoning[model]
-}
-
-// sessionIDPattern guards against a --continue argument that is not an id but a path.
-var sessionIDPattern = regexp.MustCompile(`^s[0-9]{8}-[0-9]{6}(\.[0-9]{3})?$`)
-
-// resumeID turns "last" or an id into a conversation that exists on disk.
-func resumeID(homeDir, want string) (string, error) {
-	if !sessionIDPattern.MatchString(want) && want != "last" {
-		return "", fmt.Errorf("--continue %q: not a session id (they look like s20060102-150405)", want)
-	}
-	ids, err := session.List(filepath.Join(homeDir, "sessions"))
-	if err != nil {
-		return "", err
-	}
-	if want == "last" {
-		if len(ids) == 0 {
-			return "", fmt.Errorf("--continue last: no saved conversation in %s", filepath.Join(homeDir, "sessions"))
-		}
-		return ids[0], nil
-	}
-	for _, id := range ids {
-		if id == want {
-			return id, nil
-		}
-	}
-	return "", fmt.Errorf("--continue %q: no such conversation in %s", want, filepath.Join(homeDir, "sessions"))
 }
