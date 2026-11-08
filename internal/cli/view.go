@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
@@ -60,6 +61,12 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 		fmt.Fprintf(v.log, "  <- %s %s\n", ev.Tool, ev.Text)
 	case agent.ToolFail:
 		fmt.Fprintf(v.log, "  !! %s: %s\n", ev.Tool, ev.Text)
+	case agent.Summary:
+		v.endThinking()
+		fmt.Fprintln(v.log, "  .. the older turns, folded into:")
+		for _, line := range strings.Split(ev.Text, "\n") {
+			fmt.Fprintf(v.log, "     %s\n", line)
+		}
 	case agent.Notice:
 		fmt.Fprintf(v.log, "  .. %s\n", ev.Text)
 	case agent.Confirm:

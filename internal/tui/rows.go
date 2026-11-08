@@ -39,6 +39,8 @@ func draw(e entry, width int, expanded bool) string {
 	switch e.who {
 	case whoUser:
 		return promptBlock(e, width) + "\n\n"
+	case whoSummary:
+		return styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
 	case whoOutput:
 		return indent(wrapKept(e.text, width-2), "  ") + "\n\n"
 	case whoDone:

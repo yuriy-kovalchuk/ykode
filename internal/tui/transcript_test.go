@@ -69,3 +69,19 @@ func TestCommandOutputKeepsItsLines(t *testing.T) {
 		t.Errorf("the output lost its lines:\n%s", view)
 	}
 }
+
+// the recap a compaction left behind is drawn where it happened, in the model's own lines
+func TestARecapIsDrawnWhereItHappened(t *testing.T) {
+	var log transcript
+	log.summary("Goal: rename the helper\nFiles: rows.go, bottom.go\nNext: run the tests")
+
+	view := stripCodes(log.render(80, false))
+	if !strings.Contains(view, "the older turns, folded into this") {
+		t.Errorf("the recap is not marked as one:\n%s", view)
+	}
+	for _, want := range []string{"Goal: rename the helper", "Next: run the tests"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("%q missing from the recap:\n%s", want, view)
+		}
+	}
+}

@@ -27,6 +27,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	before := a.estimateTokens()
 	start, task := a.compactCut()
 	if start < 2 {
+		a.tell("too few turns to fold: the older tool results were shortened instead")
 		a.shrinkForCompaction()
 		a.trimHistory()
 		return a.foldFreed(before)
@@ -48,6 +49,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}
 	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
 	a.compactedAt = callBlocks(a.history)
+	a.emit(Event{Kind: Summary, Text: summary})
 	return a.foldFreed(before)
 }
 
@@ -146,6 +148,16 @@ func (a *Agent) transcriptOf(messages []llm.Message) string {
 }
 
 // summariseWithModel asks for the summary in its own request: no tools, a small answer, no history tailoring.
+// keepSummary caps a runaway summary without flattening the sections it was written in: the model
+// answers in short blocks, and a screen reads them better than one long line.
+func keepSummary(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= maxSummaryChars {
+		return text
+	}
+	return strings.TrimRight(string([]rune(text)[:maxSummaryChars]), " \n") + "…"
+}
+
 func (a *Agent) summariseWithModel(ctx context.Context, transcript string) (string, error) {
 	if transcript == "" {
 		return "", fmt.Errorf("nothing to summarise")
@@ -163,9 +175,9 @@ func (a *Agent) summariseWithModel(ctx context.Context, transcript string) (stri
 	if err != nil {
 		return "", err
 	}
-	summary := strings.TrimSpace(turn.Message.Content)
+	summary := keepSummary(turn.Message.Content)
 	if summary == "" {
 		return "", fmt.Errorf("the model answered with nothing to keep")
 	}
-	return oneLine(summary, maxSummaryChars), nil
+	return summary, nil
 }

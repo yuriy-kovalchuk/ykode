@@ -13,9 +13,10 @@ const (
 	whoAnswer
 	whoTool
 	whoNotice
-	whoDraft  // a tool call the model is still writing
-	whoDone   // where a prompt's work ended: when, and how long it took
-	whoOutput // what a slash command printed, line for line
+	whoDraft   // a tool call the model is still writing
+	whoDone    // where a prompt's work ended: when, and how long it took
+	whoOutput  // what a slash command printed, line for line
+	whoSummary // what the older turns were folded into, in the model's own lines
 )
 
 // entry is one block of the transcript: a question, a run of thinking, an answer,
@@ -50,6 +51,11 @@ func (t *transcript) user(text string, at time.Time) {
 // done closes a prompt's work with the time it ended and how long it took.
 func (t *transcript) done(at time.Time, took time.Duration) {
 	t.entries = append(t.entries, entry{who: whoDone, at: at, took: took})
+}
+
+// summary keeps the recap a compaction left behind, so what the session forgot is still readable.
+func (t *transcript) summary(text string) {
+	t.entries = append(t.entries, entry{who: whoSummary, text: text})
 }
 
 // output keeps a command's lines as it wrote them: /help is a table, not a sentence.

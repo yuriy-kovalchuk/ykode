@@ -16,6 +16,7 @@ const (
 	ToolDraft                  // a piece of a tool call still being written, Call says which
 	Progress                   // the server's speeds while a reply streams, in Stats
 	Steered                    // an ask typed mid-run joined the conversation, Text holds it
+	Summary                    // the older turns were folded into this text, in its own lines
 )
 
 func (k EventKind) String() string {
@@ -44,6 +45,8 @@ func (k EventKind) String() string {
 		return "progress"
 	case Steered:
 		return "steered"
+	case Summary:
+		return "summary"
 	}
 	return "unknown"
 }

@@ -421,3 +421,66 @@ func TestCompactionRepublishesWhatTheConversationCosts(t *testing.T) {
 			after, freed, a.estimateTokens())
 	}
 }
+
+// the recap the model wrote is shown as it was written: four sections, not one flattened line
+func TestTheRecapReachesTheScreen(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	recap := "Goal: rename the helper\nFiles: file0.txt, file1.txt\nDecided: keep the old name as an alias\nNext: run the tests"
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		sse("", recap, "", nil, "stop"),
+	}}
+	sink := &captureSink{decision: Allow}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
+		t.Fatal(err)
+	}
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatalf("compaction freed %d tokens", freed)
+	}
+	var got string
+	for _, ev := range sink.events {
+		if ev.Kind == Summary {
+			got = ev.Text
+		}
+	}
+	if !strings.Contains(got, "Goal: rename the helper") || !strings.Contains(got, "\nNext: run the tests") {
+		t.Errorf("the recap never reached the screen in its own lines: %q", got)
+	}
+}
+
+// a conversation too short to fold says what was done instead of looking instant and silent
+func TestAFoldThatWasNotNeededSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	name := writeLines(t, dir, "first.txt", 40)
+	stub := &stubServer{scripts: []string{
+		sse("", "", "read_file", []string{`{"path":"` + name + `"}`}, "tool_calls"),
+		sse("", "read it", "", nil, "stop"),
+	}}
+	sink := &captureSink{decision: Allow}
+	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, sink, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "read it"); err != nil {
+		t.Fatal(err)
+	}
+	a.Compact(context.Background())
+	if !sink.noticed("too few turns to fold") {
+		t.Errorf("nothing said why there was no recap: %v", sink.kinds())
+	}
+	for _, ev := range sink.events {
+		if ev.Kind == Summary {
+			t.Errorf("a conversation that was not folded reported a recap: %q", ev.Text)
+		}
+	}
+}

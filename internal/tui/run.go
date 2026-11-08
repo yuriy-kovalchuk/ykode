@@ -135,6 +135,8 @@ func (m *model) handle(ev agent.Event) {
 		m.log.toolEnd(ev.Tool, ev.Args, ev.Text)
 	case agent.ToolFail:
 		m.log.failed(ev.Tool, ev.Text)
+	case agent.Summary:
+		m.log.summary(ev.Text) // what compaction folded away stays readable where it happened
 	case agent.Notice:
 		m.log.notice(ev.Text)
 	case agent.Steered:
