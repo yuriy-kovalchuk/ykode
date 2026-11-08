@@ -66,7 +66,9 @@ func TestAQuestionHasItsOwnBoxAboveThePrompt(t *testing.T) {
 }
 
 // the footer's two rows sit above the rule, the prompt under it, with a blank row between
-func TestTheFooterSitsAboveTheRuleAndThePrompt(t *testing.T) {
+// what the session reports sits under the prompt: the prompt is where the reader stops reading,
+// and the two rows of numbers are what is read last
+func TestTheReportSitsUnderThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.root, m.branch = "/home/user/project", "main"
@@ -79,15 +81,19 @@ func TestTheFooterSitsAboveTheRuleAndThePrompt(t *testing.T) {
 		}
 		return -1
 	}
-	project, costs, ruled, prompt := at("/home/user/project (main)"), at("ctx "), at("─"), at(promptMark)
-	if project < 0 || costs != project+1 || rows[project+1] == "" {
-		t.Errorf("the costs are not the row under the project:\n%s", strings.Join(rows, "\n"))
+	ruled, prompt := at("\u2500"), at(promptMark)
+	project, costs := at("/home/user/project (main)"), at("ctx ")
+	if ruled < 0 || prompt < ruled {
+		t.Errorf("the prompt does not sit under the rule:\n%s", strings.Join(rows, "\n"))
 	}
-	if ruled != costs+2 || rows[costs+1] != "" {
-		t.Errorf("the rule is not two rows under the costs, across a blank row:\n%s", strings.Join(rows, "\n"))
+	if project < prompt || costs != project+1 {
+		t.Errorf("the report is not two rows under the prompt:\n%s", strings.Join(rows, "\n"))
 	}
-	if prompt < ruled {
-		t.Errorf("the prompt sits above the rule:\n%s", strings.Join(rows, "\n"))
+	if rows[project-1] != "" {
+		t.Errorf("no row of air between the prompt and what it reports:\n%s", strings.Join(rows, "\n"))
+	}
+	if costs != len(rows)-2 { // the last row is the gap under the cursor
+		t.Errorf("the report is not the last thing on the screen:\n%s", strings.Join(rows, "\n"))
 	}
 }
 

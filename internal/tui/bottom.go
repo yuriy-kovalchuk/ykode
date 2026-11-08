@@ -10,7 +10,7 @@ import (
 const (
 	promptMark    = "❯ "
 	maxInputLines = 10 // the input grows with what is typed, up to this
-	inputGap      = "" // a blank row between what the session reports and what the user reads next
+	inputGap      = "" // a blank row between the prompt and what the session reports
 	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
 )
 
@@ -25,11 +25,11 @@ var keys = [][2]string{
 
 var questionBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1)
 
-// bottomArea is everything under the transcript: the two footer rows, a blank row, the rule,
-// the keys if ? asked for them, the question if one waits, and the prompt.
+// bottomArea is everything under the transcript: the rule, the keys if ? asked for them, what is
+// waiting or being chosen, the question if one waits, the prompt, and under it the two rows the
+// session reports on. The report goes last: it is read after the prompt, not before it.
 func (m *model) bottomArea() string {
-	s := m.status()
-	rows := []string{sessionLine(s), statusLine(s), inputGap, ruleWith(m.width, m.scrollMark())}
+	rows := []string{ruleWith(m.width, m.scrollMark())}
 	if m.showKeys {
 		rows = append(rows, m.keysHelp())
 	}
@@ -38,7 +38,9 @@ func (m *model) bottomArea() string {
 	if len(m.pending) > 0 {
 		rows = append(rows, m.question())
 	}
-	rows = append(rows, m.promptLines())
+	rows = append(rows, m.promptLines(), inputGap)
+	s := m.status()
+	rows = append(rows, sessionLine(s), statusLine(s))
 	if m.err != "" {
 		rows = append(rows, styleBad.Render(oneLine(m.err, max(m.width-2, 1))))
 	}
@@ -106,7 +108,7 @@ func (m *model) fitInput() {
 	m.input.SetHeight(rows)
 }
 
-// otherRows is the bottom area apart from the box itself: the footer, the rule, the gaps.
+// otherRows is the bottom area apart from the box itself: the rule, the report, the gaps.
 func (m *model) otherRows() int {
 	return lipgloss.Height(m.bottomArea()) - m.input.Height()
 }
