@@ -29,6 +29,9 @@ func Run(args []string, version string) error {
 	if len(args) > 0 && args[0] == "history" {
 		return cli.History(args[1:], os.Stdout)
 	}
+	if len(args) > 0 && args[0] == "sessions" {
+		return cli.Sessions(args[1:], os.Stdout)
+	}
 	cfg, done, err := startupConfig(args, version)
 	if done || err != nil {
 		return err

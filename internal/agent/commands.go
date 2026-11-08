@@ -35,6 +35,7 @@ func Commands() []CommandSpec {
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
 		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
 		{Name: "/settings", Args: "[key] [value]", Note: "what ykode is set to, and change one knob"},
+		{Name: "/sessions", Note: "the conversations saved for this project, and how to come back to one"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
 		{Name: "/model", Args: "[id]", Note: "which model this run asks, or ask a different one", Waits: true},
@@ -117,6 +118,8 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		return CompactReport(a.Compact(ctx)), false, nil
 	case "/history":
 		return a.History(arg, historyLimit), false, nil
+	case "/sessions":
+		return a.Sessions(sessionsLimit), false, nil
 	case "/ctx":
 		return a.ContextLine() + "\n", false, nil
 	case "/tools":

@@ -80,6 +80,7 @@ func Load(args []string) (Config, error) {
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--no-tui] [--continue ID] [--version]")
 		fmt.Fprintln(fs.Output(), "       ykode history [what] [--all] [--failed] [--since DUR] [--root DIR] [--json] - what the runs did, outside a session")
+		fmt.Fprintln(fs.Output(), "       ykode sessions [--limit N] - the conversations that can be resumed")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -97,7 +98,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
 	fs.BoolVar(&f.NoTUI, "no-tui", false, "a line prompt instead of the full-screen session")
-	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
+	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or its id (enough of the id to be unique works); ykode sessions lists them")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err

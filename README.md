@@ -50,7 +50,7 @@ conversation has cost, `/compact` folds the older turns into a summary the model
 writes, `/history [what]` shows what this run has done (a tool name, `failed`,
 `outside`, one call by id like `r12`, or `--all` for every run of this root),
 `/undo` puts the most recent file change back, `/reset` clears the history,
-`/exit` leaves.
+`/sessions` lists the conversations that can be resumed, `/exit` leaves.
 
 Four commands change the run rather than the conversation:
 
@@ -226,6 +226,7 @@ ykode history --all exec           # every command of this root
 ykode history --failed --since 24h # what went wrong today
 ykode history --all r12            # one call in full, with its output path
 ykode history --json --all         # the same, one JSON object per call
+ykode sessions                     # the conversations that can be resumed (--limit N)
 ```
 
 Flags come first, then what to look for.
@@ -236,9 +237,17 @@ exact bytes it held, and a file that was created is removed. It is a stack, so a
 second `/undo` undoes the change before that. If the file was changed after ykode wrote it, `/undo` refuses
 rather than lose that work; `/undo force` puts the old text back anyway.
 
-`--continue last` (or an id) starts where a previous run stopped, and the resumed
-run keeps the same id, so its results and its log stay with its conversation. A
-conversation bigger than the window sheds its oldest turns and keeps the newest.
+`--continue last` starts the newest conversation again; `--continue <id>` picks one
+by id. An id is a timestamp to the millisecond, so enough of it to be unique is
+enough (`--continue 2137`), and `ykode sessions` or `/sessions` lists what there is
+with what each was about. The resumed run keeps the same id, so its results and its
+audit entries stay with its conversation.
+
+A resume reads back what the last run *ended with*: a fold and the recap the model
+wrote for it are saved with the conversation, and `/reset` marks the saved log as
+started over, so nothing that was put away comes back. What a resume cannot save is
+the trimming a turn does to fit the window, so a conversation bigger than the window
+still sheds its oldest turns and keeps the newest.
 
 ## Staying inside the project
 
