@@ -127,17 +127,17 @@ const (
 // way to the result, and a result too wide for the row is cut as well, so a call never runs past the
 // edge of the screen.
 func toolRow(e entry, width int) string {
-	mark, note, band := "→", "working…", styleToolWait
+	mark, note, band := "→", "working…", surfaces().wait
 	switch {
 	case e.failed:
-		mark, note, band = "✗", e.result, styleToolFail
+		mark, note, band = "✗", e.result, surfaces().fail
 	case e.result != "":
 		// a change is a block of its own under the row, so the row keeps only what the call said
 		note = e.result
 		if holdsDiff(note) {
 			note = summaryLine(note)
 		}
-		mark, band = "✓", styleToolDone
+		mark, band = "✓", surfaces().done
 	}
 	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(note)
 	if room < toolRowArgs {
@@ -221,7 +221,7 @@ const argChars = 2000
 func draftRows(d draft, width int) string {
 	shown, written, bytes := d.preview()
 	head := fmt.Sprintf("%s %s %s", "✎", styleBold.Render(d.tool), draftHead(d.target(), written, bytes))
-	row := styleToolWait.Width(width).Render(head)
+	row := surfaces().wait.Width(width).Render(head)
 	for i, line := range shown {
 		shown[i] = cutToWidth(line, width-4)
 	}

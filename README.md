@@ -137,9 +137,11 @@ Each call the model makes is one row: the tool, what it touches in plain words �
 each argument on a row of its own, long text as the lines it holds rather than escaped JSON. A question
 about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
 
-That row sits in a band across the screen whose colour is its state: the terminal's grey while the
-call is being written and running, green once it answered, red when it failed. The band, not the
-words, is what says where a turn got to, and the change under it keeps its own colours.
+That row sits in a band across the screen whose ground is its state: a grey tint while the call is
+being written and running, a green one once it answered, a red one when it failed. The shades are
+picked for the terminal the screen runs in — low tints on a dark one, pale ones on a light one, as
+pi's are — so the ground says where a turn got to without turning the row into noise, and the words
+on it stay the terminal's own colour. The change under the row keeps its own colours.
 
 A call that changed a file puts the change on the rows under its row instead of flattening it into
 one: what came in is kept, what went is marked, the unchanged context stays quiet, and where a line

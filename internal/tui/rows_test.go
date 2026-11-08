@@ -254,17 +254,17 @@ func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 		row   string
 		style lipgloss.Style
 	}{
-		{"a call waiting", running, styleToolWait},
-		{"a call finished", done, styleToolDone},
-		{"a call that failed", failed, styleToolFail},
-		{"a call being written", writing, styleToolWait},
+		{"a call waiting", running, surfaces().wait},
+		{"a call finished", done, surfaces().done},
+		{"a call that failed", failed, surfaces().fail},
+		{"a call being written", writing, surfaces().wait},
 	}
 	for _, c := range checks {
 		if !strings.Contains(c.row, codeOf(c.style)) {
 			t.Errorf("%s is not drawn in a band of its own: %q", c.what, stripCodes(c.row))
 		}
 	}
-	if codeOf(styleToolWait) == codeOf(styleToolDone) || codeOf(styleToolDone) == codeOf(styleToolFail) {
+	if codeOf(surfaces().wait) == codeOf(surfaces().done) || codeOf(surfaces().done) == codeOf(surfaces().fail) {
 		t.Error("waiting, finished and failed share a colour, so the band says nothing")
 	}
 	for _, row := range []string{running, done, failed, writing} {
@@ -276,3 +276,21 @@ func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 
 // firstRow is the first row of a block, which is what carries the call.
 func firstRow(block string) string { return strings.SplitN(block, "\n", 2)[0] }
+
+// the ground a call sits in is a tint, not the terminal's solid colour: a whole row of green or red
+// is noise and nothing on it can be read.
+func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
+	withColour(t)
+	rows := []string{
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60, false)),
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60, false)),
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60, false)),
+	}
+	for _, row := range rows {
+		for _, solid := range []string{"[40m", "[41m", "[42m", "[43m", "[44m", "[45m", "[46m", "[47m", "[100m"} {
+			if strings.Contains(row, solid) {
+				t.Errorf("the call sits on a solid terminal colour %s: %q", solid, stripCodes(row))
+			}
+		}
+	}
+}
