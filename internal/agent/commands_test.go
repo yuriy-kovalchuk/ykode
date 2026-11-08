@@ -243,3 +243,18 @@ func hasCommand(list []CommandSpec, name string) bool {
 	}
 	return false
 }
+
+// starting over is announced, so a screen can stop reporting the numbers of a conversation that is gone
+func TestStartingOverSaysTheConversationIsGone(t *testing.T) {
+	sink := &captureSink{}
+	a := New(nil, nil, "m", Options{}, sink)
+	if _, _, err := a.Command(context.Background(), "/reset"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range sink.events {
+		if ev.Kind == Cleared {
+			return
+		}
+	}
+	t.Error("clearing the conversation was not reported to the front end")
+}

@@ -109,6 +109,7 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		return helpText() + "\n", false, nil
 	case "/reset":
 		a.Reset()
+		a.emit(Event{Kind: Cleared}) // the numbers a front end shows belong to the conversation that went
 		return "history cleared\n", false, nil
 	case "/usage":
 		return UsageLine(a.Usage(), a.CtxSize()) + "\n", false, nil

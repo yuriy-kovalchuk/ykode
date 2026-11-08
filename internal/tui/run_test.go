@@ -237,3 +237,20 @@ func BenchmarkWriteAFileToken(b *testing.B) {
 		}
 	}
 }
+
+// a conversation that was cleared leaves the server's numbers behind: the report describes the
+// conversation there is now, not the one that went
+func TestStartingOverForgetsWhatTheServerWasDoing(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: 30})
+	m.running = true
+	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{PrefillTokSec: 512.4, DecodeTokSec: 71.3}})
+	m.running = false
+	m.took = 51 * time.Second
+
+	m.handle(agent.Event{Kind: agent.Cleared})
+	line := stripCodes(m.View())
+	if strings.Contains(line, "tok/s") || strings.Contains(line, "done in") {
+		t.Errorf("the report still speaks of a conversation that is gone: %s", line)
+	}
+}

@@ -17,6 +17,7 @@ const (
 	Progress                   // the server's speeds while a reply streams, in Stats
 	Steered                    // an ask typed mid-run joined the conversation, Text holds it
 	Summary                    // the older turns were folded into this text, in its own lines
+	Cleared                    // the conversation was forgotten; a front end drops what it reported
 )
 
 func (k EventKind) String() string {
@@ -47,6 +48,8 @@ func (k EventKind) String() string {
 		return "steered"
 	case Summary:
 		return "summary"
+	case Cleared:
+		return "cleared"
 	}
 	return "unknown"
 }

@@ -144,6 +144,9 @@ func (m *model) handle(ev agent.Event) {
 		m.log.summary(ev.Text) // what compaction folded away stays readable where it happened
 	case agent.Notice:
 		m.log.notice(ev.Text)
+	case agent.Cleared:
+		// what the server was doing describes the conversation that went, not the empty one
+		m.decode, m.prefill, m.took = 0, 0, 0
 	case agent.Steered:
 		m.log.user(ev.Text, time.Now()) // the run took it: the ask joins where the model reads it
 	}
