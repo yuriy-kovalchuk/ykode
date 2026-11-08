@@ -207,7 +207,7 @@ func TestLeavingCancelsTheTurnInsteadOfRacingIt(t *testing.T) {
 func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	w := newWiredModel(t, "goal: fix the timeout\nfiles: src/a.go\nnext: run the tests")
 	w.m.input.SetValue("/compact")
-	if _, cmd := w.m.submit(); cmd != nil {
+	if _, cmd := w.m.submit(); quits(cmd) {
 		t.Fatal("compacting should not end the session")
 	}
 	if !w.m.running {
@@ -314,5 +314,43 @@ func TestPastingTheWordEnterDoesNotSend(t *testing.T) {
 	}
 	if m.input.Value() != "enter" {
 		t.Errorf("the pasted word vanished: %q", m.input.Value())
+	}
+}
+
+// quits says whether a command ends the program; starting a run returns the spinner's tick instead
+func quits(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+// a turn's end reports both speeds, and a run is timed from the moment it starts
+func TestTheScreenTimesARunAndReportsItsSpeeds(t *testing.T) {
+	m := newTestModel()
+	m.handle(agent.Event{Kind: agent.TurnEnd, Stats: agent.Stats{PrefillTokSec: 480, DecodeTokSec: 31}})
+	if s := m.status(); s.prefill != 480 || s.decode != 31 {
+		t.Errorf("status = %+v, want both speeds from the turn", s)
+	}
+	m.begin()
+	m.started = m.started.Add(-90 * time.Second)
+	if s := m.status(); !s.running || s.elapsed < 90*time.Second {
+		t.Errorf("a running prompt is not timed: %+v", s)
+	}
+	m.Update(runDoneMsg{})
+	if s := m.status(); s.running || s.took < 90*time.Second {
+		t.Errorf("a finished prompt does not say how long it took: %+v", s)
+	}
+}
+
+// the speeds update while the reply streams, and a token that reports none yet keeps the last speed
+func TestTheSpeedsUpdateWhileTheReplyStreams(t *testing.T) {
+	m := newTestModel()
+	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{PrefillTokSec: 430, DecodeTokSec: 0}})
+	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{DecodeTokSec: 41}})
+	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{DecodeTokSec: 0}})
+	if s := m.status(); s.prefill != 430 || s.decode != 41 {
+		t.Errorf("status = prefill %.0f decode %.0f, want 430 and 41", s.prefill, s.decode)
 	}
 }

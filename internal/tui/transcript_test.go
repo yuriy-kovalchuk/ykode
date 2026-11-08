@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestThinkingArrivesInPiecesAndReadsAsOneBlock(t *testing.T) {
@@ -89,5 +90,64 @@ func TestLongThinkingWrapsInsteadOfOverflowing(t *testing.T) {
 		if len(strings.TrimSpace(stripCodes(line))) > 40 {
 			t.Errorf("a line is wider than the screen: %q", stripCodes(line))
 		}
+	}
+}
+
+// a call being written shows on the screen as it streams, and gives way to the tool row once the reply ends
+func TestACallBeingWrittenShowsUntilTheReplyEnds(t *testing.T) {
+	var log transcript
+	for _, piece := range []string{`{"path":"index.html",`, `"content":"<html>\n<body>\n`, `<p>hi</p>`} {
+		log.draft(0, "write_file", piece)
+	}
+	view := stripCodes(log.render(80, false))
+	for _, want := range []string{"write_file", "index.html", "3 lines", "<p>hi</p>"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the call being written does not show %q:\n%s", want, view)
+		}
+	}
+	if strings.Count(view, "write_file") != 1 {
+		t.Errorf("one call became several rows:\n%s", view)
+	}
+	log.dropDrafts()
+	if strings.Contains(log.render(80, false), "index.html") {
+		t.Error("the call being written is still shown after the reply ended")
+	}
+}
+
+// two calls in one reply are two rows, each growing on its own
+func TestTwoCallsBeingWrittenAreTwoRows(t *testing.T) {
+	var log transcript
+	log.draft(0, "read_file", `{"path":"a.go"`)
+	log.draft(1, "read_file", `{"path":"b.go"`)
+	log.draft(0, "read_file", `}`)
+	if n := len(log.entries); n != 2 || log.entries[0].args != `{"path":"a.go"}` {
+		t.Errorf("entries = %+v, want two calls with their own arguments", log.entries)
+	}
+}
+
+// every prompt says when it was sent, and every finished prompt when it ended and how long it took
+func TestMessagesCarryTheirTime(t *testing.T) {
+	var log transcript
+	sent := time.Date(2026, 11, 8, 8, 31, 0, 0, time.Local)
+	log.user("fix the test", sent)
+	log.answer("fixed")
+	log.done(sent.Add(51*time.Second), 51*time.Second)
+	view := stripCodes(log.render(60, false))
+	first := strings.Split(view, "\n")[0]
+	if !strings.HasSuffix(first, "08:31") || len(first) < 50 {
+		t.Errorf("the prompt's time is not at the end of its row: %q", first)
+	}
+	if !strings.Contains(view, "08:31 · 51s") {
+		t.Errorf("the finished prompt has no end time and duration:\n%s", view)
+	}
+}
+
+// a command's output keeps its own lines: /help is a list, not one squashed sentence
+func TestCommandOutputKeepsItsLines(t *testing.T) {
+	var log transcript
+	log.output("commands:\n  /help   show this\n  /usage  what it cost")
+	view := stripCodes(log.render(80, false))
+	if !strings.Contains(view, "\n    /help   show this\n") || !strings.Contains(view, "/usage  what it cost") {
+		t.Errorf("the output lost its lines:\n%s", view)
 	}
 }

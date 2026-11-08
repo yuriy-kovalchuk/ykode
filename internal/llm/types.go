@@ -62,6 +62,7 @@ type ChatRequest struct {
 	MaxTokens          int            `json:"max_tokens,omitempty"`
 	ThinkingBudget     int            `json:"thinking_budget_tokens,omitempty"` // llama.cpp: caps the thinking phase inside MaxTokens
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	TimingsPerToken    bool           `json:"timings_per_token,omitempty"` // llama.cpp: speeds in every chunk, not only the last
 	Stream             bool           `json:"stream"`
 	Sampling
 }
@@ -91,6 +92,15 @@ type ToolFunction struct {
 type Delta struct {
 	Reasoning string
 	Content   string
+	Call      *CallDelta // a piece of a tool call, so a screen can show a long one being written
+	Timings   *Timings   // the server's speeds so far, on servers that send them while streaming
+}
+
+// CallDelta is one fragment of a tool call's arguments; Name is known from the first fragment on.
+type CallDelta struct {
+	Index int
+	Name  string
+	Args  string
 }
 
 // Timings is llama.cpp's per-turn accounting in the last chunk; other servers leave it zero.

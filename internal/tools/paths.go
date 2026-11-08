@@ -27,8 +27,7 @@ func resolveTarget(raw, root string) Target {
 	case filepath.IsAbs(p):
 		abs = filepath.Clean(p)
 	case rootWithoutSlash(p, root):
-		// the root's own path with its leading slash lost, which a model writes when it copies the
-		// root from its environment: read as written, it would create a nested copy of the whole path
+		// a model copying the root from its environment sometimes drops the leading slash
 		abs = filepath.Clean(string(filepath.Separator) + p)
 	default:
 		abs = filepath.Clean(filepath.Join(root, p))

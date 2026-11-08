@@ -39,7 +39,7 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--yes` | — | off | skip in-project confirmations |
 | `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405.123` |
-| `--tui` | — | off | full-screen session: scrolling transcript, input box, status bar |
+| `--no-tui` | — | full screen | a line prompt instead of the full-screen session (also when not on a terminal, or with `-p`/`--json`) |
 | `--version` | — | — | print the version and exit |
 
 ## In the session
@@ -67,35 +67,46 @@ returns to the prompt.
 
 ## The full-screen session
 
-`--tui` replaces the line prompt with an alternate-screen session: the
-transcript scrolls, the thinking and the answer arrive as one block each, and
-one line at the bottom reports what the session costs.
+A plain `ykode` opens an alternate-screen session: the transcript scrolls, the thinking and
+the answer arrive as one block each, a tool call shows while the model is still writing it, and
+one line at the bottom reports what the session costs. `--no-tui` keeps the line prompt; so does
+a run that is not on a terminal, and `-p`/`--json`, which write to stdout.
 
 ```
-ykode --tui                      # or --tui --continue last
+ykode                            # or ykode --continue last
 ```
+
+The first time, with no `base_url` in `~/.ykode/settings.yaml` (and none from `--base-url` or
+`$LOCAL_LLM_URL`), the session opens on a setup screen: the server's URL, an optional API key, then
+the model, picked from the server's own `/models`. A URL typed without `/v1` is tried with it too.
+The answer is written into `settings.yaml`, which keeps your comments and other keys. The same
+screen opens when the configured server does not answer, with the error on it.
 
 | key | what it does |
 |---|---|
 | `enter` | sends the prompt |
 | `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines |
 | `up`, `down` | walks the prompts you sent this session (with an empty box) |
+| mouse wheel | scrolls the transcript; scrolled up, the rule above the status says where you are and when new output arrived below |
+| `end` | back to the end of the transcript (with an empty box) |
+| `ctrl+t` | hands the mouse back to the terminal so text can be selected and copied; again to scroll with the wheel |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
 | `ctrl+o` | shows and hides the result text of each tool call |
-| `pgup`, `ctrl+u`, `pgdown`, `ctrl+d` | move the transcript |
-| `y`, `a`, `n` | answers a question about a change: yes, always, no — `n` is the default |
+| `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
+| `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
+| `?` | shows and hides this list of keys (with an empty box) |
 
 Typing while the model works is allowed: the prompt is queued and goes in the
 moment the turn ends. The commands of `In the session` work there too, except
 that `/reset`, `/compact` and `/undo` wait for the running turn rather than
 racing it.
 
-The bottom line reads `model │ ctx used/total % │ cache % │ draft % │ tok/s`, and
-adds `working` (and how many prompts are queued) while a turn runs. `draft %` only
-appears when the server ran a draft model: how much of its work the real model kept. The cache
-percentage is llama.cpp's: how much of the request it already had. `--tui` and
-`-p`/`--json` are mutually exclusive — one draws a screen, the other writes
-stdout.
+The bottom line has the session's facts on the left — `model · ctx used/total % · cache % · draft %`
+— and what is happening on the right: the running prompt's clock (`✓ done in 51s` once it
+finishes), then the server's speed, `↑` reading the prompt and `↓` writing, updated while the reply
+streams. `draft %` only appears when the server ran a draft model: how much of its work the real
+model kept. The cache percentage is llama.cpp's: how much of the request it already had. Each
+prompt shows the time it was sent, and each finished one when it ended and how long it took.
 
 ## Tools
 

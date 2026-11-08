@@ -189,8 +189,7 @@ func TestAnOutsideResultKeepsTheAbsolutePath(t *testing.T) {
 	}
 }
 
-// a model that copies the root from its environment sometimes drops the leading slash; read as
-// written, that path would create a nested copy of the whole root inside the project
+// read as written, a slashless root path would nest a copy of the root inside the project
 func TestARootPathWithoutItsLeadingSlashIsTheRoot(t *testing.T) {
 	root := "/private/var/folders/xy/T/run-1/project"
 	for raw, want := range map[string]string{

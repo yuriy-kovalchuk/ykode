@@ -2,9 +2,10 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,6 +45,10 @@ type model struct {
 	log      transcript
 	usage    agent.Usage
 	decode   float64 // tokens per second of the last answer
+	prefill  float64 // tokens per second the last prompt was read at
+	started  time.Time
+	took     time.Duration // how long the last prompt took
+	spin     spinner.Model
 	width    int
 	height   int
 	running  bool
@@ -54,6 +59,10 @@ type model struct {
 	expanded bool // tool rows also show what they were asked to do
 	history  []string
 	histIdx  int
+	mouseOff bool   // the terminal has the mouse back, so text can be selected and copied
+	showKeys bool   // ? lists the keys above the prompt
+	unseen   bool   // output arrived below while the reader was scrolled up
+	rendered string // the transcript as last drawn, to tell new output from a redraw
 }
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
@@ -61,14 +70,17 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub) *model {
 	input.Placeholder = "ask for a change, /help lists the commands"
 	input.Prompt = ""
 	input.ShowLineNumbers = false
-	input.SetHeight(2)
+	input.SetHeight(1)
 	input.Focus() // an unfocused box swallows every keystroke, so nothing can be typed
 	// Enter sends, so a newline has to be asked for. ctrl+j works everywhere; alt+enter and
 	// shift+enter work when the terminal reports the modifiers at all.
 	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "alt+enter", "shift+enter")
 
+	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(styleWorking))
+
 	// a terminal that will not say its size still gets a screen
 	return &model{
+		spin:   spin,
 		ctx:    ctx,
 		hub:    hub,
 		agent:  a,
@@ -86,9 +98,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.view.Width = msg.Width
-		m.view.Height = m.logHeight()
-		m.input.SetWidth(m.width - 2)
+		m.input.SetWidth(m.width - lipgloss.Width(promptMark))
 		m.refresh()
+		return m, nil
+	case tea.MouseMsg:
+		m.wheel(msg)
 		return m, nil
 	case eventMsg:
 		m.handle(msg.ev)
@@ -98,24 +112,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pending = append(m.pending, &question{text: msg.ev.Text, target: msg.ev.Target, reply: msg.reply})
 		m.refresh()
 		return m, nil
+	case spinner.TickMsg:
+		if !m.running {
+			return m, nil // the spinner stops with the run, and so does the timer it redraws
+		}
+		var cmd tea.Cmd
+		m.spin, cmd = m.spin.Update(msg)
+		return m, cmd
 	case compactDoneMsg:
 		m.running = false
+		m.took = time.Since(m.started)
 		m.cancel = nil
 		m.log.notice(strings.TrimSuffix(agent.CompactReport(msg.freed), "\n"))
 		m.refresh()
 		return m, nil
 	case runDoneMsg:
 		m.running = false
+		m.took = time.Since(m.started)
+		m.log.done(time.Now(), m.took)
 		m.cancel = nil
 		if msg.err != nil {
 			m.err = msg.err.Error()
 		}
+		var cmd tea.Cmd
 		if len(m.queue) > 0 {
-			m.start(m.queue[0])
+			cmd = m.start(m.queue[0])
 			m.queue = m.queue[1:]
 		}
 		m.refresh()
-		return m, nil
+		return m, cmd
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -152,11 +177,27 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.expanded = !m.expanded
 		m.refresh()
 		return m, nil
-	case "pgup", "ctrl+u":
+	case "ctrl+t":
+		// a captured mouse cannot select text, so the user can hand it back to the terminal
+		m.mouseOff = !m.mouseOff
+		m.refresh()
+		if m.mouseOff {
+			return m, tea.DisableMouse
+		}
+		return m, tea.EnableMouseCellMotion
+	case "pgup":
 		m.view.PageUp()
 		return m, nil
-	case "pgdown", "ctrl+d":
+	case "pgdown":
 		m.view.PageDown()
+		m.seenIfAtBottom()
+		return m, nil
+	case "ctrl+u":
+		m.view.HalfPageUp()
+		return m, nil
+	case "ctrl+d":
+		m.view.HalfPageDown()
+		m.seenIfAtBottom()
 		return m, nil
 	case "enter":
 		return m.submit()
@@ -165,6 +206,14 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// with an empty box the arrows walk the prompts you sent; with text they move the cursor
 	if m.input.Value() == "" {
 		switch msg.String() {
+		case "?":
+			m.showKeys = !m.showKeys
+			m.refresh()
+			return m, nil
+		case "end":
+			m.view.GotoBottom()
+			m.unseen = false
+			return m, nil
 		case "up":
 			if m.histIdx > 0 {
 				m.histIdx--
@@ -185,6 +234,8 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.fitInput()
+	m.layout()
 	return m, cmd
 }
 
@@ -209,8 +260,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 
 	if strings.HasPrefix(text, "/") {
 		if strings.HasPrefix(text, "/compact") && !m.running {
-			m.compact()
-			return m, nil
+			return m, m.compact()
 		}
 		if m.running && !agent.CommandIsSafeDuringATurn(text) {
 			m.log.notice("that waits for the turn to finish: press esc to stop the turn first")
@@ -221,8 +271,8 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			m.cancelRun() // leaving cancels the turn rather than racing it
 		}
 		out, quit, err := m.agent.Command(m.ctx, text)
-		if line := strings.TrimRight(out, "\n"); line != "" {
-			m.log.notice(line)
+		if out = strings.TrimRight(out, "\n"); out != "" {
+			m.log.output(out)
 		}
 		if err != nil {
 			m.err = err.Error()
@@ -240,34 +290,39 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
-	m.start(text)
-	return m, nil
+	return m, m.start(text)
 }
 
 // start runs one turn on its own goroutine: the screen keeps drawing and typing. The
 // goroutine always reports back, good or bad, or the screen would wait forever.
-func (m *model) start(prompt string) {
-	m.log.user(prompt)
+func (m *model) start(prompt string) tea.Cmd {
+	m.log.user(prompt, time.Now())
 	turnCtx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
-	m.running = true
-	m.refresh()
+	m.begin()
 	go func() {
 		m.hub.post(runDoneMsg{err: m.agent.Ask(turnCtx, prompt)})
 	}()
+	return m.spin.Tick
+}
+
+// begin marks the screen busy and starts the clock the status line counts.
+func (m *model) begin() {
+	m.running, m.started, m.took = true, time.Now(), 0
+	m.refresh()
 }
 
 // compact folds the older turns on its own goroutine: the model writes the summary, which is
 // the slowest thing in a session, and the screen must keep drawing and answering questions.
-func (m *model) compact() {
+func (m *model) compact() tea.Cmd {
 	turnCtx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
-	m.running = true
 	m.log.notice("compacting: the model is writing a summary of the older turns")
-	m.refresh()
+	m.begin()
 	go func() {
 		m.hub.post(compactDoneMsg{freed: m.agent.Compact(turnCtx)})
 	}()
+	return m.spin.Tick
 }
 
 func (m *model) cancelRun() {
@@ -285,7 +340,18 @@ func (m *model) handle(ev agent.Event) {
 		m.log.answer(ev.Text)
 	case agent.TurnEnd:
 		m.usage = m.agent.Usage()
-		m.decode = ev.Stats.DecodeTokSec
+		m.decode, m.prefill = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec
+		m.log.dropDrafts()
+	case agent.ToolDraft:
+		m.log.draft(ev.Call, ev.Tool, ev.Text)
+	case agent.Progress:
+		// the first token reports no decode speed yet; keep the last one rather than show 0
+		if ev.Stats.DecodeTokSec > 0 {
+			m.decode = ev.Stats.DecodeTokSec
+		}
+		if ev.Stats.PrefillTokSec > 0 {
+			m.prefill = ev.Stats.PrefillTokSec
+		}
 	case agent.ToolStart:
 		m.log.toolStart(ev.Tool, ev.Args)
 	case agent.ToolEnd:
@@ -298,57 +364,54 @@ func (m *model) handle(ev agent.Event) {
 	m.refresh()
 }
 
-// refresh redraws the transcript, staying at the bottom unless the reader scrolled up.
+// refresh keeps a reader who scrolled up in place and marks the output arriving below.
 func (m *model) refresh() {
 	atBottom := m.view.AtBottom()
-	m.view.SetContent(m.log.render(m.width, m.expanded))
+	m.layout()
+	content := m.log.render(m.width, m.expanded)
+	if content != m.rendered && !atBottom && m.rendered != "" {
+		m.unseen = true
+	}
+	m.rendered = content
+	m.view.SetContent(content)
 	if atBottom {
 		m.view.GotoBottom()
+		m.unseen = false
 	}
+}
+
+// layout shrinks the transcript, because the question, the keys and the input can all grow.
+func (m *model) layout() {
+	m.view.Height = max(m.height-lipgloss.Height(m.bottomArea()), 3)
 }
 
 func (m *model) View() string {
-	status := statusLine(m.agent.Model(), m.usage, m.agent.CtxSize(), m.decode, m.running, len(m.queue))
-	return lipgloss.JoinVertical(lipgloss.Left,
-		m.view.View(),
-		m.statusArea(status),
-		m.bottomArea(),
-	)
-}
-
-func (m *model) statusArea(status string) string {
-	line := rule(m.width) + "\n" + status
-	if m.err != "" {
-		line += "\n\x1b[31m" + oneLine(m.err, m.width) + "\x1b[0m"
-	}
-	return line
-}
-
-func (m *model) bottomArea() string {
-	if len(m.pending) > 0 {
-		q := m.pending[0]
-		targets := ""
-		if len(q.target) > 0 {
-			targets = "\n  \x1b[33moutside the project: " + strings.Join(q.target, ", ") + "\x1b[0m"
-		}
-		more := ""
-		if len(m.pending) > 1 {
-			more = fmt.Sprintf(" \x1b[2m(%d more waiting)\x1b[0m", len(m.pending)-1)
-		}
-		return "⚠ " + q.text + " \x1b[1m[y/N/a]\x1b[0m" + targets + more + "\n" + rule(m.width)
-	}
-	return "❯ " + m.input.View() + "\n" + "\x1b[2menter sends · ctrl+j newline · esc stops · ctrl+o tool rows · ctrl+c quits\x1b[0m"
-}
-
-// logHeight is what is left for the transcript once the status and the input are placed.
-func (m *model) logHeight() int {
-	h := m.height - m.input.Height() - 4
-	if h < 3 {
-		h = 3
-	}
-	return h
+	return lipgloss.JoinVertical(lipgloss.Left, m.view.View(), m.bottomArea())
 }
 
 func rule(width int) string {
 	return "\x1b[2m" + strings.Repeat("─", max(width, 0)) + "\x1b[0m"
+}
+
+// cutToWidth keeps a plain line inside the screen, ending in … when something was cut.
+func cutToWidth(s string, width int) string {
+	if width <= 1 || lipgloss.Width(s) <= width {
+		return s
+	}
+	r := []rune(s)
+	for len(r) > 0 && lipgloss.Width(string(r))+1 > width {
+		r = r[:len(r)-1]
+	}
+	return string(r) + "…"
+}
+
+// status is what the status line reports right now.
+func (m *model) status() status {
+	s := status{model: m.agent.Model(), usage: m.usage, ctxSize: m.agent.CtxSize(), prefill: m.prefill,
+		decode: m.decode, running: m.running, queued: len(m.queue), took: m.took, spinner: m.spin.View(),
+		keysHint: !m.showKeys, width: m.width}
+	if m.running {
+		s.elapsed = time.Since(m.started)
+	}
+	return s
 }

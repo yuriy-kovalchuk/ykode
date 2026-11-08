@@ -248,6 +248,13 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		if d.Content != "" {
 			a.emit(Event{Kind: Answer, Text: d.Content})
 		}
+		if d.Call != nil {
+			a.emit(Event{Kind: ToolDraft, Tool: d.Call.Name, Text: d.Call.Args, Call: d.Call.Index})
+		}
+		if d.Timings != nil {
+			a.emit(Event{Kind: Progress, Stats: Stats{PrefillTokSec: d.Timings.PromptPerSecond,
+				DecodeTokSec: d.Timings.PredictedPerSecond, OutputTokens: d.Timings.PredictedN}})
+		}
 		if !looping && (thinking.add(d.Reasoning) || answer.add(d.Content)) {
 			looping = true
 			cancel() // the rest of this reply would be more of the same, for as long as the window lasts

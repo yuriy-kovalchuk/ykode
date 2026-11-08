@@ -58,7 +58,8 @@ type fileSettings struct {
 func builtinSettings() fileSettings {
 	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
-	s.BaseURL, s.Model, s.MaxTurns, s.MaxTokens = p(d.BaseURL), p("default"), p(d.MaxTurns), p(d.MaxTokens)
+	// left out, so the first full-screen run asks which server to use
+	s.MaxTurns, s.MaxTokens = p(d.MaxTurns), p(d.MaxTokens)
 	s.ThinkingLevel, s.Verify, s.AssumeYes, s.Sandbox = p(d.ThinkingLevel), p(!d.NoVerify), p(d.AssumeYes), p(d.Sandbox)
 	s.Audit, s.Retain = p(d.LogAudit), p(int(d.KeepAudit/(24*time.Hour)))
 	s.Context.SafetyMargin = p(d.SafetyMargin)
@@ -202,6 +203,9 @@ func countOf(path, key string, value *int, unit time.Duration, to *time.Duration
 
 func (c *Config) applySettings(s fileSettings, path string) error {
 	pick(s.BaseURL, &c.BaseURL)
+	if s.BaseURL != nil {
+		c.EndpointSet = true
+	}
 	// a named variable keeps the secret out of the file; api_key still works for a single-user box
 	pick(s.APIKey, &c.APIKey)
 	if s.APIKeyEnv != nil {

@@ -43,7 +43,8 @@ func (h *Hub) post(msg tea.Msg) bool {
 
 // Run draws the session until the user quits or ctx ends.
 func Run(ctx context.Context, a *agent.Agent, hub *Hub) error {
-	return run(ctx, a, hub, tea.WithAltScreen())
+	// without mouse reporting, the terminal turns the wheel into arrow keys, which walk the history
+	return run(ctx, a, hub, tea.WithAltScreen(), tea.WithMouseCellMotion())
 }
 
 // run is Run with the program options a test needs: a fake terminal instead of a real one.

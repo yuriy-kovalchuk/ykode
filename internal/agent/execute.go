@@ -120,8 +120,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)
 	}
-	// a read-only call asked for again is answered from the first one's result: nothing runs, and the
-	// model is pointed at what it already has
+	// a repeated search is answered from the first result instead of running again
 	if guardedTools[name] {
 		if earlier, times := a.repeats.claim(repeatKey(call), id, a.turn); earlier != nil {
 			a.tell(fmt.Sprintf("the model asked for the same %s again (attempt %d)", name, times))

@@ -8,11 +8,7 @@ import (
 	"strings"
 )
 
-// SystemPrompt is pi's shape: who ykode is, its tools in a line each, and a few plain guidelines.
-// Task-specific rules (verify once, answer only the value, follow a project file's rule) were
-// tried and each fixed one benchmark task while breaking another; this prompt passed 55/55 on
-// Qwen3.6 against 54/55 for those rules, 8% faster, with 23% fewer prompt tokens (2026-11-08).
-// A rule that comes back has to earn it with a measured failure this prompt has and pi does not.
+// SystemPrompt follows pi's shape: each task-specific rule fixed one task and broke another (TODO.md).
 const SystemPrompt = `You are ykode, a coding assistant working in one project. Help the user inspect files,
 run commands, and change code.
 

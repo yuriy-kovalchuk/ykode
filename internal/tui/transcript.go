@@ -3,6 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // kind says who spoke.
@@ -14,6 +17,9 @@ const (
 	whoAnswer
 	whoTool
 	whoNotice
+	whoDraft  // a tool call the model is still writing
+	whoDone   // where a prompt's work ended: when, and how long it took
+	whoOutput // what a slash command printed, line for line
 )
 
 // entry is one block of the transcript: a question, a run of thinking, an answer,
@@ -25,6 +31,9 @@ type entry struct {
 	args   string
 	result string // what the tool answered, one line
 	failed bool
+	call   int // a draft: which call of the reply it is
+	at     time.Time
+	took   time.Duration
 }
 
 // transcript is what has been said so far. Rendering is separate so the rules can be
@@ -38,9 +47,20 @@ const (
 	toolRowTail = 20 // what is left for the result after the tool name on a row
 )
 
-func (t *transcript) user(text string) {
-	t.entries = append(t.entries, entry{who: whoUser, text: text})
+func (t *transcript) user(text string, at time.Time) {
+	t.entries = append(t.entries, entry{who: whoUser, text: text, at: at})
 }
+
+// done closes a prompt's work with the time it ended and how long it took.
+func (t *transcript) done(at time.Time, took time.Duration) {
+	t.entries = append(t.entries, entry{who: whoDone, at: at, took: took})
+}
+
+// output keeps a command's lines as it wrote them: /help is a table, not a sentence.
+func (t *transcript) output(text string) {
+	t.entries = append(t.entries, entry{who: whoOutput, text: text})
+}
+
 func (t *transcript) notice(text string) {
 	t.entries = append(t.entries, entry{who: whoNotice, text: text})
 }
@@ -58,6 +78,28 @@ func (t *transcript) open(who kind, text string) {
 		return
 	}
 	t.entries = append(t.entries, entry{who: who, text: text})
+}
+
+// draft adds a fragment of a call being written to that call's row.
+func (t *transcript) draft(call int, tool, fragment string) {
+	for i := len(t.entries) - 1; i >= 0 && t.entries[i].who == whoDraft; i-- {
+		if t.entries[i].call == call {
+			t.entries[i].args += fragment
+			return
+		}
+	}
+	t.entries = append(t.entries, entry{who: whoDraft, tool: tool, args: fragment, call: call})
+}
+
+// dropDrafts removes the calls being written once the reply is done: the tool rows take their place.
+func (t *transcript) dropDrafts() {
+	kept := t.entries[:0]
+	for _, e := range t.entries {
+		if e.who != whoDraft {
+			kept = append(kept, e)
+		}
+	}
+	t.entries = kept
 }
 
 func (t *transcript) toolStart(name, args string) {
@@ -84,29 +126,61 @@ func (t *transcript) render(width int, expanded bool) string {
 	for _, e := range t.entries {
 		switch e.who {
 		case whoUser:
-			fmt.Fprintf(&b, "\x1b[1m❯ %s\x1b[0m\n\n", e.text)
+			fmt.Fprintf(&b, "%s\n\n", rightAligned(styleUserBar.Render("▌")+" "+styleBold.Render(e.text), styleDim.Render(clock(e.at)), width))
+		case whoOutput:
+			fmt.Fprintf(&b, "%s\n\n", indent(e.text, "  "))
+		case whoDone:
+			fmt.Fprintf(&b, "%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
 		case whoThink:
-			fmt.Fprintf(&b, "\x1b[2;3m%s\x1b[0m\n\n", indent(wrap(e.text, width-2), "  "))
+			fmt.Fprintf(&b, "%s\n\n", gutter(wrap(e.text, width-4), styleThink))
 		case whoAnswer:
 			fmt.Fprintf(&b, "%s\n\n", e.text)
 		case whoNotice:
-			fmt.Fprintf(&b, "\x1b[2;3m.. %s\x1b[0m\n", oneLine(e.text, noticeChars))
+			fmt.Fprintf(&b, "%s\n", styleDim.Render("· "+oneLine(e.text, noticeChars)))
 		case whoTool:
-			mark, tail := "→", "\x1b[2mworking…\x1b[0m"
-			if e.failed {
-				mark = "✗"
-			}
-			if e.result != "" {
-				tail = e.result
-			}
-			// one row per call: the arguments give way to the result, and open rows say more
-			fmt.Fprintf(&b, "%s \x1b[2m%s\x1b[0m %s  %s\n", mark, e.tool, oneLine(e.args, rowArgs(width, tail)), tail)
+			b.WriteString(toolRow(e, width) + "\n")
 			if expanded && e.args != "" {
 				fmt.Fprintf(&b, "%s\n", indent(wrap(e.args, width-2), "  "))
 			}
+		case whoDraft:
+			b.WriteString(draftRows(draft{call: e.call, tool: e.tool, args: e.args}, width) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// toolRow is one call on one row: the arguments give way to the result.
+func toolRow(e entry, width int) string {
+	mark, tail := styleAccent.Render("→"), styleDim.Render("working…")
+	switch {
+	case e.failed:
+		mark, tail = styleBad.Render("✗"), styleBad.Render(e.result)
+	case e.result != "":
+		mark, tail = styleOK.Render("✓"), e.result
+	}
+	return fmt.Sprintf("%s %s %s  %s", mark, styleToolName.Render(e.tool), styleDim.Render(oneLine(e.args, rowArgs(width, e.result))), tail)
+}
+
+// draftRows is a call being written: its head, then the newest lines of what it writes.
+func draftRows(d draft, width int) string {
+	head := fmt.Sprintf("%s %s %s", styleWorking.Render("✎"), styleToolName.Render(d.tool), styleDim.Render(d.summary()))
+	lines, _, _ := d.preview()
+	for i, line := range lines {
+		lines[i] = cutToWidth(line, width-4)
+	}
+	if len(lines) == 0 {
+		return head
+	}
+	return head + "\n" + gutter(strings.Join(lines, "\n"), styleDim)
+}
+
+// gutter marks a block that is not the answer, such as thinking or a call's preview.
+func gutter(text string, style lipgloss.Style) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = styleDim.Render("  ┊ ") + style.Render(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // rowArgs is what of the call fits on one row once the tool name and its result are placed.
@@ -157,4 +231,16 @@ func indent(text, pad string) string {
 		lines[i] = pad + lines[i]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// clock is a message's time of day; the date is the session's, so it is left out.
+func clock(at time.Time) string { return at.Format("15:04") }
+
+// rightAligned puts tag at the end of the row when it fits, after the text when it does not.
+func rightAligned(text, tag string, width int) string {
+	gap := width - lipgloss.Width(text) - lipgloss.Width(tag)
+	if gap < 2 {
+		return text + "  " + tag
+	}
+	return text + strings.Repeat(" ", gap) + tag
 }

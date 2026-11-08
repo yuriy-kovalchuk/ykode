@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// outOfTurns is what a run owes the user when the turn budget is gone: one more request with no tools
-// offered, so the reading it already did turns into an answer instead of an error and an empty reply.
+// outOfTurns turns the reading already done into an answer instead of an error and an empty reply.
 func (a *Agent) outOfTurns(ctx context.Context) error {
 	a.tell(fmt.Sprintf("used all %d tool rounds: asking for an answer with no tools left to call", a.opts.MaxTurns))
 	err := a.forceAnswer(ctx, "No tools now. Answer in text from what you have already read, and say what you could not confirm.")
@@ -37,8 +36,7 @@ func (a *Agent) forceAnswer(ctx context.Context, instruction string) error {
 		}
 		return err
 	}
-	// a template can still produce a call with no tools offered; nothing will run it, and a call with
-	// no reply makes the next request invalid, so only the text is kept
+	// nothing will run this call, and a call with no reply makes the next request invalid
 	if len(msg.ToolCalls) > 0 {
 		msg.ToolCalls = nil
 		a.tell("the model asked for a tool after being told there were none; only its text is kept")

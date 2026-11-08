@@ -68,8 +68,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	for i := range names {
 		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
 	}
-	// a search is cheap and read-only: a shortened one says to run it again, and keeps no copy that
-	// a later edit would make wrong
+	// a search is cheap to run again, so a shortened one keeps no copy that could go stale
 	search := func(i int) string {
 		return sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + names[i] + `"}`}, "tool_calls")
 	}

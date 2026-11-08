@@ -66,6 +66,7 @@ func newStreamAccumulator() *streamAccumulator {
 func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 	if chunk.Timings != nil {
 		a.timings = *chunk.Timings
+		onDelta(Delta{Timings: chunk.Timings})
 	}
 	for _, choice := range chunk.Choices {
 		if choice.FinishReason != "" {
@@ -88,6 +89,9 @@ func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 				a.order = append(a.order, frag.Index)
 			}
 			acc.add(frag)
+			if frag.Function.Arguments != "" || frag.Function.Name != "" {
+				onDelta(Delta{Call: &CallDelta{Index: frag.Index, Name: acc.name, Args: frag.Function.Arguments}})
+			}
 		}
 	}
 }

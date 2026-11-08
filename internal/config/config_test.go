@@ -51,6 +51,7 @@ func TestLoadDefaults(t *testing.T) {
 		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
 		LogAudit:        true,
+		TUI:             true,
 	}
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
 	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time
@@ -347,7 +348,7 @@ func TestEveryFlagReachesItsSetting(t *testing.T) {
 	tempHome(t)
 	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
 		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--no-verify", "--send-reasoning",
-		"-p", "task", "--json", "--version"})
+		"-p", "task", "--json", "--version", "--no-tui"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,5 +384,22 @@ func TestNoThinkIsShorthandForTheOffLevel(t *testing.T) {
 	}
 	if cfg.ThinkingLevel != "off" {
 		t.Errorf("thinking level = %q, want off", cfg.ThinkingLevel)
+	}
+}
+
+// the full-screen session is the default; --no-tui, -p and --json each ask for the line instead
+func TestTheFullScreenSessionIsTheDefault(t *testing.T) {
+	tempHome(t)
+	for args, want := range map[string]bool{"": true, "--no-tui": false, "-p task": false, "--json -p task": false} {
+		cfg, err := Load(strings.Fields(args))
+		if err != nil {
+			t.Fatalf("%q: %v", args, err)
+		}
+		if cfg.TUI != want {
+			t.Errorf("ykode %s: TUI = %v, want %v", args, cfg.TUI, want)
+		}
+	}
+	if _, err := Load([]string{"--tui"}); err == nil {
+		t.Error("--tui is still accepted though it is the default now")
 	}
 }

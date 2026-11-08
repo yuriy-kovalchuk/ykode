@@ -29,6 +29,9 @@ type jsonEvent struct {
 
 // Emit writes the event; a script has nobody to answer a Confirm, so it refuses.
 func (j *JSONWriter) Emit(ev agent.Event) agent.Decision {
+	if ev.Kind == agent.ToolDraft || ev.Kind == agent.Progress {
+		return agent.Refuse // one line per token would bury the stream; tool_start and turn_end carry it whole
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	rec := jsonEvent{Kind: ev.Kind.String(), Turn: ev.Turn, Tool: ev.Tool, Args: ev.Args, Text: ev.Text, Target: ev.Target}

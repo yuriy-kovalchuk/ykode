@@ -13,10 +13,7 @@ const (
 // errRepeating is a reply that was stopped because it kept writing the same lines.
 var errRepeating = errors.New("the reply kept repeating the same lines")
 
-// lineRepeats watches one stream of text - a reply's thinking or its answer - for a model stuck in a
-// loop: the same paragraph written again and again until the window or a timeout ends it. A small
-// model does this after a failure it cannot explain, and nothing else stops it: the reply has the
-// whole remaining window to fill.
+// lineRepeats catches a reply stuck repeating itself, which nothing else stops before the window fills.
 type lineRepeats struct {
 	partial strings.Builder
 	seen    map[string]int

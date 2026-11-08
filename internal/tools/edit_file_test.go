@@ -178,8 +178,7 @@ func TestAFailedEditDoesNotReportAnEarlierEdit(t *testing.T) {
 	}
 }
 
-// a pair with no new_text is a slip, not a request to delete: it fails and leaves the file alone,
-// while an explicit "" still deletes
+// a missing new_text is a slip, not a delete; an explicit "" still deletes
 func TestEditRefusesAPairWithoutNewText(t *testing.T) {
 	for _, args := range []string{
 		`{"path":"target.txt","edits":[{"old_text":"two\n"}]}`,

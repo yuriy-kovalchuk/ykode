@@ -19,18 +19,18 @@ const historyLimit = 20
 
 // Help lists the commands; the model does the work, so this stays short.
 const Help = `commands:
-  /help   show this
-  /usage    what the conversation has cost the server
-  /compact  fold the older turns into a summary the model writes
-  /history [what]  what this run did: a tool name, failed, outside, an id like r12,
-           or --all for every run of this root
-  /ctx        how full the window is, and what the server is caching
-  /tools      what the model may call, and what each description costs
-  /model [id] which model this run asks, or ask a different one
-  /think [level]  how deeply the model thinks: off, minimal, low, medium, high, xhigh, max
-  /undo [force]  put the most recent file change back; force also when it was edited since
-  /reset    forget the conversation
-  /exit   quit (Ctrl-C at the prompt too; mid-request it cancels the request)`
+  /help              show this
+  /usage             what the conversation has cost the server
+  /compact           fold the older turns into a summary the model writes
+  /history [what]    what this run did: a tool name, failed, outside, an id like r12,
+                     or --all for every run of this root
+  /ctx               how full the window is, and what the server is caching
+  /tools             what the model may call, and what each description costs
+  /model [id]        which model this run asks, or ask a different one
+  /think [level]     how deeply the model thinks: off, minimal, low, medium, high, xhigh, max
+  /undo [force]      put the most recent file change back; force also when it was edited since
+  /reset             forget the conversation
+  /exit              quit (ctrl+c at the prompt too; mid-request it cancels the request)`
 
 // UsageLine reports what the conversation has cost, in the server's own numbers.
 func UsageLine(u Usage, ctxSize int) string {

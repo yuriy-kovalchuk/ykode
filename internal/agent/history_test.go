@@ -147,8 +147,7 @@ func TestTrimNeverBlanksAResultTheModelHasNotSeen(t *testing.T) {
 	}
 }
 
-// a command's output is not cheap to have again - a test suite takes minutes - so a trimmed one is
-// kept in a file the model can grep, the way a cut command log already is
+// a command is slow to run again, so its trimmed output is kept in a file to grep
 func TestATrimmedCommandOutputIsKeptInAFile(t *testing.T) {
 	store := tools.NewResultStore(t.TempDir())
 	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture), Store: store})

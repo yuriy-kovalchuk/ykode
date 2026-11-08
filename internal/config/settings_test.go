@@ -272,9 +272,15 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
 	}
-	for _, key := range []string{"base_url", "model", "thinking_level", "audit", "tools", "context"} {
+	for _, key := range []string{"thinking_level", "audit", "tools", "context"} {
 		if _, ok := seeded[key]; !ok {
 			t.Errorf("%s missing from the file that shows every key", key)
+		}
+	}
+	// which server to talk to is asked on the first run, not guessed into the file
+	for _, key := range []string{"base_url", "model"} {
+		if _, ok := seeded[key]; ok {
+			t.Errorf("%s was seeded, so the first-run question would never be asked", key)
 		}
 	}
 
@@ -284,6 +290,9 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	}
 	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 150 || !cfg.LogAudit {
 		t.Errorf("the file written is not what the code would have done: %+v", cfg)
+	}
+	if cfg.EndpointSet {
+		t.Error("the built-in default counts as a server someone chose")
 	}
 }
 

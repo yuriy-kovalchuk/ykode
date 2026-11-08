@@ -180,3 +180,45 @@ func TestAStreamWithNoEndIsMarkedUnfinished(t *testing.T) {
 		t.Errorf("a reply with a finish reason was marked unfinished (err %v)", err)
 	}
 }
+
+// a tool call reaches the screen as it is written, not only once the reply is done
+func TestToolCallFragmentsAreStreamed(t *testing.T) {
+	c, _ := streamServer(t, frame(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write_file","arguments":"{\"path\":"}}]}}]}`)+
+		frame(`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"a.go\"}"}}]},"finish_reason":"tool_calls"}]}`))
+	_, deltas, err := collect(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args string
+	for _, d := range deltas {
+		if d.Call == nil {
+			continue
+		}
+		if d.Call.Name != "write_file" || d.Call.Index != 0 {
+			t.Errorf("fragment %+v lost its call's name or index", *d.Call)
+		}
+		args += d.Call.Args
+	}
+	if args != `{"path":"a.go"}` {
+		t.Errorf("streamed arguments = %q, want the whole call", args)
+	}
+}
+
+// a server that sends timings with every chunk has them reported as the reply streams
+func TestTimingsAreReportedWhileStreaming(t *testing.T) {
+	c, _ := streamServer(t, frame(`{"choices":[{"delta":{"content":"a"}}],"timings":{"predicted_n":1,"predicted_per_second":0}}`)+
+		frame(`{"choices":[{"delta":{"content":"b"},"finish_reason":"stop"}],"timings":{"predicted_n":2,"predicted_per_second":38.5,"prompt_per_second":410}}`))
+	_, deltas, err := collect(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var speeds []float64
+	for _, d := range deltas {
+		if d.Timings != nil {
+			speeds = append(speeds, d.Timings.PredictedPerSecond)
+		}
+	}
+	if len(speeds) != 2 || speeds[1] != 38.5 {
+		t.Errorf("speeds while streaming = %v, want one per chunk ending at 38.5", speeds)
+	}
+}

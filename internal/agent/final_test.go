@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// a run that spent its turn budget still owes an answer: the last request has no tools, so text is
-// all the model can produce
+// a run that spent its turn budget still owes the user an answer
 func TestARunOutOfTurnsIsForcedToAnswer(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
@@ -66,8 +65,7 @@ func TestCutOffCallsStillStopAtMaxTurns(t *testing.T) {
 	}
 }
 
-// with no tools offered a template can still produce a call; nothing runs it, so it must not stay in
-// the history without a reply
+// a call nobody runs must not stay in the history without a reply
 func TestAForcedAnswerKeepsNoToolCall(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),

@@ -93,8 +93,7 @@ func TestThinkingOffTurnsThePhaseOffWithoutNamingABudget(t *testing.T) {
 	}
 }
 
-// a reply too small to spare the answer its share must still cap thinking: a budget of 0 is left off
-// the wire, and a request with no budget lets the thinking phase take the whole reply
+// an omitted budget would let thinking eat the whole reply
 func TestASmallReplyStillCapsTheThinking(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
 	a, done := newAgent(t, stub, Options{ThinkingLevel: "medium", MaxTokens: 512, CtxSize: 16000}, &captureSink{})
@@ -105,5 +104,18 @@ func TestASmallReplyStillCapsTheThinking(t *testing.T) {
 
 	if got := stub.lastRequest(t)["thinking_budget_tokens"]; got != float64(256) {
 		t.Errorf("thinking_budget_tokens = %v, want half of the 512 token reply", got)
+	}
+}
+
+// every request asks llama.cpp for its speeds in each chunk, so the screen can show them live
+func TestEveryRequestAsksForLiveTimings(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{CtxSize: 8000}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+	if got := stub.lastRequest(t)["timings_per_token"]; got != true {
+		t.Errorf("timings_per_token = %v, want true", got)
 	}
 }

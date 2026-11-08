@@ -13,6 +13,8 @@ const (
 	ToolFail                   // a tool or the user rejected it
 	Notice                     // something the run did that is not a tool: trim, nudge, cut-off
 	Confirm                    // the run is waiting for a decision
+	ToolDraft                  // a piece of a tool call still being written, Call says which
+	Progress                   // the server's speeds while a reply streams, in Stats
 )
 
 func (k EventKind) String() string {
@@ -35,6 +37,10 @@ func (k EventKind) String() string {
 		return "notice"
 	case Confirm:
 		return "confirm"
+	case ToolDraft:
+		return "tool_draft"
+	case Progress:
+		return "progress"
 	}
 	return "unknown"
 }
@@ -49,6 +55,7 @@ type Event struct {
 	Text   string
 	Target []string // paths outside the project root, on a Confirm event
 	Stats  Stats
+	Call   int // on a ToolDraft: which call of the reply, as the server numbers them
 }
 
 // Decision answers a Confirm event.

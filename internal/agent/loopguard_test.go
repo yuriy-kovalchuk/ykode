@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// the same search asked again is answered from what it already found, so a model hunting the same rock
-// pays a notice instead of a fresh result
+// a repeated search costs a notice instead of a fresh result
 func TestTheSameSearchIsNotRunTwice(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "search_text", []string{`{"pattern":"port"}`}, "tool_calls"),
@@ -145,8 +144,7 @@ func TestANewPromptEndsTheRepeats(t *testing.T) {
 	}
 }
 
-// read_file answers its own repeats by content, so the guard must not refuse a re-read: a shortened read
-// tells the model to read the range again, and that has to work
+// a shortened read tells the model to read again, so the guard must not refuse it
 func TestTheGuardLeavesReadsToReadFile(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "read_file", []string{`{"path":"note.txt"}`}, "tool_calls"),

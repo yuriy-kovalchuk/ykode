@@ -51,9 +51,7 @@ func (a *Agent) shrinkOldResults(keep int) int {
 	return freed
 }
 
-// askAgain are the tools whose result is cheaper to ask for again than to keep: a read of a file
-// the disk still has, or a search that changes nothing. Keeping a copy of either would hand back
-// text a later edit already changed.
+// askAgain: asking again is cheaper than a stored copy, which a later edit would make stale.
 var askAgain = map[string]string{
 	"read_file":   "the file on disk has not changed unless you edited it: read the range you need again",
 	"find_files":  "run the same find_files again if you need it",
@@ -62,10 +60,7 @@ var askAgain = map[string]string{
 	"edit_file":   "the file on disk has the result: read it if you need it",
 }
 
-// summarize is what ykode keeps of a dropped result: which call it was, how big it was, how it
-// began, and how to get the rest back. A command's output is the one thing not cheap to ask for
-// again - running a test suite twice costs minutes - so its text is kept in a file the model can
-// grep, the way a command whose output was cut already is.
+// summarize keeps only command output on disk: running a test suite again costs minutes.
 func (a *Agent) summarize(m *llm.Message, id string) string {
 	name := m.Name
 	if name == "" {

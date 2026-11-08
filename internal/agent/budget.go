@@ -25,6 +25,8 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		Tools:      a.specs(),
 		ToolChoice: "auto",
 		MaxTokens:  a.opts.MaxTokens,
+		// the screen shows the speed while the reply streams; servers that do not know the field ignore it
+		TimingsPerToken: true,
 	}
 	if forceTool {
 		// servers that ignore "required" just keep answering, so the guard costs one turn
@@ -53,8 +55,7 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		if req.ThinkingBudget > 0 {
 			req.ThinkingBudget = min(req.ThinkingBudget, req.MaxTokens-minAnswerTok)
 			if req.ThinkingBudget <= 0 {
-				// a budget of 0 is left off the wire, and no budget means no limit at all: a reply this
-				// small still thinks, but half of it stays for the answer
+				// a budget of 0 is omitted on the wire, and an omitted budget means no limit at all
 				req.ThinkingBudget = max(req.MaxTokens/2, 1)
 			}
 		}

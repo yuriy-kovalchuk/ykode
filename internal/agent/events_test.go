@@ -18,7 +18,7 @@ func TestARunIsAStreamOfTypedEvents(t *testing.T) {
 	if err := a.Ask(context.Background(), "list the files"); err != nil {
 		t.Fatal(err)
 	}
-	want := []EventKind{TurnStart, Thinking, TurnEnd, ToolStart, ToolEnd, TurnStart, Answer, TurnEnd}
+	want := []EventKind{TurnStart, Thinking, ToolDraft, TurnEnd, ToolStart, ToolEnd, TurnStart, Answer, TurnEnd}
 	got := sink.kinds()
 	if len(got) != len(want) {
 		t.Fatalf("events = %v, want %v", kindsText(got), kindsText(want))
@@ -28,8 +28,11 @@ func TestARunIsAStreamOfTypedEvents(t *testing.T) {
 			t.Fatalf("event %d = %v, want %v (%v)", i, got[i], k, kindsText(got))
 		}
 	}
-	if sink.events[4].Tool != "find_files" || sink.events[4].Text == "" {
-		t.Fatalf("tool_end event = %+v, want the tool name and its result", sink.events[4])
+	if draft := sink.events[2]; draft.Tool != "find_files" || draft.Text != `{"pattern":"*","depth":1}` {
+		t.Fatalf("tool_draft event = %+v, want the call being written", draft)
+	}
+	if sink.events[5].Tool != "find_files" || sink.events[5].Text == "" {
+		t.Fatalf("tool_end event = %+v, want the tool name and its result", sink.events[5])
 	}
 	for _, ev := range sink.events {
 		if ev.Kind != Answer && ev.Turn == 0 {

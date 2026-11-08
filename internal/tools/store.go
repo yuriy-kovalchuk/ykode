@@ -34,8 +34,7 @@ func (s ResultStore) Save(id, text string) (string, error) {
 		return "", fmt.Errorf("store: %w", err)
 	}
 	path := filepath.Join(s.dir, id+".txt")
-	// O_EXCL: an id is handed out once, so writing over one would point an older summary at a
-	// newer result
+	// O_EXCL: writing over an id would point an older summary at a newer result
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("store: %w", err)

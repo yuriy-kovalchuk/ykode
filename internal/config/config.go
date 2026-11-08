@@ -36,6 +36,7 @@ const (
 type Config struct {
 	BaseURL         string // OpenAI-compatible base, no trailing slash
 	APIKey          string // sent as a bearer token when set
+	EndpointSet     bool   // base_url came from a settings file, $LOCAL_LLM_URL or --base-url, not the built-in default
 	Model           string // empty means "whatever the server lists first"
 	Root            string // absolute project root
 	MaxTurns        int
@@ -91,7 +92,7 @@ type flagValues struct {
 	SendReasoning bool
 	Prompt        string
 	JSON          bool
-	TUI           bool
+	NoTUI         bool
 	Continue      string
 	Version       bool
 }
@@ -101,7 +102,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--tui] [--continue ID] [--version]")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--no-tui] [--continue ID] [--version]")
 		fmt.Fprintln(fs.Output(), "       ykode history [what] [--all] [--failed] [--since DUR] [--root DIR] [--json] - what the runs did, outside a session")
 		fs.PrintDefaults()
 	}
@@ -119,7 +120,7 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
-	fs.BoolVar(&f.TUI, "tui", false, "full-screen session: scrolling transcript, input box, status bar")
+	fs.BoolVar(&f.NoTUI, "no-tui", false, "a line prompt instead of the full-screen session")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or the id from a previous run")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
@@ -159,6 +160,7 @@ func defaults() Config {
 		KeepSessions:    defaultSessionKeep,
 		KeepAudit:       defaultAuditKeep,
 		LogAudit:        true,
+		TUI:             true, // --no-tui, -p and --json turn it off
 		modelReasoning:  map[string]bool{},
 		modelSampling:   map[string][2]llm.Sampling{},
 	}
@@ -174,7 +176,7 @@ func given(fs *flag.FlagSet) map[string]bool {
 // applyFlags applies the flags the user typed; a bool flag only ever switches its setting on (or thinking off).
 func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	setters := map[string]func(){
-		"base-url":       func() { c.BaseURL = f.BaseURL },
+		"base-url":       func() { c.BaseURL, c.EndpointSet = f.BaseURL, true },
 		"api-key":        func() { c.APIKey = f.APIKey },
 		"model":          func() { c.Model = f.Model },
 		"max-turns":      func() { c.MaxTurns = f.MaxTurns },
@@ -186,7 +188,7 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
 		"p":              func() { c.Prompt = f.Prompt },
 		"json":           func() { c.JSON = c.JSON || f.JSON },
-		"tui":            func() { c.TUI = c.TUI || f.TUI },
+		"no-tui":         func() { c.TUI = c.TUI && !f.NoTUI },
 		"continue":       func() { c.Continue = f.Continue },
 		"version":        func() { c.Version = f.Version },
 	}
@@ -204,7 +206,7 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 
 func (c *Config) applyEnv() {
 	if v := os.Getenv("LOCAL_LLM_URL"); v != "" {
-		c.BaseURL = v
+		c.BaseURL, c.EndpointSet = v, true
 	}
 	if v := os.Getenv("LOCAL_LLM_MODEL"); v != "" {
 		c.Model = v
@@ -222,8 +224,8 @@ func (c *Config) normalize() error {
 	if c.MaxTokens < 0 {
 		return fmt.Errorf("--max-tokens must be 0 (no cap) or a positive token count, got %d", c.MaxTokens)
 	}
-	if c.TUI && (c.JSON || c.Prompt != "") {
-		return fmt.Errorf("--tui draws the session; --json and -p write to stdout instead: pick one")
+	if c.JSON || c.Prompt != "" {
+		c.TUI = false // -p and --json write to stdout; a screen would be drawn over it
 	}
 	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
 		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))

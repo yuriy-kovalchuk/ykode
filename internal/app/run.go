@@ -19,6 +19,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
+	"github.com/yuriy-kovalchuk/ykode/internal/tui"
 )
 
 const startupProbeTimeout = 10 * time.Second
@@ -32,9 +33,24 @@ func Run(args []string, version string) error {
 	if done || err != nil {
 		return err
 	}
+	// piped in or out, a screen has nowhere to draw: the line prompt reads and writes the pipe
+	cfg.TUI = cfg.TUI && cli.IsTerminal(os.Stdin) && cli.IsTerminal(os.Stdout)
+	// the built-in localhost default is a guess: ask, rather than fail with "cannot reach server"
+	if cfg.TUI && !cfg.EndpointSet {
+		if cfg, err = askForServer(cfg, ""); err != nil {
+			return err
+		}
+	}
 	// a first run gets its directory and its settings file; everything left there ages out
 	PrepareHome(cfg)
 	client, model, ctxSize, err := connect(cfg)
+	if err != nil && cfg.TUI {
+		// the server went away or was never right: offer to fix it instead of exiting
+		if cfg, err = askForServer(cfg, err.Error()); err != nil {
+			return err
+		}
+		client, model, ctxSize, err = connect(cfg)
+	}
 	if err != nil {
 		return err
 	}
@@ -88,6 +104,24 @@ func startupConfig(args []string, version string) (config.Config, bool, error) {
 	}
 	cfg, err = config.Load(args)
 	return cfg, err != nil, err
+}
+
+// askForServer saves the choice to settings.yaml; a flag or environment value still wins next time.
+func askForServer(cfg config.Config, problem string) (config.Config, error) {
+	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Problem: problem})
+	if err != nil {
+		return cfg, err
+	}
+	path, err := config.SaveEndpoint(res.BaseURL, res.APIKey, res.Model)
+	if err != nil {
+		return cfg, err
+	}
+	fmt.Fprintf(os.Stderr, "ykode: saved %s (%s) to %s\n", res.BaseURL, res.Model, path)
+	cfg.BaseURL, cfg.Model, cfg.EndpointSet = res.BaseURL, res.Model, true
+	if res.APIKey != "" {
+		cfg.APIKey = res.APIKey
+	}
+	return cfg, nil
 }
 
 // connect finds the model and its window, and prints them unless the screen will show them.

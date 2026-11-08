@@ -170,8 +170,7 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 
 	store := tools.NewResultStore(filepath.Join(dir, "results"))
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
-	// every tool is sent on every request; 3266 bytes when this budget was set, down from 5356 with
-	// recall and the longer descriptions. Raise it on purpose, not by drift.
+	// 3266 bytes when set: raise it on purpose, not by drift
 	if got := a.SpecBytes(); got > 3600 {
 		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3600", got, got/3)
 	}
@@ -217,9 +216,7 @@ func TestAProjectFileIsNotGivenAuthorityOverTheUser(t *testing.T) {
 	}
 }
 
-// the prompt lists the tools by hand, so it must name exactly the tools ykode has: a tool it
-// leaves out is one the model reaches for less, and a tool it names that does not exist (recall,
-// once) is a call that can only fail
+// a tool named but missing is a call that can only fail; one left out gets used less
 func TestThePromptNamesEveryToolAndNoOther(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
@@ -249,8 +246,7 @@ func TestThePromptStaysSmall(t *testing.T) {
 	}
 }
 
-// each of these fixed one benchmark task and broke another (TODO.md, "Measured"); one that comes
-// back should come back with a measurement, not by drift
+// each fixed one benchmark task and broke another (TODO.md, "Measured")
 func TestTheTaskRulesStayOut(t *testing.T) {
 	for _, rule := range []string{
 		"throwaway",                                     // verify once: task 03 got faster, checks got rarer

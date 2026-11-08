@@ -8,9 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// guardedTools are the read-only tools the loop guard watches. read_file is left out on purpose: it
-// already answers a repeat itself, keyed on the text it would hand over, so an edited file or a result
-// that aged out of the conversation is handed over again - which an argument key cannot see.
+// read_file is left out: it detects repeats by content, which also notices an edited file.
 var guardedTools = map[string]bool{"find_files": true, "search_text": true}
 
 const (
@@ -18,10 +16,7 @@ const (
 	repeatStopAt = 4 // the fourth means the model is stuck: stop and answer from what it has
 )
 
-// loopGuard is what ykode knows about its own repeats. The same search asked again is answered with a
-// pointer to the result the model already has, so a model hunting the same rock twice pays one line
-// instead of another full search. A repeat is only claimed while the earlier result is still in front of
-// the model: a new prompt, a change to the project, or the result being shortened or dropped ends it.
+// loopGuard answers a repeated search from the result the model still has in context.
 type loopGuard struct {
 	mu    sync.Mutex
 	runs  map[string]loopRun // call key -> the call that answered it, and where
@@ -42,9 +37,7 @@ func newLoopGuard() *loopGuard {
 	return g
 }
 
-// claim records this call as one that will answer, and returns the earlier call if one already did.
-// The first caller leaves its result id behind before it runs, so an identical call arriving while it is
-// still running is caught too.
+// claim reserves the call before it runs, so an identical parallel call is caught too.
 func (g *loopGuard) claim(key, id string, turn int) (earlier *loopRun, times int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -72,8 +65,7 @@ func (g *loopGuard) release(key string) {
 	delete(g.asks, key)
 }
 
-// forgetID releases the call whose result just left the conversation: asking for it again is not a
-// repeat any more, it is the only way to get the text back.
+// forgetID releases a call whose result left the context: asking again is then the only way back.
 func (g *loopGuard) forgetID(id string) {
 	g.mu.Lock()
 	key, ok := g.byID[id]
@@ -83,8 +75,7 @@ func (g *loopGuard) forgetID(id string) {
 	}
 }
 
-// changed is what a new prompt, a write, an edit or a command does to the guard: nothing read earlier
-// is safe to call the same answer.
+// changed forgets every claim: after a change, an earlier result may no longer be true.
 func (g *loopGuard) changed() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
