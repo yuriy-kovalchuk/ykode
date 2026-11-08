@@ -41,6 +41,41 @@ func wrap(text string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// wrapKept breaks a line only where it has to: a line that fits is left exactly as it was written,
+// so a table of commands keeps its columns, and only a line that had to break is re-flowed under
+// its own indent.
+func wrapKept(text string, width int) string {
+	if width < 20 {
+		width = 20
+	}
+	var rows []string
+	for _, line := range strings.Split(text, "\n") {
+		if lipgloss.Width(line) <= width {
+			rows = append(rows, line)
+			continue
+		}
+		lead := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		row := ""
+		flush := func() {
+			if row != "" {
+				rows = append(rows, lead+row)
+				row = ""
+			}
+		}
+		for _, word := range strings.Fields(line) {
+			if row != "" && lipgloss.Width(lead+row)+1+lipgloss.Width(word) > width {
+				flush()
+			}
+			if row != "" {
+				row += " "
+			}
+			row += word
+		}
+		flush()
+	}
+	return strings.Join(rows, "\n")
+}
+
 func indent(text, pad string) string {
 	lines := strings.Split(text, "\n")
 	for i := range lines {

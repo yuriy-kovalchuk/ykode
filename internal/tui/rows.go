@@ -40,7 +40,7 @@ func draw(e entry, width int, expanded bool) string {
 	case whoUser:
 		return promptBlock(e, width) + "\n\n"
 	case whoOutput:
-		return fmt.Sprintf("%s\n\n", indent(e.text, "  "))
+		return indent(wrapKept(e.text, width-2), "  ") + "\n\n"
 	case whoDone:
 		return fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
 	case whoThink:
@@ -48,7 +48,7 @@ func draw(e entry, width int, expanded bool) string {
 	case whoAnswer:
 		return markdown(e.text, width) + "\n\n"
 	case whoNotice:
-		return fmt.Sprintf("%s\n", styleDim.Render("· "+oneLine(e.text, noticeChars)))
+		return styleDim.Render(indent(wrap(oneLine(e.text, noticeChars), width-2), "· ")) + "\n"
 	case whoTool:
 		row := toolRow(e, width) + "\n"
 		if expanded && e.args != "" {

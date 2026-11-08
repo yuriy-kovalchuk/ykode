@@ -166,3 +166,36 @@ func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
 		}
 	}
 }
+
+// a command's answer and a notice stay inside the screen rather than running to the terminal's
+// own break, which is where their columns go missing
+func TestACommandAnswerStaysInsideTheScreen(t *testing.T) {
+	long := "  /history [what] what this run did: " + strings.Repeat("a note long enough to run past the screen ", 3)
+	var log transcript
+	log.output(long)
+	log.notice("the model kept asking for the same call: " + strings.Repeat("stopping the tools and asking for an answer in text ", 3))
+
+	view := log.render(80, false)
+	for _, row := range strings.Split(view, "\n") {
+		if row != "" && lipgloss.Width(row) > 80 {
+			t.Errorf("a row of %d columns on an 80 column screen: %q", lipgloss.Width(row), row)
+		}
+	}
+}
+
+// a command list keeps its columns: only a line too long for the screen is re-flowed
+func TestACommandListKeepsItsColumns(t *testing.T) {
+	long := "commands:\n  /help   show this\n  /history [what] " + strings.Repeat("a note long enough to run past the screen ", 3)
+	var log transcript
+	log.output(long)
+
+	view := stripCodes(log.render(80, false))
+	if !strings.Contains(view, "  /help   show this") {
+		t.Errorf("the short row was re-flowed:\n%s", view)
+	}
+	for _, row := range strings.Split(view, "\n") {
+		if row != "" && lipgloss.Width(row) > 80 {
+			t.Errorf("a row of %d columns on an 80 column screen: %q", lipgloss.Width(row), row)
+		}
+	}
+}
