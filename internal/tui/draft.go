@@ -211,19 +211,6 @@ func valueStart(args, key string) (int, bool) {
 	return len(args) - len(rest) + 1, true
 }
 
-// fieldValue reads a whole string field out of arguments the model may still be writing.
-func fieldValue(args, key string) (value, raw string) {
-	at, ok := valueStart(args, key)
-	if !ok {
-		return "", ""
-	}
-	raw = args[at:]
-	if end := closingQuote(raw); end >= 0 {
-		raw = raw[:end]
-	}
-	return unescape(raw), raw
-}
-
 // closingQuote is where an unescaped quote ends a JSON string, or -1 while it is still being written.
 func closingQuote(s string) int {
 	for i := 0; i < len(s); i++ {

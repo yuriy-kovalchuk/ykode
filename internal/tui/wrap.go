@@ -1,10 +1,10 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
-	"fmt"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -84,8 +84,8 @@ func indent(rows []string, pad string) []string {
 	return rows
 }
 
-// clock is a message's time of day; the date is the session's, so it is left out.
-// clock is the hour of a turn. A turn carried over from an earlier run has no hour to show.
+// clock is the hour of a turn; the date is the session's. A turn carried over from an earlier run
+// has no hour to show.
 func clock(at time.Time) string {
 	if at.IsZero() {
 		return ""
