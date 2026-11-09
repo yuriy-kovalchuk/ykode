@@ -18,8 +18,9 @@ import (
 // running to the end, which is what an answer arriving a token at a time needs.
 var answers = goldmark.New(goldmark.WithExtensions(extension.Table))
 
-// codeGutter marks the lines of a fenced block so they read as code and not prose.
-const codeGutter = "  │ "
+// codeGutter indents the lines of a fenced block. It marks nothing: a rule down the side of code
+// cannot be selected away, so every copy of a block would carry it.
+const codeGutter = "    "
 
 // markdown lays out the model's answer: headings, lists, tables and fenced code given their
 // shape, and the marks the model wrote turned into the terminal's own words. It runs on every

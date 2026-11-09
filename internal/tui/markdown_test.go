@@ -29,7 +29,7 @@ func TestAnAnswerGetsItsShape(t *testing.T) {
 	got := stripCodes(markdown(answer, 60, nil))
 	for _, want := range []string{
 		"What I found", "three", "- the record, its rows", "1. read the file",
-		"│ func main() {}", "go",
+		"    func main() {}", "go",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("%q missing from:\n%s", want, got)
@@ -45,7 +45,7 @@ func TestAnAnswerGetsItsShape(t *testing.T) {
 // an answer arrives a token at a time: a fence that has not closed yet is already code
 func TestAFenceStillBeingWrittenIsShownAsCode(t *testing.T) {
 	got := stripCodes(markdown("looking now\n```go\nfunc main() {", 60, nil))
-	if !strings.Contains(got, "│ func main() {") {
+	if !strings.Contains(got, "    func main() {") {
 		t.Errorf("the half-written fence is not drawn as code:\n%s", got)
 	}
 	if strings.Contains(got, "```") {
