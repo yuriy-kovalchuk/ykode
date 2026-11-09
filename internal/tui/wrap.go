@@ -108,13 +108,17 @@ func padTo(text string, width int) string {
 	return text
 }
 
-// cutToWidth keeps a plain line inside the screen, ending in … when something was cut.
+// cutToWidth keeps a plain line inside the screen, ending in … when something was cut. The line is
+// measured once and what is dropped is measured as it goes: a long tool result is cut for every
+// redraw, and measuring the shrinking line again per character costs the line squared.
 func cutToWidth(s string, width int) string {
 	if width <= 1 || lipgloss.Width(s) <= width {
 		return s
 	}
 	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > width {
+	over := lipgloss.Width(s) - width // the … keeps a column of its own
+	for len(r) > 0 && over >= 0 {
+		over -= lipgloss.Width(string(r[len(r)-1]))
 		r = r[:len(r)-1]
 	}
 	return string(r) + "…"

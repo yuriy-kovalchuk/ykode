@@ -41,3 +41,12 @@ func TestARowOfWideCharactersStopsAtTheScreenEdge(t *testing.T) {
 		t.Errorf("the row takes %d columns, want 30 or fewer: %q", got, row)
 	}
 }
+
+// a long one-line tool result is cut on every redraw, so cutting is measured once and not again
+// for every character dropped.
+func BenchmarkCuttingARow(b *testing.B) {
+	line := strings.Repeat("x", 6000)
+	for b.Loop() {
+		cutToWidth(line, 60)
+	}
+}
