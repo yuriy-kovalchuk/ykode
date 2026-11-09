@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // settings answers /settings: what this run reads, one knob explained, or a change written to
@@ -14,7 +18,7 @@ func (m *model) settings(line string) string {
 	_, rest, _ := strings.Cut(line, " ")
 	key, value, hasValue := strings.Cut(strings.TrimSpace(rest), " ")
 	switch {
-	case key == "":
+	case key == "" || key == "list":
 		return m.settingsTable()
 	case !hasValue:
 		return m.settingsOne(key)
@@ -96,4 +100,55 @@ func orUnset(value string) string {
 		return "unset"
 	}
 	return value
+}
+
+// modalMsg gives the screen over the session its message. It reports whether the modal took it; a key
+// always goes to the modal, and so does what its own probe answered, while everything else is the
+// session's, which keeps running underneath.
+func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
+	switch msg.(type) {
+	case tea.KeyMsg, probeDoneMsg:
+	default:
+		return nil, false
+	}
+	_, cmd := m.modal.Update(msg)
+	if m.modal.closed {
+		chosen, res := m.modal.done, m.modal.result
+		m.modal, cmd = nil, nil // the modal's own quit is not the session's
+		if chosen {
+			m.applyEndpoint(res)
+		}
+		m.refresh()
+	}
+	return cmd, true
+}
+
+// applyEndpoint saves the choice to settings.yaml and switches the running session to it, so the next
+// request goes to the new server with the new model and its window.
+func (m *model) applyEndpoint(res SetupResult) {
+	path, err := config.SaveEndpoint(res.BaseURL, res.APIKey, res.Model)
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	if res.APIKey != "" {
+		m.cfg.APIKey = res.APIKey
+	}
+	m.cfg.BaseURL, m.cfg.Model, m.cfg.EndpointSet = res.BaseURL, res.Model, true
+	client := llm.NewClient(res.BaseURL, m.cfg.APIKey)
+	client.Session, client.Idle = m.cfg.Session, m.cfg.StreamIdle
+	m.agent.SetEndpoint(client, res.Model, cmp.Or(m.cfg.CtxSize, res.CtxSize))
+	m.log.notice(fmt.Sprintf("now using %s at %s · saved to %s", res.Model, res.BaseURL, shortenHome(path)))
+}
+
+// mouseCmd tells the terminal about a mouse setting that changed on the settings screen.
+func (m *model) mouseCmd() tea.Cmd {
+	if !m.wantMouse {
+		return nil
+	}
+	m.wantMouse = false
+	if m.mouseOn {
+		return tea.EnableMouseCellMotion
+	}
+	return tea.DisableMouse
 }

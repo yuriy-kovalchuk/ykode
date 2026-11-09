@@ -21,25 +21,26 @@ const (
 )
 
 type model struct {
-	ctx     context.Context
-	hub     *Hub // what a run reports to, including that it finished
-	agent   *agent.Agent
-	root    string // the project the footer names
-	branch  string // what HEAD points at there, read again with each prompt
-	input   textarea.Model
-	view    window
-	log     transcript
-	decode  float64 // tokens per second of the last answer
-	prefill float64 // tokens per second the last prompt was read at
-	started time.Time
-	took    time.Duration // how long the last prompt took
-	spin    spinner.Model
-	width   int
-	height  int
-	running bool
-	cancel  context.CancelFunc
-	pending []*question // questions waiting for an answer, oldest first
-	err     string
+	ctx       context.Context
+	hub       *Hub // what a run reports to, including that it finished
+	agent     *agent.Agent
+	root      string // the project the footer names
+	branch    string // what HEAD points at there, read again with each prompt
+	input     textarea.Model
+	view      window
+	log       transcript
+	decode    float64 // tokens per second of the last answer
+	prefill   float64 // tokens per second the last prompt was read at
+	estimated bool    // the speeds above were measured here while the reply streamed, not reported by the server
+	started   time.Time
+	took      time.Duration // how long the last prompt took
+	spin      spinner.Model
+	width     int
+	height    int
+	running   bool
+	cancel    context.CancelFunc
+	pending   []*question // questions waiting for an answer, oldest first
+	err       string
 	// suggest is what the typed line could still become, and suggestFor the line that list was
 	// made from: a different line brings a cleared list back.
 	suggest    []agent.CommandSpec
@@ -56,6 +57,11 @@ type model struct {
 	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
 	// token of it would otherwise redraw the screen, and the stream waits for that draw.
 	redrawQueued bool
+
+	probe     probeFunc       // how the modal asks a server for its models; tests put a fake here
+	screen    *settingsScreen // the list of every setting /settings opens over the session; nil when closed
+	wantMouse bool            // a setting turned the mouse on or off: the terminal is told on the next update
+	modal     *setupModel     // the server and model screen /settings opens over the session; nil when closed
 }
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
@@ -82,11 +88,15 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		root:    a.Root(),
 		branch:  a.Branch(), // the branch the prompt was built on; the next ask refreshes it
 		input:   input,
+		probe:   probeServer,
 		view:    window{height: defaultHeight},
 		width:   defaultWidth,
 		height:  defaultHeight,
 	}
 	m.log.root = a.Root() // a call names its file from where the project starts
+	for _, note := range cfg.Notices {
+		m.log.notice(note) // what startup decided for the user is the first thing on the screen
+	}
 	m.history = append(m.history, resume(&m.log, cfg.Session, a.Conversation())...)
 	m.histIdx = len(m.history)
 	if len(m.history) > 0 {
@@ -99,6 +109,15 @@ func (m *model) Init() tea.Cmd { return textarea.Blink }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.bottom = "" // the screen under the session is rebuilt for this message, whoever asks first
+	if m.modal != nil {
+		if cmd, taken := m.modalMsg(msg); taken {
+			return m, cmd
+		}
+	} else if m.screen != nil {
+		if cmd, taken := m.screenMsg(msg); taken {
+			return m, tea.Batch(cmd, m.mouseCmd())
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -113,7 +132,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case confirmMsg:
 		// parallel calls can ask at once: the first asks, the rest wait their turn
-		m.pending = append(m.pending, &question{text: msg.ev.Text, target: msg.ev.Target, reply: msg.reply})
+		m.pending = append(m.pending, &question{text: msg.ev.Text, tool: msg.ev.Tool, args: msg.ev.Args, target: msg.ev.Target, reply: msg.reply})
 		m.refresh()
 		return m, nil
 	case spinner.TickMsg:

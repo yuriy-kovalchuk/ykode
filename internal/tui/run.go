@@ -25,7 +25,13 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			return m, m.compact()
 		}
 		if name, _, _ := strings.Cut(text, " "); name == "/settings" {
-			m.log.output(m.settings(text)) // the screen answers this one: it writes the settings file
+			// the screen answers this one: it writes the settings file, and a bare /settings opens
+			// the server and model screen, the one a first run starts with
+			if strings.TrimSpace(text) == "/settings" {
+				m.openSettings()
+			} else {
+				m.log.output(m.settings(text))
+			}
 			m.refresh()
 			return m, nil
 		}
@@ -117,7 +123,7 @@ func (m *model) handle(ev agent.Event) {
 		m.redrawQueued = true
 		return
 	case agent.TurnEnd:
-		m.decode, m.prefill = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec
+		m.decode, m.prefill, m.estimated = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec, ev.Stats.Estimated
 		m.log.dropDrafts()
 	case agent.ToolDraft:
 		m.log.draft(ev.Call, ev.Tool, ev.Text)
@@ -128,7 +134,7 @@ func (m *model) handle(ev agent.Event) {
 	case agent.Progress:
 		// the first token reports no decode speed yet; keep the last one rather than show 0
 		if ev.Stats.DecodeTokSec > 0 {
-			m.decode = ev.Stats.DecodeTokSec
+			m.decode, m.estimated = ev.Stats.DecodeTokSec, ev.Stats.Estimated
 		}
 		if ev.Stats.PrefillTokSec > 0 {
 			m.prefill = ev.Stats.PrefillTokSec
@@ -141,14 +147,14 @@ func (m *model) handle(ev agent.Event) {
 	case agent.ToolEnd:
 		m.log.toolEnd(ev.Tool, ev.Args, ev.Text)
 	case agent.ToolFail:
-		m.log.failed(ev.Tool, ev.Text)
+		m.log.failed(ev.Tool, ev.Args, ev.Text)
 	case agent.Summary:
 		m.log.summary(ev.Text) // what compaction folded away stays readable where it happened
 	case agent.Notice:
 		m.log.notice(ev.Text)
 	case agent.Cleared:
 		// what the server was doing describes the conversation that went, not the empty one
-		m.decode, m.prefill, m.took = 0, 0, 0
+		m.decode, m.prefill, m.took, m.estimated = 0, 0, 0, false
 	case agent.Steered:
 		m.log.user(ev.Text, time.Now()) // the run took it: the ask joins where the model reads it
 	}

@@ -17,7 +17,7 @@ func TestTheAnswerTravelsBackToTheRun(t *testing.T) {
 	reply := make(chan agent.Decision, 1)
 	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/a.go?", Target: []string{"/tmp/a.go"}}, reply: reply})
 
-	if !strings.Contains(m.View(), "[y/N/a]") {
+	if !strings.Contains(m.View(), "y yes · a always · n no") {
 		t.Error("the screen does not ask")
 	}
 	if !strings.Contains(m.View(), "/tmp/a.go") {

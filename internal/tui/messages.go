@@ -18,7 +18,9 @@ type compactDoneMsg struct{ freed int } // the summary the model wrote for /comp
 
 // question is a confirmation waiting for an answer; the run is blocked until it gets one.
 type question struct {
-	text   string
+	text   string // the call in words, for a front end that cannot draw it
+	tool   string
+	args   string
 	target []string
 	reply  chan agent.Decision
 }

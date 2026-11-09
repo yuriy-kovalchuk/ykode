@@ -173,14 +173,6 @@ func TestTheAuditLogCanBeTurnedOffAndItsKeepShortened(t *testing.T) {
 	}
 }
 
-func TestANonsenseRetentionIsRefusedByName(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"audit_retention_days": 0}`)
-	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "audit_retention_days") {
-		t.Errorf("want an error naming audit_retention_days, got %v", err)
-	}
-}
-
 func TestAKeyComesFromTheFileOrFromTheVariableItNames(t *testing.T) {
 	user := fakeHome(t)
 	t.Setenv("ROUTER_TOKEN", "from-the-variable")
@@ -213,24 +205,6 @@ func TestAVariableThatIsNotSetLeavesNoKey(t *testing.T) {
 	}
 	if cfg.APIKey != "" {
 		t.Errorf("a missing variable invented a key: %q", cfg.APIKey)
-	}
-}
-
-func TestAKeyThatIsNotSpelledRightIsNamedInTheError(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"base_ url": "http://nowhere"}`)
-	_, err := Load(nil)
-	if err == nil || !strings.Contains(err.Error(), "base_ url") {
-		t.Errorf("want the misspelled key named, got %v", err)
-	}
-}
-
-func TestAMisspelledKeyInAPortofTheFileIsNamedToo(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"tools": {"read_lines ": 40}}`)
-	_, err := Load(nil)
-	if err == nil || !strings.Contains(err.Error(), "read_lines ") {
-		t.Errorf("want the nested misspelling named, got %v", err)
 	}
 }
 
@@ -453,20 +427,6 @@ func TestAProjectCannotShortenHowLongConversationsAreKept(t *testing.T) {
 	}
 }
 
-func TestAKeepThatDeletesEverythingIsRefused(t *testing.T) {
-	user := fakeHome(t)
-	for _, keep := range []string{"0s", "-1h"} {
-		writeSettings(t, filepath.Join(user, "settings.json"), `{"keep_sessions": "`+keep+`"}`)
-		if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "keep_sessions") {
-			t.Errorf("keep_sessions %q was accepted: %v", keep, err)
-		}
-		writeSettings(t, filepath.Join(user, "settings.json"), `{"tools": {"keep_command_logs": "`+keep+`"}}`)
-		if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "keep_command_logs") {
-			t.Errorf("keep_command_logs %q was accepted: %v", keep, err)
-		}
-	}
-}
-
 func TestHeldKeysAreShownWithWhatTheyAskForButNotTheSecret(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
@@ -531,19 +491,6 @@ func TestTheSandboxIsTheUsersToTurnOff(t *testing.T) {
 	}
 }
 
-func TestACountThatIsNotAboveZeroIsNamed(t *testing.T) {
-	user := fakeHome(t)
-	for key, body := range map[string]string{
-		"stream_idle_sec":  `{"stream_idle_sec": 0}`,
-		"exec_timeout_sec": `{"tools": {"exec_timeout_sec": 0}}`,
-	} {
-		writeSettings(t, filepath.Join(user, "settings.json"), body)
-		if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "settings.json") {
-			t.Errorf("%s: %v", body, err)
-		}
-	}
-}
-
 // settings are YAML now: the file is meant to be edited by hand, and YAML says what a key means with
 // far less punctuation than JSON
 func TestTheSettingsFileIsYaml(t *testing.T) {
@@ -582,20 +529,6 @@ func TestTheOldJsonNameStillWorksUntilItIsRetired(t *testing.T) {
 	}
 }
 
-func TestAnUnknownYamlKeyNamesTheFileAndTheKey(t *testing.T) {
-	user := fakeHome(t)
-	path := filepath.Join(user, "settings.yaml")
-	writeSettings(t, path, "thinking_level: medium\nthinking_leve: medium\n")
-
-	_, err := Load(nil)
-	if err == nil {
-		t.Fatal("a mistyped key was accepted")
-	}
-	if !strings.Contains(err.Error(), "thinking_leve") || !strings.Contains(err.Error(), "settings.yaml") {
-		t.Errorf("error = %v, want it to name the file and the key", err)
-	}
-}
-
 // the wheel belongs to the screen only when asked for: otherwise the terminal keeps selection
 func TestTheScreenKeepsItsHandsOffTheMouseUnlessAsked(t *testing.T) {
 	user := fakeHome(t)
@@ -613,5 +546,33 @@ func TestTheScreenKeepsItsHandsOffTheMouseUnlessAsked(t *testing.T) {
 	}
 	if !cfg.Mouse {
 		t.Error("mouse: true did not give the screen the wheel")
+	}
+}
+
+// a setting that cannot be right is refused, and the error names the file and the key so the fix is
+// one edit away: a misspelling (at the top or nested, in either format), a keep that would delete
+// everything, and a count that is not above zero
+func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
+	cases := []struct{ what, file, body, key string }{
+		{"a retention of nothing", "settings.json", `{"audit_retention_days": 0}`, "audit_retention_days"},
+		{"a misspelled key", "settings.json", `{"base_ url": "http://nowhere"}`, "base_ url"},
+		{"a misspelled nested key", "settings.json", `{"tools": {"read_lines ": 40}}`, "read_lines "},
+		{"an unknown yaml key", "settings.yaml", "thinking_level: medium\nthinking_leve: medium\n", "thinking_leve"},
+		{"a session keep of zero", "settings.json", `{"keep_sessions": "0s"}`, "keep_sessions"},
+		{"a negative session keep", "settings.json", `{"keep_sessions": "-1h"}`, "keep_sessions"},
+		{"a log keep of zero", "settings.json", `{"tools": {"keep_command_logs": "0s"}}`, "keep_command_logs"},
+		{"a negative log keep", "settings.json", `{"tools": {"keep_command_logs": "-1h"}}`, "keep_command_logs"},
+		{"a zero stream silence", "settings.json", `{"stream_idle_sec": 0}`, "stream_idle_sec"},
+		{"a zero exec timeout", "settings.json", `{"tools": {"exec_timeout_sec": 0}}`, "exec_timeout_sec"},
+	}
+	for _, c := range cases {
+		t.Run(c.what, func(t *testing.T) {
+			user := fakeHome(t)
+			writeSettings(t, filepath.Join(user, c.file), c.body)
+			_, err := Load(nil)
+			if err == nil || !strings.Contains(err.Error(), c.key) || !strings.Contains(err.Error(), c.file) {
+				t.Errorf("want an error naming %s and %s, got %v", c.key, c.file, err)
+			}
+		})
 	}
 }

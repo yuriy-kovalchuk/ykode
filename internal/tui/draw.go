@@ -45,6 +45,12 @@ func (m *model) screenBottom() string {
 }
 
 func (m *model) View() string {
+	if m.modal != nil {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.modal.View())
+	}
+	if m.screen != nil {
+		return m.screen.view(m.width, m.height, m.cfg, m.agent.Model())
+	}
 	// stacked by hand: both blocks already stop at the screen's edge, and JoinVertical measures
 	// every row of both again to find that out
 	return m.view.view() + "\n" + m.screenBottom()

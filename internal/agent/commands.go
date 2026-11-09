@@ -34,11 +34,11 @@ func Commands() []CommandSpec {
 		{Name: "/usage", Note: "what the conversation has cost the server"},
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
 		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
-		{Name: "/settings", Args: "[key] [value]", Note: "what ykode is set to, and change one knob"},
+		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it"},
 		{Name: "/sessions", Note: "the conversations saved for this project, and how to come back to one"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
-		{Name: "/model", Args: "[id]", Note: "which model this run asks, or ask a different one", Waits: true},
+		{Name: "/model", Args: "[id | number]", Note: "lists the models this server offers; an id or a number switches to it", Waits: true},
 		{Name: "/think", Args: "[level]", Note: "how deeply the model thinks: " + strings.Join(llm.ThinkingLevels(), ", "), Waits: true},
 		{Name: "/undo", Args: "[force]", Note: "put the most recent file change back; force also when it was edited since", Waits: true},
 		{Name: "/reset", Note: "forget the conversation", Waits: true},
@@ -125,11 +125,7 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 	case "/tools":
 		return a.ToolsLine() + "\n", false, nil
 	case "/model":
-		if arg == "" {
-			return fmt.Sprintf("model: %s\n", a.Model()), false, nil
-		}
-		a.SetModel(arg)
-		return fmt.Sprintf("model: %s (the next request asks for it; a model the server has to load waits before the first token)\n", arg), false, nil
+		return a.modelCommand(ctx, arg), false, nil
 	case "/think":
 		if arg == "" {
 			return fmt.Sprintf("thinking: %s (levels: %s)\n", a.ThinkingLevel(), strings.Join(llm.ThinkingLevels(), ", ")), false, nil

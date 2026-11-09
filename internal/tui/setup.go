@@ -21,6 +21,8 @@ type SetupStart struct {
 	BaseURL string // prefilled; the built-in default on a first run
 	APIKey  string // a key already configured, used for probing when the field is left empty
 	Problem string // why the screen is up when it is not a first run, e.g. the server did not answer
+	Model   string // the model in use, marked in the list when the server has it
+	Inside  bool   // opened over a running session: esc closes it rather than quits
 }
 
 // SetupResult is the server the user picked, and what to save.
@@ -65,7 +67,8 @@ type setupModel struct {
 	found  string // the URL that answered, which may have gained /v1
 	err    string
 	width  int
-	done   bool
+	done   bool // a server and model were chosen
+	closed bool // the screen is finished with, chosen or not; a host reads this instead of waiting for the quit
 	result SetupResult
 }
 
@@ -104,6 +107,11 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.step, m.err, m.found, m.models, m.pick = stepModel, "", msg.baseURL, msg.models, 0
+		for i, model := range msg.models {
+			if model.ID == m.start.Model {
+				m.pick = i // open on the model in use, so enter alone keeps it
+			}
+		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.onKey(msg)
@@ -114,6 +122,7 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // onKey handles a key press for the step on screen.
 func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
+		m.closed = true
 		return m, tea.Quit
 	}
 	switch m.step {
@@ -129,7 +138,7 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.step = stepServer
 		case "enter":
 			chosen := m.models[m.pick]
-			m.done = true
+			m.done, m.closed = true, true
 			m.result = SetupResult{BaseURL: m.found, APIKey: strings.TrimSpace(m.key.Value()), Model: chosen.ID, CtxSize: chosen.CtxSize}
 			return m, tea.Quit
 		}
@@ -138,6 +147,7 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc":
+		m.closed = true
 		return m, tea.Quit
 	case "tab", "shift+tab", "up", "down":
 		m.focus = 1 - m.focus
@@ -188,7 +198,11 @@ var (
 
 func (m *setupModel) View() string {
 	var b strings.Builder
-	b.WriteString(setupTitle.Render("ykode · connect to a model server") + "\n\n")
+	title := "ykode · connect to a model server"
+	if m.start.Inside {
+		title = "ykode · settings · server and model"
+	}
+	b.WriteString(setupTitle.Render(title) + "\n\n")
 	switch m.step {
 	case stepServer, stepProbing:
 		b.WriteString(setupDim.Render("ykode talks to an OpenAI-compatible server, such as llama.cpp's\nllama-server (started with --jinja for tool calls).") + "\n\n")
@@ -199,7 +213,11 @@ func (m *setupModel) View() string {
 		} else if m.err != "" {
 			b.WriteString(setupError.Render(strings.Join(wrap(m.err, 60), "\n")) + "\n\n")
 		}
-		b.WriteString(setupDim.Render("enter connects · tab switches field · esc quits"))
+		leave := "esc quits"
+		if m.start.Inside {
+			leave = "esc closes"
+		}
+		b.WriteString(setupDim.Render("enter connects · tab switches field · " + leave))
 	case stepModel:
 		b.WriteString(fmt.Sprintf("%s answered with %d model(s). Which one should ykode use?\n\n", m.found, len(m.models)))
 		for i, model := range m.models {
@@ -207,13 +225,16 @@ func (m *setupModel) View() string {
 			if model.CtxSize > 0 {
 				line += setupDim.Render(fmt.Sprintf("  %s context", tokCount(model.CtxSize)))
 			}
+			if model.ID == m.start.Model {
+				line += setupDim.Render("  in use")
+			}
 			if i == m.pick {
 				b.WriteString(setupPick.Render("❯ ") + setupPick.Render(model.ID) + strings.TrimPrefix(line, model.ID) + "\n")
 			} else {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString("\n" + setupDim.Render("enter saves it to settings.yaml · ↑/↓ picks · esc goes back"))
+		b.WriteString("\n" + setupDim.Render("enter saves it to settings.yaml and switches to it · ↑/↓ picks · esc goes back"))
 	}
 	return setupBox.Render(b.String())
 }

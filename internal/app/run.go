@@ -46,16 +46,19 @@ func Run(args []string, version string) error {
 	}
 	// a first run gets its directory and its settings file; everything left there ages out
 	PrepareHome(cfg)
-	client, model, ctxSize, err := connect(cfg)
+	client, model, ctxSize, note, err := connect(cfg)
 	if err != nil && cfg.TUI {
 		// the server went away or was never right: offer to fix it instead of exiting
 		if cfg, err = askForServer(cfg, err.Error()); err != nil {
 			return err
 		}
-		client, model, ctxSize, err = connect(cfg)
+		client, model, ctxSize, note, err = connect(cfg)
 	}
 	if err != nil {
 		return err
+	}
+	if note != "" {
+		cfg.Notices = append(cfg.Notices, note)
 	}
 
 	root, err := os.OpenRoot(cfg.Root)
@@ -140,17 +143,19 @@ func askForServer(cfg config.Config, problem string) (config.Config, error) {
 	return cfg, nil
 }
 
-// connect finds the model and its window, and prints them unless the screen will show them.
-func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, error) {
+// connect finds the model and its window, and prints them unless the screen will show them. The note
+// says what was decided for the user that they did not ask for, such as a model swapped for the one the
+// server has.
+func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, string, error) {
 	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
 	client.Session = cfg.Session // so a proxy keeps one conversation on the slot holding its cache
 	client.Idle = cfg.StreamIdle
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)
 	defer cancelProbe()
 
-	model, err := pickModel(probeCtx, client, cfg)
+	model, note, err := pickModel(probeCtx, client, cfg)
 	if err != nil {
-		return nil, model, 0, err
+		return nil, model, 0, "", err
 	}
 	ctxSize := cmp.Or(cfg.CtxSize, model.CtxSize)
 	// the screen shows the model and the window in its status bar, so no banner to bury
@@ -159,29 +164,38 @@ func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, error) {
 		if cfg.JSON {
 			banner = os.Stderr
 		}
+		if note != "" {
+			fmt.Fprintln(os.Stderr, "ykode:", note)
+		}
 		fmt.Fprintf(banner, "model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
 	}
-	return client, model, ctxSize, nil
+	return client, model, ctxSize, note, nil
 }
 
-// pickModel resolves an empty --model to the server's first, and warns when the requested one is missing.
-func pickModel(ctx context.Context, client *llm.Client, cfg config.Config) (llm.ModelInfo, error) {
+// pickModel resolves an empty model to the server's first. A model a settings file pinned that this
+// server does not list is a leftover from another endpoint, so the server's own is used and the note
+// says so; one named by --model or the environment is kept, since a proxy may load a model it does not
+// list yet, and the note warns instead.
+func pickModel(ctx context.Context, client *llm.Client, cfg config.Config) (llm.ModelInfo, string, error) {
 	models, err := client.Models(ctx)
 	if err != nil {
-		return llm.ModelInfo{}, fmt.Errorf("cannot reach server at %s: %w", cfg.BaseURL, err)
+		return llm.ModelInfo{}, "", fmt.Errorf("cannot reach server at %s: %w", cfg.BaseURL, err)
 	}
 	if cfg.Model == "" {
-		return models[0], nil
+		return models[0], "", nil
 	}
 	ids := make([]string, 0, len(models))
 	for _, m := range models {
 		if m.ID == cfg.Model {
-			return m, nil
+			return m, "", nil
 		}
 		ids = append(ids, m.ID)
 	}
-	fmt.Fprintf(os.Stderr, "warning: %q is not listed by %s (models: %s)\n", cfg.Model, cfg.BaseURL, strings.Join(ids, ", "))
-	return llm.ModelInfo{ID: cfg.Model}, nil
+	if cfg.ModelFromFile() {
+		return models[0], fmt.Sprintf("settings.yaml pins model %q, which %s does not list: using %q instead (change it with /settings)",
+			cfg.Model, cfg.BaseURL, models[0].ID), nil
+	}
+	return llm.ModelInfo{ID: cfg.Model}, fmt.Sprintf("%q is not listed by %s (models: %s)", cfg.Model, cfg.BaseURL, strings.Join(ids, ", ")), nil
 }
 
 func describeCtx(tokens int) string {

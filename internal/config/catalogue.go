@@ -101,6 +101,8 @@ type Setting struct {
 	Default string
 	From    string
 	Options []string
+	Switch  bool // on or off: the screen toggles it
+	List    bool // a list: a new entry is added to what is there
 }
 
 // Catalogue lists the settings this run resolved, each with where its value came from.
@@ -114,7 +116,8 @@ func (c Config) Catalogue() []Setting {
 		if from == FromFile && value == def {
 			from = FromDefault // a file that only repeats the built-in has not chosen anything
 		}
-		list = append(list, Setting{Key: k.key, Note: k.note, Value: value, Default: def, From: from, Options: k.options})
+		list = append(list, Setting{Key: k.key, Note: k.note, Value: value, Default: def, From: from, Options: k.options,
+			Switch: k.kind == kindYesNo, List: k.kind == kindList})
 	}
 	return list
 }
@@ -213,3 +216,7 @@ func shownKey(key string) string {
 	}
 	return "set (not shown)"
 }
+
+// ModelFromFile says the model in use was pinned by a settings file, not named by a flag or the
+// environment: a flag is a request for that model, a pin in a file is only a remembered choice.
+func (c Config) ModelFromFile() bool { return c.where("model", fileKeys(c)) == FromFile }

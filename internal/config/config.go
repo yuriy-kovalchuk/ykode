@@ -28,11 +28,13 @@ const (
 
 // Config is the fully resolved set of settings.
 type Config struct {
-	BaseURL         string // OpenAI-compatible base, no trailing slash
-	APIKey          string // sent as a bearer token when set
-	EndpointSet     bool   // base_url came from a settings file, $LOCAL_LLM_URL or --base-url, not the built-in default
-	Model           string // empty means "whatever the server lists first"
-	Root            string // absolute project root
+	BaseURL         string   // OpenAI-compatible base, no trailing slash
+	APIKey          string   // sent as a bearer token when set
+	Args            []string // what Load was given, so the settings screen can read the file again
+	Notices         []string // what startup found worth saying, which the full screen shows first
+	EndpointSet     bool     // base_url came from a settings file, $LOCAL_LLM_URL or --base-url, not the built-in default
+	Model           string   // empty means "whatever the server lists first"
+	Root            string   // absolute project root
 	MaxTurns        int
 	MaxTokens       int    // tokens per model response; 0 asks for no cap and leaves it to the window
 	CtxSize         int    // server context window; 0 = read it from the server
@@ -105,6 +107,7 @@ func Load(args []string) (Config, error) {
 	}
 
 	cfg := defaults()
+	cfg.Args = args
 	root, err := filepath.Abs(f.Root)
 	if err != nil {
 		return Config{}, fmt.Errorf("--root %q: %w", f.Root, err)
@@ -142,4 +145,15 @@ func defaults() Config {
 		modelReasoning:  map[string]bool{},
 		modelSampling:   map[string][2]llm.Sampling{},
 	}
+}
+
+// Reload reads the settings again after one was written, keeping what belongs to this run and not to
+// the file: the conversation it is writing, and what startup said.
+func (c Config) Reload() (Config, error) {
+	fresh, err := Load(c.Args)
+	if err != nil {
+		return c, err
+	}
+	fresh.Session, fresh.SessionFile, fresh.Continue, fresh.Notices = c.Session, c.SessionFile, c.Continue, c.Notices
+	return fresh, nil
 }
