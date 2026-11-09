@@ -217,7 +217,10 @@ estimate used to set each reply's `max_tokens` (when no cap was asked for) and t
 trim old tool output, so the context budget stops guessing.
 
 What ykode does about the server's prompt cache is keep still rather than instruct: the system message
-and the tool list are built once per session so the prefix never moves, folding older turns waits
+and the tool list hold nothing that changes from one run to the next, so the prefix is the same bytes in
+every run and a resumed conversation is not read again. The date and whether the git tree has changes
+travel with an ask instead, as a short `<environment>` note at its end, and only when they differ from
+what the last ask said; a listing or a replay shows the ask without it. Within a run, folding older turns waits
 until enough has changed to be worth the reset it costs, and `/ctx` reports what the server says it
 found. There are no `cache_control` breakpoints, no `prompt_cache_key`, no retention setting: a local
 `llama.cpp` decides what to keep from the prefix it was already handed, and asking it is a different

@@ -273,7 +273,7 @@ func TestCompactionKeepsTheTaskNotANoteYkodeAddedAfterIt(t *testing.T) {
 	a.Compact(context.Background())
 
 	for _, m := range a.history {
-		if m.Role == "user" && m.Content == ask {
+		if m.Role == "user" && session.WithoutEnvironment(m.Content) == ask { // the ask, with the note ykode ended it with
 			return
 		}
 	}

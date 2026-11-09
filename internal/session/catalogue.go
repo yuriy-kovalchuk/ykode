@@ -107,7 +107,7 @@ func describeLine(c *Conversation, line string, first bool) {
 func note(c *Conversation, m llm.Message) {
 	c.Messages++
 	if c.First == "" && m.Role == "user" {
-		c.First = firstAsk(m.Content)
+		c.First = firstAsk(WithoutEnvironment(m.Content))
 	}
 }
 
