@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // oneLine flattens text to a row of at most max columns: a CJK glyph or an emoji takes two, so the
@@ -44,21 +45,7 @@ func cutWide(word string, width int) []string {
 	if width < 1 || lipgloss.Width(word) <= width {
 		return []string{word}
 	}
-	runes := []rune(word)
-	var pieces []string
-	for start := 0; start < len(runes); {
-		end, used := start, 0
-		for end < len(runes) && used+lipgloss.Width(string(runes[end])) <= width {
-			used += lipgloss.Width(string(runes[end]))
-			end++
-		}
-		if end == start {
-			end++ // one character wider than the screen still gets a row of its own
-		}
-		pieces = append(pieces, string(runes[start:end]))
-		start = end
-	}
-	return pieces
+	return strings.Split(ansi.Hardwrap(word, width, true), "\n")
 }
 
 // wrapKept breaks a line only where it has to: a line that fits is left exactly as it was written,
@@ -110,20 +97,13 @@ func padTo(text string, width int) string {
 	return text
 }
 
-// cutToWidth keeps a plain line inside the screen, ending in … when something was cut. The line is
-// measured once and what is dropped is measured as it goes: a long tool result is cut for every
-// redraw, and measuring the shrinking line again per character costs the line squared.
+// cutToWidth keeps a plain line inside the screen, ending in … when something was cut. The cut falls
+// between characters, never inside a wide one.
 func cutToWidth(s string, width int) string {
-	if width <= 1 || lipgloss.Width(s) <= width {
+	if width <= 1 {
 		return s
 	}
-	r := []rune(s)
-	over := lipgloss.Width(s) - width // the … keeps a column of its own
-	for len(r) > 0 && over >= 0 {
-		over -= lipgloss.Width(string(r[len(r)-1]))
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
+	return ansi.Truncate(s, width, "…")
 }
 
 // duration reads at a glance: 7s, 1m12s, 1h03m.
