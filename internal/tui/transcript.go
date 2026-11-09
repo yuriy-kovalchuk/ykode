@@ -46,8 +46,7 @@ type transcript struct {
 	expanded bool // whether call arguments were shown
 
 	rowsCache []string // the rows the screen reads, one per row on the terminal
-	rowed     int      // entries whose rows are already in rowsCache
-	rowStart  []int    // the row each of those entries starts at
+	rowStart  []int    // the row each entry already in rowsCache starts at
 }
 
 func (t *transcript) user(text string, at time.Time) {
@@ -124,7 +123,7 @@ func (t *transcript) dropDrafts() {
 		}
 	}
 	t.entries, t.stale = kept, 0
-	t.rowsCache, t.rowed, t.rowStart = nil, 0, nil
+	t.rowsCache, t.rowStart = nil, nil
 }
 
 func (t *transcript) toolStart(name, args string) {

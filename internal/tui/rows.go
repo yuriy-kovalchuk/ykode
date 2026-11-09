@@ -24,18 +24,19 @@ const (
 // the whole session again.
 func (t *transcript) rows(width int, expanded bool) []string {
 	if width != t.width || expanded != t.expanded {
-		t.width, t.expanded, t.stale, t.rowed = width, expanded, 0, 0
+		t.width, t.expanded, t.stale = width, expanded, 0
 		t.rowsCache, t.rowStart = nil, nil
 	}
-	if t.stale < t.rowed {
+	if t.stale < len(t.rowStart) {
 		// what was redrawn takes a different number of rows, so everything below it moves
-		t.rowsCache, t.rowed = t.rowsCache[:t.rowStart[t.stale]], t.stale
+		t.rowsCache = t.rowsCache[:t.rowStart[t.stale]]
+		t.rowStart = t.rowStart[:t.stale]
 	}
-	for i := t.rowed; i < len(t.entries); i++ {
+	for i := len(t.rowStart); i < len(t.entries); i++ {
 		t.rowStart = append(t.rowStart, len(t.rowsCache))
 		t.rowsCache = append(t.rowsCache, draw(&t.entries[i], width, expanded)...)
 	}
-	t.rowed, t.stale = len(t.entries), len(t.entries)
+	t.stale = len(t.entries)
 	return t.rowsCache
 }
 
