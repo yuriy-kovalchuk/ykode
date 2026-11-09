@@ -38,6 +38,13 @@ type status struct {
 	width    int  // 0 leaves the two sides unaligned
 }
 
+// rootRoom and modelRoom are how much of the path and the model name the session line keeps when
+// the screen is short: a readable part of each beats the whole of one pushed off the edge.
+const (
+	rootRoom  = 60
+	modelRoom = 40
+)
+
 // factSep separates the facts on the left from what is happening on the right.
 var factSep = styleDim.Render(" · ")
 
@@ -51,8 +58,8 @@ func sessionLine(s status) string {
 	if depth == llm.ThinkingOff {
 		depth = "thinking off"
 	}
-	return align([]string{styleDim.Render(oneLine(where, 60))},
-		[]string{styleAccent.Render(oneLine(s.model, 40)), styleDim.Render(depth)}, s.width)
+	return align([]string{styleDim.Render(oneLine(where, rootRoom))},
+		[]string{styleAccent.Render(oneLine(s.model, modelRoom)), styleDim.Render(depth)}, s.width)
 }
 
 // statusLine is the footer's second row: what the conversation has cost, and what is happening now.
