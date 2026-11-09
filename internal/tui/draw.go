@@ -39,5 +39,5 @@ func (m *model) View() string {
 }
 
 func rule(width int) string {
-	return "\x1b[2m" + strings.Repeat("─", max(width, 0)) + "\x1b[0m"
+	return styleDim.Render(strings.Repeat("─", max(width, 0)))
 }

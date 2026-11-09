@@ -48,10 +48,10 @@ func ruleWith(width int, label string) string {
 	if label == "" {
 		return rule(width)
 	}
-	label = " " + label + " "
+	label = styleWarn.Render(" " + label + " ")
 	fill := width - lipgloss.Width(label) - 2
 	if fill < 1 {
 		return rule(width)
 	}
-	return "\x1b[2m" + strings.Repeat("─", fill) + "\x1b[0m\x1b[33m" + label + "\x1b[0m\x1b[2m──\x1b[0m"
+	return styleDim.Render(strings.Repeat("─", fill)) + label + styleDim.Render("──")
 }
