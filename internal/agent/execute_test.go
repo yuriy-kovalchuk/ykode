@@ -108,3 +108,45 @@ func TestARequestAfterACutOffTurnDoesNotEndWithAnAssistantLine(t *testing.T) {
 		t.Errorf("the retry request does not end with the notice:\n%v", last["content"])
 	}
 }
+
+// exec_command starts in the project root, so a cd into it is dropped; a cd anywhere else is kept
+func TestACDIntoTheProjectRootIsDropped(t *testing.T) {
+	const root = "/work/proj"
+	for in, want := range map[string]string{
+		"cd /work/proj && go test ./...":  "go test ./...",
+		"cd /work/proj; ls -la":           "ls -la",
+		`cd "/work/proj" && make build`:   "make build",
+		"cd '/work/proj/' && make":        "make",
+		"cd . && ls":                      "ls",
+		"cd /work/proj && cd sub && ls":   "cd sub && ls", // the second cd is the command's own
+		"cd /work/other && ls":            "cd /work/other && ls",
+		"cd sub && ls":                    "cd sub && ls",
+		"cd /work/proj":                   "cd /work/proj", // nothing follows: left as it is
+		"ls /work/proj":                   "ls /work/proj",
+		"echo cd /work/proj && echo done": "echo cd /work/proj && echo done",
+	} {
+		if got := withoutRootCD(in, root); got != want {
+			t.Errorf("%q became %q, want %q", in, got, want)
+		}
+	}
+}
+
+// the rewrite happens to the arguments the rest of the run sees, so the row, the audit log and the
+// allow list all read the command without the cd
+func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
+	a := &Agent{opts: Options{Root: "/work/proj"}}
+	args := a.normalizedArgs("exec_command", []byte(`{"command":"cd /work/proj && go test ./...","timeout":30}`))
+	if got := commandOf(string(args)); got != "go test ./..." {
+		t.Errorf("command = %q", got)
+	}
+	if !strings.Contains(string(args), `"timeout":30`) {
+		t.Errorf("another argument was lost: %s", args)
+	}
+	if key := callKey("exec_command", string(args)); key != "exec:go test ./..." {
+		t.Errorf("the allow key is %q: with the cd gone a line can be allowed by what it runs", key)
+	}
+	untouched := []byte(`{"path":"cd /work/proj && x"}`)
+	if got := a.normalizedArgs("read_file", untouched); string(got) != string(untouched) {
+		t.Errorf("another tool's arguments were rewritten: %s", got)
+	}
+}

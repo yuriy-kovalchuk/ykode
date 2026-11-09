@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,7 +15,8 @@ import (
 
 // runTool never returns an error: whatever went wrong becomes result text the model can act on.
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) string {
-	name, args := call.Function.Name, call.Function.Arguments
+	name := call.Function.Name
+	args := a.normalizedArgs(name, call.Function.Arguments)
 	argsText := oneLine(string(args), 200) // for the audit log; events carry the whole call, a cut one is no longer JSON
 	a.emit(Event{Kind: ToolStart, Tool: name, Args: string(args)})
 	start := time.Now()
@@ -119,4 +123,51 @@ func outsidePaths(targets []tools.Target) []string {
 		}
 	}
 	return outside
+}
+
+// redundantCD is a command's opening "cd DIR &&" or "cd DIR;", with DIR quoted or not.
+var redundantCD = regexp.MustCompile(`^\s*cd\s+(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))\s*(?:&&|;)\s*`)
+
+// withoutRootCD takes a leading cd into the project root off a command. exec_command already starts
+// there, so the cd changes nothing, and it costs: a command that chains can never match an allow entry,
+// so every `cd /project && go test` asked again, and the row on screen opened with a path the reader
+// already knows. A cd anywhere else is the command's own business and stays.
+func withoutRootCD(command, root string) string {
+	m := redundantCD.FindStringSubmatch(command)
+	if m == nil {
+		return command
+	}
+	dir := m[1] + m[2] + m[3]
+	if dir != "." && dir != "./" && filepath.Clean(dir) != filepath.Clean(root) {
+		return command
+	}
+	if rest := strings.TrimSpace(command[len(m[0]):]); rest != "" {
+		return rest
+	}
+	return command
+}
+
+// normalizedArgs is a call's arguments with the redundant cd gone from an exec_command, and anything
+// else untouched.
+func (a *Agent) normalizedArgs(name string, args json.RawMessage) json.RawMessage {
+	if name != "exec_command" || a.opts.Root == "" {
+		return args
+	}
+	var in map[string]json.RawMessage
+	if json.Unmarshal(args, &in) != nil {
+		return args
+	}
+	var command string
+	if json.Unmarshal(in["command"], &command) != nil {
+		return args
+	}
+	stripped := withoutRootCD(command, a.opts.Root)
+	if stripped == command {
+		return args
+	}
+	in["command"], _ = json.Marshal(stripped)
+	if out, err := json.Marshal(in); err == nil {
+		return out
+	}
+	return args
 }
