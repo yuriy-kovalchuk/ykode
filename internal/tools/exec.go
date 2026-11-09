@@ -127,9 +127,14 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	cmd := groupCommand(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.dir
 	cmd.Env = commandEnv()
-	out, err := cmd.CombinedOutput()
-	result := cleanOutput(string(out))
+	// the output arrives through a window: what the model sees stays in RAM, and the whole of it is
+	// written to the log as the command makes it
+	window := newOutWindow(t.aim(), t.logDir())
+	cmd.Stdout, cmd.Stderr = window, window
+	err := cmd.Run()
+	window.close()
 	t.last = Detail{}
+	result := t.fit(window)
 	if code, ok := exitCode(err); ok {
 		t.last.ExitCode = &code
 	}
@@ -137,7 +142,7 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 		if strings.TrimSpace(result) == "" {
 			return "exit 0, no output: the command succeeded", nil // silence reads as "unknown" and invites a re-run
 		}
-		return t.fit(result), nil
+		return result, nil
 	}
 	// a non-zero exit is a normal result: the model needs the command's own output to fix it
 	switch {
@@ -158,7 +163,7 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	if capped {
 		result += fmt.Sprintf("\n[timeout was capped at %s]", maxExecTimeout)
 	}
-	return t.fit(result), nil
+	return result, nil
 }
 
 // execTimeout clamps the model's request into a sane range.
@@ -181,7 +186,27 @@ func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// fit keeps output inside the budget (head plus most of the tail) and spills the full log to a file.
+// fit is what the model sees of a command's output: its head, most of its tail, and where the whole
+// of it was written. The counts are the command's own bytes, before the output was cleaned.
+func (t *Exec) fit(w *outWindow) string {
+	if w.total <= w.goal {
+		return cleanOutput(string(w.head) + string(w.tail))
+	}
+	head, tail := cleanOutput(headText(w.head)), cleanOutput(tailText(w.tail))
+	var b strings.Builder
+	b.WriteString(head)
+	fmt.Fprintf(&b, "\n\n[... %d of %d bytes omitted ...", w.total-len(w.head)-len(w.tail), w.total)
+	if w.why != nil {
+		fmt.Fprintf(&b, " (could not save the full output: %v]", w.why)
+	} else {
+		t.last.LogPath = w.path
+		fmt.Fprintf(&b, " full output: %s (read it with exec_command, e.g. sed -n '1,80p' FILE)]", w.path)
+	}
+	b.WriteString("\n\n")
+	b.WriteString(tail)
+	return b.String()
+}
+
 // aim is the byte ceiling for this command's output, with room left for the note about the cut.
 func (t Exec) aim() int {
 	cap := t.MaxBytes
@@ -189,27 +214,6 @@ func (t Exec) aim() int {
 		cap = defaultResultBytes
 	}
 	return cap - budgetSlack
-}
-
-func (t *Exec) fit(out string) string {
-	budget := t.aim()
-	if len(out) <= budget {
-		return out
-	}
-	path, err := writeFullOutput(t.logDir(), out)
-	head, tail := cutUTF8(out, budget/budgetSlackDiv), cutUTF8Tail(out, budget-budget/budgetSlackDiv)
-	var b strings.Builder
-	b.WriteString(head)
-	fmt.Fprintf(&b, "\n\n[... %d of %d bytes omitted ...", len(out)-len(head)-len(tail), len(out))
-	if err != nil {
-		fmt.Fprintf(&b, " (could not save the full output: %v]", err)
-	} else {
-		t.last.LogPath = path
-		fmt.Fprintf(&b, " full output: %s (read it with exec_command, e.g. sed -n '1,80p' FILE)]", path)
-	}
-	b.WriteString("\n\n")
-	b.WriteString(tail)
-	return b.String()
 }
 
 // PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went.
@@ -239,17 +243,4 @@ func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 		removed++
 	}
 	return removed, nil
-}
-
-// writeFullOutput stores an oversized output in a temp dir and returns its path.
-func writeFullOutput(dir, out string) (string, error) {
-	dir, err := os.MkdirTemp(dir, spillPrefix)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, "output.log")
-	if err := os.WriteFile(path, []byte(out), 0o600); err != nil {
-		return "", err
-	}
-	return path, nil
 }
