@@ -35,7 +35,7 @@ func readCall(tool, args, result string, failed bool, root string) call {
 		_, body, _ := strings.Cut(result, "\n")
 		c.change, c.left = capChange(body)
 	} else if failed || exitSaid(result) != "" {
-		c.tail = lastLines(result, tailKept)
+		c.tail = lastLines(withoutItsNote(result), tailKept)
 	}
 	return c
 }
@@ -143,6 +143,20 @@ func printedSaid(result string) string {
 	return fmt.Sprintf("%d lines", len(strings.Split(strings.TrimRight(result, "\n"), "\n")))
 }
 
+// withoutItsNote drops the line the tool adds about how the command left: the row already says it, and
+// repeating it under the row is noise where the explanation should be.
+func withoutItsNote(result string) string {
+	lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
+	for len(lines) > 0 {
+		last := lines[len(lines)-1]
+		if !strings.HasPrefix(last, "[") {
+			break
+		}
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // capChange keeps the head of a change and counts what fell off, so a hundred line write costs the
 // run a hundred lines rather than a hundred lines times every redraw.
 func capChange(body string) (string, int) {
@@ -185,9 +199,10 @@ func tailRows(tail string, width int) []string {
 		left = len(lines) - tailShown
 		lines = lines[len(lines)-tailShown:]
 	}
+	ground := diffSides().del
 	rows := make([]string, 0, len(lines)+1)
 	for _, line := range lines {
-		rows = append(rows, styleDiffDel.Render(diffLead+cutToWidth(line, width-len(diffLead))))
+		rows = append(rows, padGround(ground.Render(diffLead+cutToWidth(line, width-len(diffLead)-1)), ground, width))
 	}
 	if left > 0 {
 		rows = append(rows[:1], styleDim.Render(diffLead+

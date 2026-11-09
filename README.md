@@ -146,10 +146,14 @@ pi's are — so the ground says where a turn got to without turning the row into
 on it stay the terminal's own colour. The change under the row keeps its own colours.
 
 A call that changed a file puts the change on the rows under its row instead of flattening it into
-one: what came in is kept, what went is marked, the unchanged context stays quiet, and where a line
-stayed but a word inside it changed, only that word is reversed out, so a one word edit reads without
-counting characters. Fourteen rows of a change are shown and the row says how many the screen left
-out; the file on disk holds all of it, and the next `read_file` reads as much as you want.
+one. Each changed row sits on a **low ground of its own** — a green tint for what came in, a red tint
+for what went, picked for the terminal the screen runs in and running to its edge — while the words on
+the row stay the terminal's own colour: a whole line painted in the terminal's red or green is noise,
+and nothing on it reads. The one glyph at the row's left (`+`, `-`) carries the colour instead. The
+unchanged context is quiet, and where a line stayed but a word inside it changed, only that word takes
+a stronger tint, so a one word edit reads without counting characters. Fourteen rows of a change are
+shown and the row says how many the screen left out; the file on disk holds all of it, and the next
+`read_file` reads as much as you want.
 
 A command that came back non-zero, was killed at its timeout or was cancelled reads as a failure —
 its ground and the lines under it, which are the last ones, where the error is.

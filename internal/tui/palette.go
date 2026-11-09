@@ -28,14 +28,13 @@ var (
 	// styleUserLine is the band a prompt sits in: reversing the terminal's own colours keeps it
 	// right on a light theme as well as a dark one.
 	styleUserLine = lipgloss.NewStyle().Reverse(true).Bold(true)
-	// a change reads at a glance: what came in is kept, what went is marked, and what changed inside
-	// a line that stayed is reversed out.
-	styleDiffAdd  = lipgloss.NewStyle().Foreground(colorOK)
-	styleDiffDel  = lipgloss.NewStyle().Foreground(colorBad)
-	styleDiffMark = lipgloss.NewStyle().Reverse(true)
-	styleCode     = lipgloss.NewStyle().Foreground(colorAccent)
-	styleItalic   = lipgloss.NewStyle().Italic(true)
-	styleKey      = lipgloss.NewStyle().Foreground(colorAccent)
+	// a change marks its side with one coloured glyph. The words on the row keep the terminal's own
+	// colour: a whole line of the terminal's red or green is noise, and nothing on it reads.
+	styleAddMark = lipgloss.NewStyle().Foreground(colorOK)
+	styleDelMark = lipgloss.NewStyle().Foreground(colorBad)
+	styleCode    = lipgloss.NewStyle().Foreground(colorAccent)
+	styleItalic  = lipgloss.NewStyle().Italic(true)
+	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
 )
 
 // toolSurfaces are the grounds a call sits in, the way pi paints a tool execution: the ground
@@ -53,6 +52,23 @@ var surfaces = sync.OnceValue(func() toolSurfaces {
 		wait: ground(dark, "#33343a", "#ececec"),
 		done: ground(dark, "#24402f", "#e3efe4"),
 		fail: ground(dark, "#4c2b26", "#f7e3df"),
+	}
+})
+
+// diffSides are the grounds a change sits on: the side that came in, the side that went, and the
+// stronger shade for the words inside a line that changed. As with a call's ground, these are picked
+// for the terminal the screen runs in, and low enough that the words stay the readable part.
+type diffSurfaces struct {
+	add, del, addMark, delMark lipgloss.Style
+}
+
+var diffSides = sync.OnceValue(func() diffSurfaces {
+	dark := lipgloss.HasDarkBackground()
+	return diffSurfaces{
+		add:     ground(dark, "#1d2b21", "#eef6ef"),
+		del:     ground(dark, "#2b1e1f", "#f7eecd"),
+		addMark: ground(dark, "#3f5a45", "#cfe6d3"),
+		delMark: ground(dark, "#57332f", "#f0cfc4"),
 	}
 })
 

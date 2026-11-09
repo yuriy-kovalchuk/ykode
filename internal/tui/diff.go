@@ -39,7 +39,7 @@ func changeRows(change string, left int, width int) []string {
 		switch {
 		case line == "":
 		case strings.HasPrefix(line, "@@"):
-			rows = append(rows, diffRow(styleDim, "", line, width))
+			rows = append(rows, styleDim.Render(diffLead+cutToWidth(line, width-len(diffLead))))
 		case strings.HasPrefix(line, "-"):
 			removed, added := hunkRun(lines, &at, line)
 			if len(removed) == 1 && len(added) == 1 {
@@ -47,15 +47,15 @@ func changeRows(change string, left int, width int) []string {
 				continue
 			}
 			for _, gone := range removed {
-				rows = append(rows, diffRow(styleDiffDel, gone[:1], gone[1:], width))
+				rows = append(rows, diffRow(diffSides().del, styleDelMark, gone[:1], gone[1:], width))
 			}
 			for _, fresh := range added {
-				rows = append(rows, diffRow(styleDiffAdd, fresh[:1], fresh[1:], width))
+				rows = append(rows, diffRow(diffSides().add, styleAddMark, fresh[:1], fresh[1:], width))
 			}
 		case strings.HasPrefix(line, "+"):
-			rows = append(rows, diffRow(styleDiffAdd, "+", line[1:], width))
-		default:
-			rows = append(rows, diffRow(styleDim, "", " "+line, width))
+			rows = append(rows, diffRow(diffSides().add, styleAddMark, "+", line[1:], width))
+		default: // an unchanged line is quiet: no ground, nothing marked
+			rows = append(rows, styleDim.Render(diffLead+" "+cutToWidth(diffText(line), width-len(diffLead)-1)))
 		}
 	}
 	if over := len(rows) - diffShown; over > 0 || left > 0 {
@@ -83,23 +83,31 @@ func hunkRun(lines []string, at *int, first string) (removed, added []string) {
 func changedPair(removed, added string, width int) []string {
 	gone := diffText(removed[1:])
 	fresh := diffText(added[1:])
-	room := width - len(diffLead) - 1
-	gone, fresh = cutToWidth(gone, room), cutToWidth(fresh, room)
+	gone, fresh = cutToWidth(gone, width-len(diffLead)-1), cutToWidth(fresh, width-len(diffLead)-1)
 	head, tail := commonRun(gone, fresh)
-	side := func(mark, text string, style lipgloss.Style) string {
+	side := func(mark, text string, ground, ink, stronger lipgloss.Style) string {
 		runes := []rune(text)
-		kept, changed, rest := string(runes[:head]), string(runes[head:len(runes)-tail]), string(runes[len(runes)-tail:])
 		var row strings.Builder
-		row.WriteString(style.Render(diffLead + mark + kept))
-		if changed != "" {
-			row.WriteString(styleDiffMark.Render(changed))
+		room := width - len(diffLead) - 1
+		row.WriteString(ground.Render(diffLead) + ink.Render(mark))
+		if head+tail > len(runes) { // nothing is left of the line once what stayed at both ends is taken off
+			head, tail = len(runes), 0
 		}
-		if rest != "" {
-			row.WriteString(style.Render(rest))
+		room -= head + (len(runes) - tail - head)
+		row.WriteString(ground.Render(string(runes[:head])))
+		if changed := string(runes[head : len(runes)-tail]); changed != "" {
+			row.WriteString(stronger.Render(cutToWidth(changed, max(room, 0))))
 		}
-		return row.String()
+		if rest := string(runes[len(runes)-tail:]); rest != "" {
+			row.WriteString(ground.Render(rest))
+		}
+		return padGround(row.String(), ground, width)
 	}
-	return []string{side("-", gone, styleDiffDel), side("+", fresh, styleDiffAdd)}
+	sides := diffSides()
+	return []string{
+		side("-", gone, sides.del, styleDelMark, sides.delMark),
+		side("+", fresh, sides.add, styleAddMark, sides.addMark),
+	}
 }
 
 // commonRun measures what the two sides of a change share at each end.
@@ -114,9 +122,20 @@ func commonRun(a, b string) (head, tail int) {
 	return head, tail
 }
 
-func diffRow(style lipgloss.Style, mark, text string, width int) string {
-	room := width - len(diffLead) - lipgloss.Width(mark)
-	return style.Render(diffLead + mark + cutToWidth(diffText(text), room))
+// diffRow is one line of a change: a low ground for the row, one coloured glyph for its side, and the
+// words in the terminal's own colour.
+func diffRow(ground, ink lipgloss.Style, mark, text string, width int) string {
+	room := width - len(diffLead) - lipgloss.Width(mark) - 1 // the last column is left clear for the cursor
+	return padGround(ground.Render(diffLead)+ink.Render(mark)+ground.Render(cutToWidth(diffText(text), room)), ground, width)
+}
+
+// padGround runs a row's ground to the edge of the screen, so a change reads as a band and not as a
+// ground that stops where the words do.
+func padGround(row string, ground lipgloss.Style, width int) string {
+	if left := width - lipgloss.Width(row); left > 0 {
+		return row + ground.Render(strings.Repeat(" ", left))
+	}
+	return row
 }
 
 // diffText keeps a source line as long as the screen can read it: tabs are what made the columns,

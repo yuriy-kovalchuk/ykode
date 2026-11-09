@@ -35,9 +35,9 @@ func TestAChangeIsDrawnAsAChange(t *testing.T) {
 		switch {
 		case strings.Contains(stripCodes(row), "@@") && strings.Contains(row, codeOf(styleDim)):
 			hunk = row
-		case strings.Contains(stripCodes(row), "if line ==") && strings.Contains(row, codeOf(styleDiffDel)):
+		case strings.Contains(stripCodes(row), "if line ==") && strings.Contains(row, codeOf(diffSides().del)):
 			removed = row
-		case strings.Contains(stripCodes(row), "TrimSpace") && strings.Contains(row, codeOf(styleDiffAdd)):
+		case strings.Contains(stripCodes(row), "TrimSpace") && strings.Contains(row, codeOf(diffSides().add)):
 			added = row
 		case strings.Contains(stripCodes(row), "func parse"):
 			context = row
@@ -54,8 +54,42 @@ func TestAChangeIsDrawnAsAChange(t *testing.T) {
 	}
 }
 
-// a line that changed says which part of it changed: only the new words are reversed out
-func TestAChangedWordIsReversedOut(t *testing.T) {
+// an added or removed line sits on a low ground and keeps the terminal's own words: the whole line
+// painted red or green is noise, and nothing on it reads
+func TestADiffLineSitsOnAGroundAndKeepsItsWords(t *testing.T) {
+	withColour(t)
+	rows := diffLines(t, editResult, 80)
+	var removed, added string
+	for _, row := range rows {
+		switch {
+		case strings.Contains(stripCodes(row), "TrimSpace"):
+			added = row
+		case strings.Contains(stripCodes(row), "if line =="):
+			removed = row
+		}
+	}
+	for name, row := range map[string]string{"a removed line": removed, "an added line": added} {
+		if row == "" {
+			t.Fatalf("%s is missing", name)
+		}
+		if !strings.Contains(row, codeOf(diffSides().del)) && !strings.Contains(row, codeOf(diffSides().add)) {
+			t.Errorf("%s does not sit on a ground of its own: %q", name, stripCodes(row))
+		}
+		if strings.Contains(row, "\x1b[7m") {
+			t.Errorf("%s is reversed out, which reads as a block over the words: %q", name, stripCodes(row))
+		}
+		// only the mark at the front of the row carries a colour of its own; the words are the
+		// terminal's, so they stay readable on any theme
+		_, words, _ := strings.Cut(row, "\x1b[0m")
+		if strings.Contains(words, "38;2;") {
+			t.Errorf("%s paints its words in a colour: %q", name, stripCodes(words))
+		}
+	}
+}
+
+// a line that changed says which part of it changed: the new words are set apart, the ones that
+// stayed are not, and neither side is a solid block
+func TestAChangedWordIsSetApart(t *testing.T) {
 	withColour(t)
 	rows := diffLines(t, editResult, 80)
 	var added string
@@ -67,14 +101,66 @@ func TestAChangedWordIsReversedOut(t *testing.T) {
 	if added == "" {
 		t.Fatal("the added line is missing")
 	}
-	if !strings.Contains(added, "\x1b[7m") {
-		t.Fatalf("nothing is marked as what changed: %q", added)
+	mark := codeOf(diffSides().addMark)
+	if !strings.Contains(added, mark) {
+		t.Fatalf("nothing is set apart as what changed: %q", added)
 	}
-	if strings.Contains(reverseRuns(added), "if line ==") {
-		t.Errorf("the part that stayed the same is marked as changed: %q", stripCodes(added))
+	at := strings.Index(added, mark)
+	if before := added[:at]; strings.Contains(before, "38;2;") {
+		t.Errorf("the words that stayed are marked as changed: %q", stripCodes(before))
 	}
-	if !strings.Contains(reverseRuns(added), "TrimSpace") {
-		t.Errorf("the part that changed is not marked: %q", stripCodes(added))
+	if !strings.Contains(added[:at], codeOf(diffSides().add)) {
+		t.Errorf("the line that changed does not sit on its ground: %q", stripCodes(added))
+	}
+	if strings.Contains(added, "\x1b[7m") {
+		t.Errorf("the change is marked by reversing the words out: %q", stripCodes(added))
+	}
+}
+
+// the ground of a changed line runs to the edge of the screen: a band that stops where the words do
+// reads as a mistake in the drawing
+func TestAChangedRowFillsItsGround(t *testing.T) {
+	withColour(t)
+	for _, row := range diffLines(t, editResult, 80) {
+		text := stripCodes(row)
+		if !strings.HasPrefix(text, "  -") && !strings.HasPrefix(text, "  +") {
+			continue
+		}
+		if got := lipgloss.Width(text); got != 80 {
+			t.Errorf("a changed row fills %d columns of an 80 column screen: %q", got, text)
+		}
+	}
+}
+
+// a failure's own note is not repeated under the row that already says how the command left
+func TestAFailureTailLeavesOutItsOwnNote(t *testing.T) {
+	var log transcript
+	args := `{"command":"make"}`
+	log.toolStart("exec_command", args)
+	log.toolEnd("exec_command", args, "cc: segfault\nmake: *** [all] Error 1\n[exit status 2]")
+	under := strings.Join(log.rows(80)[1:], "\n")
+	if strings.Contains(under, "[exit status 2]") {
+		t.Errorf("the tail repeats what the row says:\n%s", stripCodes(under))
+	}
+	if !strings.Contains(under, "Error 1") {
+		t.Errorf("the tail lost the line that explains it:\n%s", stripCodes(under))
+	}
+}
+
+// a command that left badly is not painted as one that succeeded, and what it printed last is what
+// explains it
+func TestACommandThatLeftBadlyReadsAsOne(t *testing.T) {
+	withColour(t)
+	var log transcript
+	args := `{"command":"python3 toy_llm/train.py"}`
+	log.toolStart("exec_command", args)
+	log.toolEnd("exec_command", args, "Traceback\nTypeError: bad\n[exit status 1]")
+	row := callRow(&log, 0)
+	if !strings.Contains(row, codeOf(surfaces().fail)) {
+		t.Errorf("a command that left 1 sits in the ground of a success: %q", stripCodes(row))
+	}
+	if strings.Contains(row, codeOf(surfaces().done)) {
+		t.Errorf("a command that left 1 sits in the ground of a success: %q", stripCodes(row))
 	}
 }
 
@@ -126,14 +212,4 @@ func joinRows(rows []string) string {
 		plain = append(plain, stripCodes(row))
 	}
 	return strings.Join(plain, "\n")
-}
-
-// reverseRuns collects what sits between the reverse-video marks
-func reverseRuns(row string) string {
-	var kept strings.Builder
-	for _, part := range strings.Split(row, "\x1b[7m")[1:] {
-		cut, _, _ := strings.Cut(part, "\x1b[27m")
-		kept.WriteString(cut)
-	}
-	return kept.String()
 }
