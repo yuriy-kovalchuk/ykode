@@ -143,6 +143,13 @@ italic and colour. goldmark parses the CommonMark; ykode draws it, so the palett
 the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
 arrived, and only the drawing interprets it.
 
+A fence that names a language is coloured by that language's grammar: chroma's hundreds of grammars,
+the colours ykode's own four (the words that define, the values, the comments, what is called), so the
+terminal's theme still decides what each of them looks like. A fence that names nothing, or a language
+no grammar covers, is left exactly as written — guessing at a language colours prose, and a sentence
+about a `case` or a `type` would read as code. A block still arriving, and one longer than a screen
+full, are left plain too, and each block of an answer is coloured once rather than on every frame.
+
 For a long task the model keeps a checklist with the `plan` tool: it sends every step each time, each
 pending, active (the one it is on), done or failed, so the list is never half an edit. The screen pins it
 between the transcript and the prompt, where it cannot scroll away: a heading with one cell per step

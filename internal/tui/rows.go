@@ -61,7 +61,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 	var block string
 	switch e.who {
 	case whoSummary:
-		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, inner) + "\n\n"
+		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, inner, &e.blocks) + "\n\n"
 	case whoOutput:
 		block = strings.Join(indent(wrapKept(e.text, max(inner-2, 1)), "  "), "\n") + "\n\n"
 	case whoDone:
@@ -70,7 +70,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 		// the gutter is laid on after the wrap, so the wrap keeps room for it on any screen
 		block = fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, max(inner-4, 1)), "\n"), styleThink))
 	case whoAnswer:
-		block = markdown(e.text, inner) + "\n\n"
+		block = markdown(e.text, inner, &e.blocks) + "\n\n"
 	case whoNotice:
 		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), max(inner-2, 1)), "· "), "\n")) + "\n"
 	case whoTool:

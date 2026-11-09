@@ -35,6 +35,13 @@ var (
 	styleCode    = lipgloss.NewStyle().Foreground(colorAccent)
 	styleItalic  = lipgloss.NewStyle().Italic(true)
 	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
+	// A block of code marks only what a reader is looking for and leaves the rest the terminal's own
+	// colour: a block whose every word is coloured is noise, and the punctuation of it reads as nothing.
+	styleCodeDefault = lipgloss.NewStyle()
+	styleCodeKeyword = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
+	styleCodeString  = lipgloss.NewStyle().Foreground(colorOK)
+	styleCodeComment = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
+	styleCodeName    = lipgloss.NewStyle().Foreground(colorAccent)
 )
 
 // diffSurfaces are the grounds a change sits on: one low shade for the side that came in and one for

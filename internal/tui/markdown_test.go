@@ -26,7 +26,7 @@ func TestAnAnswerGetsItsShape(t *testing.T) {
 		"func main() {}",
 		"```",
 	}, "\n")
-	got := stripCodes(markdown(answer, 60))
+	got := stripCodes(markdown(answer, 60, nil))
 	for _, want := range []string{
 		"What I found", "three", "- the record, its rows", "1. read the file",
 		"│ func main() {}", "go",
@@ -44,7 +44,7 @@ func TestAnAnswerGetsItsShape(t *testing.T) {
 
 // an answer arrives a token at a time: a fence that has not closed yet is already code
 func TestAFenceStillBeingWrittenIsShownAsCode(t *testing.T) {
-	got := stripCodes(markdown("looking now\n```go\nfunc main() {", 60))
+	got := stripCodes(markdown("looking now\n```go\nfunc main() {", 60, nil))
 	if !strings.Contains(got, "│ func main() {") {
 		t.Errorf("the half-written fence is not drawn as code:\n%s", got)
 	}
@@ -57,7 +57,7 @@ func TestAFenceStillBeingWrittenIsShownAsCode(t *testing.T) {
 func TestAnAnswerRowNeverRunsPastTheScreen(t *testing.T) {
 	long := strings.Repeat("a word ", 60) + "\n\n- " + strings.Repeat("another long item ", 40)
 	for _, width := range []int{40, 80} {
-		for _, line := range strings.Split(markdown(long, width), "\n") {
+		for _, line := range strings.Split(markdown(long, width, nil), "\n") {
 			if w := lipgloss.Width(line); w > width {
 				t.Errorf("%d-wide screen has a %d-wide row: %q", width, w, line)
 			}
@@ -67,7 +67,7 @@ func TestAnAnswerRowNeverRunsPastTheScreen(t *testing.T) {
 
 // a link keeps its target in words a person can follow
 func TestALinkKeepsItsAddress(t *testing.T) {
-	got := stripCodes(markdown("see [the docs](https://ykode.dev/tools) for more", 80))
+	got := stripCodes(markdown("see [the docs](https://ykode.dev/tools) for more", 80, nil))
 	if !strings.Contains(got, "the docs (https://ykode.dev/tools)") {
 		t.Errorf("the link was not opened: %q", got)
 	}
@@ -75,7 +75,7 @@ func TestALinkKeepsItsAddress(t *testing.T) {
 
 // text inside a code span is left exactly as the model wrote it
 func TestCodeSpansKeepTheirOwnMarks(t *testing.T) {
-	got := stripCodes(markdown("run `go test ./... -count=1` now", 80))
+	got := stripCodes(markdown("run `go test ./... -count=1` now", 80, nil))
 	if !strings.Contains(got, "go test ./... -count=1") {
 		t.Errorf("the command inside the code span changed: %q", got)
 	}
@@ -83,7 +83,7 @@ func TestCodeSpansKeepTheirOwnMarks(t *testing.T) {
 
 // a list inside a list keeps its shape, which a line-at-a-time guess could not see
 func TestANestedListKeepsItsShape(t *testing.T) {
-	got := stripCodes(markdown("steps:\n- one\n  - nested under one\n- two\n", 60))
+	got := stripCodes(markdown("steps:\n- one\n  - nested under one\n- two\n", 60, nil))
 	if !strings.Contains(got, "  - one") || !strings.Contains(got, "      - nested under one") {
 		t.Errorf("the nested entry is not under its parent:\n%s", got)
 	}
@@ -91,7 +91,7 @@ func TestANestedListKeepsItsShape(t *testing.T) {
 
 // a table the model drew stays readable rather than turning into a wall of dashes
 func TestATableStaysReadable(t *testing.T) {
-	got := stripCodes(markdown("| file | lines |\n|---|---|\n| rows.go | 140 |\n", 60))
+	got := stripCodes(markdown("| file | lines |\n|---|---|\n| rows.go | 140 |\n", 60, nil))
 	if !strings.Contains(got, "file · lines") || !strings.Contains(got, "rows.go · 140") {
 		t.Errorf("the table is not on rows of its own:\n%s", got)
 	}
@@ -102,7 +102,7 @@ func TestATableStaysReadable(t *testing.T) {
 
 // a mark the model escaped stays in the text rather than vanishing
 func TestAMarkTheModelEscapedStaysPut(t *testing.T) {
-	got := stripCodes(markdown(`write \*count\* in the file`, 80))
+	got := stripCodes(markdown(`write \*count\* in the file`, 80, nil))
 	if !strings.Contains(got, "*count*") {
 		t.Errorf("the escaped marks disappeared: %q", got)
 	}
@@ -117,6 +117,6 @@ func BenchmarkAnswerDrawn(b *testing.B) {
 		"```go", "func main() {", "\tprintln(\"hi\")", "}", "```",
 	}, "\n")
 	for i := 0; i < b.N; i++ {
-		markdown(answer, 100)
+		markdown(answer, 100, nil)
 	}
 }

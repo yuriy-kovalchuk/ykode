@@ -33,6 +33,8 @@ type entry struct {
 	took   time.Duration
 
 	state draftState // what has been read of a call the model is still writing; see draft.go
+
+	blocks highlightCache // the coloured code blocks of this entry, so redrawing it colours each once
 }
 
 // transcript is what has been said so far. Rendering is separate so the rules can be tested without

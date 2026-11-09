@@ -24,38 +24,38 @@ const codeGutter = "  │ "
 // markdown lays out the model's answer: headings, lists, tables and fenced code given their
 // shape, and the marks the model wrote turned into the terminal's own words. It runs on every
 // draw of an answer that is still arriving, so it stays small.
-func markdown(source string, width int) string {
+func markdown(source string, width int, blocks *highlightCache) string {
 	src := []byte(source)
 	doc := answers.Parser().Parse(text.NewReader(src))
 	var rows []string
 	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
-		rows = append(rows, block(node, src, width)...)
+		rows = append(rows, block(node, src, width, blocks)...)
 	}
 	return strings.TrimRight(strings.Join(rows, "\n"), "\n")
 }
 
 // block is a block of the answer as rows, kept inside the width it is given.
-func block(node ast.Node, src []byte, width int) []string {
+func block(node ast.Node, src []byte, width int, blocks *highlightCache) []string {
 	switch n := node.(type) {
 	case *ast.Heading:
 		return wrap(styleBold.Render(inline(n, src)), width-2)
 	case *ast.FencedCodeBlock:
-		return codeRows(n, src, width, string(n.Language(src)))
+		return codeRows(n, src, width, string(n.Language(src)), fenceClosed(n, src), blocks)
 	case *ast.CodeBlock:
-		return codeRows(n, src, width, "")
+		return codeRows(n, src, width, "", true, blocks)
 	case *ast.ThematicBreak:
 		return []string{styleDim.Render("  " + strings.Repeat("─", min(width-4, 40)))}
 	case *ast.Blockquote:
 		var rows []string
 		for child := n.FirstChild(); child != nil; child = child.NextSibling() {
-			rows = append(rows, block(child, src, width-4)...)
+			rows = append(rows, block(child, src, width-4, blocks)...)
 		}
 		for i, row := range rows {
 			rows[i] = "  " + styleDim.Render("┊ ") + row
 		}
 		return rows
 	case *ast.List:
-		return listRows(n, src, width)
+		return listRows(n, src, width, blocks)
 	case *tableast.Table:
 		return tableRows(n, src, width)
 	case *ast.HTMLBlock:
@@ -67,7 +67,7 @@ func block(node ast.Node, src []byte, width int) []string {
 
 // listRows are a list's entries: the model's own marker in a column, each entry wrapped under
 // itself, and any block an entry holds indented beneath it.
-func listRows(list *ast.List, src []byte, width int) []string {
+func listRows(list *ast.List, src []byte, width int, blocks *highlightCache) []string {
 	var rows []string
 	number := list.Start
 	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
@@ -78,7 +78,7 @@ func listRows(list *ast.List, src []byte, width int) []string {
 		}
 		var body []string
 		for child := item.FirstChild(); child != nil; child = child.NextSibling() {
-			body = append(body, block(child, src, width-len(lead))...)
+			body = append(body, block(child, src, width-len(lead), blocks)...)
 		}
 		pad := strings.Repeat(" ", len(lead))
 		for i, row := range body {
@@ -92,26 +92,62 @@ func listRows(list *ast.List, src []byte, width int) []string {
 	return rows
 }
 
-// codeRows are the lines of a code block, with the language named once above them.
-func codeRows(node ast.Node, src []byte, width int, language string) []string {
+// codeRows are the lines of a code block, with the language named once above them. A block that names
+// a language we have a grammar for is coloured; one that names nothing, or a language nobody has a
+// grammar for, is drawn exactly as the model wrote it.
+func codeRows(node ast.Node, src []byte, width int, language string, closed bool, blocks *highlightCache) []string {
 	var rows []string
 	if language != "" {
 		rows = append(rows, styleDim.Render("    "+language))
 	}
-	rows = append(rows, markedLines(node.Lines(), src, width, codeGutter)...)
-	return rows
+	if coloured := highlightedCode(blockText(node.Lines(), src), language, closed, blocks); coloured != nil {
+		return append(rows, gutterRows(coloured, width, codeGutter)...)
+	}
+	return append(rows, markedLines(node.Lines(), src, width, codeGutter)...)
+}
+
+// fenceClosed says whether a fence has been shut by its closing ``` yet. goldmark reads the rest of the
+// answer as the block when it has not, so an unterminated one ends where the answer does: its last line
+// runs to the end of the source. A block still arriving is worth colouring once it is over, not while it
+// is being written, because the lines it has so far are a new question on every token.
+func fenceClosed(node ast.Node, src []byte) bool {
+	lines := node.(*ast.FencedCodeBlock).Lines()
+	if lines.Len() == 0 {
+		return false
+	}
+	return lines.At(lines.Len()-1).Stop < len(src)
+}
+
+// blockText is the source a block's lines hold, joined as it was written. A block written with the
+// carriage returns of a windows file is read as the same lines the screen shows elsewhere.
+func blockText(segments *text.Segments, src []byte) string {
+	var joined strings.Builder
+	for i := 0; i < segments.Len(); i++ {
+		segment := segments.At(i)
+		joined.Write(segment.Value(src))
+	}
+	return strings.TrimRight(strings.ReplaceAll(joined.String(), "\r\n", "\n"), "\n")
 }
 
 // markedLines writes source lines out as they were written, each one inside the width.
 func markedLines(segments *text.Segments, src []byte, width int, mark string) []string {
-	var rows []string
+	var lines []string
 	for i := 0; i < segments.Len(); i++ {
 		segment := segments.At(i)
-		line := strings.TrimRight(string(segment.Value(src)), " \r\n")
-		rows = append(rows, mark+cutToWidth(line, width-lipgloss.Width(mark)))
+		lines = append(lines, strings.TrimRight(string(segment.Value(src)), " \r\n"))
 	}
-	if len(rows) == 0 {
-		rows = append(rows, mark)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	return gutterRows(lines, width, mark)
+}
+
+// gutterRows puts the mark on every row of a block and keeps each one inside the width.
+func gutterRows(lines []string, width int, mark string) []string {
+	room := width - lipgloss.Width(mark)
+	rows := make([]string, len(lines))
+	for i, line := range lines {
+		rows[i] = mark + cutToWidth(line, room)
 	}
 	return rows
 }
