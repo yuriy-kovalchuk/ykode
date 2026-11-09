@@ -7,14 +7,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// How much of one change the screen shows while the session runs, and how much once the call is
-// opened. A file written at once is a hundred rows of "+" and the session has to stay readable
-// under it, so the rest is left to ctrl+o and the row says how much is left.
+// How much of one change the screen shows. A file written at once is a hundred rows of "+" and the
+// session has to stay readable under it, so the row says how much of the change it left out.
 const (
-	diffShown    = 14
-	diffExpanded = 60
-	diffLead     = "  " // a change sits under the call row that made it
-	diffTab      = "   "
+	diffShown = 14
+	diffLead  = "  " // a change sits under the call row that made it
+	diffTab   = "   "
 )
 
 // holdsDiff says a call answered with a change: a line about what it did, then the hunks.
@@ -28,15 +26,12 @@ func summaryLine(result string) string {
 
 // diffRows draws the change a call made: what was added kept, what was removed marked, the
 // unchanged context quiet, and where only part of a line changed, only that part is reversed out.
-func diffRows(result string, width int, expanded bool) []string {
+func diffRows(result string, width int) []string {
 	if !holdsDiff(result) {
 		return nil
 	}
 	_, body, _ := strings.Cut(result, "\n")
 	limit := diffShown
-	if expanded {
-		limit = diffExpanded
-	}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	rows := make([]string, 0, len(lines))
 	for at := 0; at < len(lines); {
@@ -66,7 +61,7 @@ func diffRows(result string, width int, expanded bool) []string {
 	}
 	if len(rows) > limit {
 		left := len(rows) - limit
-		note := cutToWidth(fmt.Sprintf("… %d more lines (ctrl+o)", left), width-len(diffLead))
+		note := cutToWidth(fmt.Sprintf("… %d more lines of the change", left), width-len(diffLead))
 		rows = append(rows[:limit], styleDim.Render(diffLead+note))
 	}
 	return rows

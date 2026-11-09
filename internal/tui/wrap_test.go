@@ -11,7 +11,7 @@ import (
 func TestLongThinkingWrapsInsteadOfOverflowing(t *testing.T) {
 	var log transcript
 	log.thinking(strings.Repeat("word ", 60))
-	lines := strings.Split(log.render(40, false), "\n")
+	lines := strings.Split(log.render(40), "\n")
 	if len(lines) < 5 {
 		t.Fatalf("a long block stayed on too few lines: %d", len(lines))
 	}

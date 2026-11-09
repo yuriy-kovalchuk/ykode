@@ -18,7 +18,7 @@ func TestThinkingArrivesInPiecesAndReadsAsOneBlock(t *testing.T) {
 	if log.entries[0].text != "the bug is in main.go" {
 		t.Errorf("the pieces did not join: %q", log.entries[0].text)
 	}
-	out := log.render(80, false)
+	out := log.render(80)
 	if !strings.Contains(out, "the bug is in main.go") || !strings.Contains(out, "fix it here") {
 		t.Errorf("rendered transcript is missing what was said:\n%s", out)
 	}
@@ -37,7 +37,7 @@ func TestAParallelReplyLandsOnItsOwnCall(t *testing.T) {
 	if log.entries[1].result != "" {
 		t.Errorf("b.go was answered with a.go's result: %q", log.entries[1].result)
 	}
-	out := log.render(80, false)
+	out := log.render(80)
 	if !strings.Contains(out, "working…") {
 		t.Errorf("a call still running should say so:\n%s", out)
 	}
@@ -50,7 +50,7 @@ func TestMessagesCarryTheirTime(t *testing.T) {
 	log.user("fix the test", sent)
 	log.answer("fixed")
 	log.done(sent.Add(51*time.Second), 51*time.Second)
-	view := stripCodes(log.render(60, false))
+	view := stripCodes(log.render(60))
 	first := strings.Split(view, "\n")[0]
 	if !strings.HasSuffix(first, "08:31") || len(first) < 50 {
 		t.Errorf("the prompt's time is not at the end of its row: %q", first)
@@ -64,7 +64,7 @@ func TestMessagesCarryTheirTime(t *testing.T) {
 func TestCommandOutputKeepsItsLines(t *testing.T) {
 	var log transcript
 	log.output("commands:\n  /help   show this\n  /usage  what it cost")
-	view := stripCodes(log.render(80, false))
+	view := stripCodes(log.render(80))
 	if !strings.Contains(view, "\n    /help   show this\n") || !strings.Contains(view, "/usage  what it cost") {
 		t.Errorf("the output lost its lines:\n%s", view)
 	}
@@ -75,7 +75,7 @@ func TestARecapIsDrawnWhereItHappened(t *testing.T) {
 	var log transcript
 	log.summary("Goal: rename the helper\nFiles: rows.go, bottom.go\nNext: run the tests")
 
-	view := stripCodes(log.render(80, false))
+	view := stripCodes(log.render(80))
 	if !strings.Contains(view, "the older turns, folded into this") {
 		t.Errorf("the recap is not marked as one:\n%s", view)
 	}
@@ -92,17 +92,17 @@ func TestTheRowsAreKeptBetweenDraws(t *testing.T) {
 	var log transcript
 	log.user("the first ask", time.Now())
 	log.answer("the first answer")
-	before := append([]string(nil), log.rows(60, false)...)
+	before := append([]string(nil), log.rows(60)...)
 
 	log.answer(", and it goes on")
-	after := log.rows(60, false)
+	after := log.rows(60)
 	if after[0] != before[0] {
 		t.Errorf("a row above the change was drawn again:\n%s\nwant\n%s", after[0], before[0])
 	}
 	if joined := strings.Join(after, "\n"); !strings.Contains(joined, "it goes on") {
 		t.Errorf("the change never reached the rows:\n%s", joined)
 	}
-	if got, want := log.render(60, false), strings.TrimRight(strings.Join(after, "\n"), "\n"); got != want {
+	if got, want := log.render(60), strings.TrimRight(strings.Join(after, "\n"), "\n"); got != want {
 		t.Errorf("reading the session back differs from its rows:\n%s\nwant\n%s", got, want)
 	}
 }
@@ -112,10 +112,10 @@ func TestACallAnsweredLaterKeepsItsRow(t *testing.T) {
 	var log transcript
 	log.toolStart("read_file", `{"path":"a.go"}`)
 	log.notice("something the run did on its own")
-	before := log.rows(60, false)
+	before := log.rows(60)
 
 	log.toolEnd("read_file", `{"path":"a.go"}`, "read a.go (12 lines)")
-	after := log.rows(60, false)
+	after := log.rows(60)
 	if len(after) != len(before) {
 		t.Fatalf("answering a call changed how many rows the session takes: %d was %d", len(after), len(before))
 	}
@@ -137,7 +137,7 @@ func TestTheSessionKnowsWhatItHasNotDrawnYet(t *testing.T) {
 	if !log.hasPending() {
 		t.Error("output that was never drawn is not reported as waiting")
 	}
-	log.rows(60, false)
+	log.rows(60)
 	if log.hasPending() {
 		t.Error("drawn output is still reported as waiting")
 	}

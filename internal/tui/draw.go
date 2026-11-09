@@ -18,7 +18,7 @@ func (m *model) refresh() {
 	}
 	m.fitInput()
 	m.layout()
-	m.view.setRows(m.log.rows(m.width, m.expanded))
+	m.view.setRows(m.log.rows(m.width))
 	if atBottom {
 		m.view.gotoBottom()
 	}

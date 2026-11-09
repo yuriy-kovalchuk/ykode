@@ -40,10 +40,9 @@ type entry struct {
 // a streamed token redraws the screen while only the block still open has new text in it, and a
 // session of eight thousand rows must not be drawn again to add one.
 type transcript struct {
-	entries  []entry
-	stale    int  // the first entry that may need drawing again; len(entries) when none do
-	width    int  // the screen the rows were drawn for
-	expanded bool // whether call arguments were shown
+	entries []entry
+	stale   int // the first entry that may need drawing again; len(entries) when none do
+	width   int // the screen the rows were drawn for
 
 	rowsCache []string // the rows the screen reads, one per row on the terminal
 	rowStart  []int    // the row each entry already in rowsCache starts at

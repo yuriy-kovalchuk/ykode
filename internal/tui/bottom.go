@@ -19,7 +19,7 @@ var keys = [][2]string{
 	{"enter", "send"}, {"ctrl+j", "newline"}, {"ctrl+p ctrl+n", "earlier prompts"},
 	{"tab", "complete a /command"},
 	{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
-	{"esc", "stop the run"}, {"ctrl+o", "a call's arguments"}, {"ctrl+t", "terminal selects"},
+	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"},
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 

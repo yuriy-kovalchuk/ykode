@@ -21,26 +21,25 @@ const (
 )
 
 type model struct {
-	ctx      context.Context
-	hub      *Hub // what a run reports to, including that it finished
-	agent    *agent.Agent
-	root     string // the project the footer names
-	branch   string // what HEAD points at there, read again with each prompt
-	input    textarea.Model
-	view     window
-	log      transcript
-	decode   float64 // tokens per second of the last answer
-	prefill  float64 // tokens per second the last prompt was read at
-	started  time.Time
-	took     time.Duration // how long the last prompt took
-	spin     spinner.Model
-	width    int
-	height   int
-	running  bool
-	cancel   context.CancelFunc
-	pending  []*question // questions waiting for an answer, oldest first
-	err      string
-	expanded bool // tool rows also show what they were asked to do
+	ctx     context.Context
+	hub     *Hub // what a run reports to, including that it finished
+	agent   *agent.Agent
+	root    string // the project the footer names
+	branch  string // what HEAD points at there, read again with each prompt
+	input   textarea.Model
+	view    window
+	log     transcript
+	decode  float64 // tokens per second of the last answer
+	prefill float64 // tokens per second the last prompt was read at
+	started time.Time
+	took    time.Duration // how long the last prompt took
+	spin    spinner.Model
+	width   int
+	height  int
+	running bool
+	cancel  context.CancelFunc
+	pending []*question // questions waiting for an answer, oldest first
+	err     string
 	// suggest is what the typed line could still become, and suggestFor the line that list was
 	// made from: a different line brings a cleared list back.
 	suggest    []agent.CommandSpec

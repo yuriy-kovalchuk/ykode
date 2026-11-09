@@ -52,7 +52,7 @@ func TestAReplayKeepsTheEarlierAsks(t *testing.T) {
 func TestAReplayedAskShowsNoClock(t *testing.T) {
 	var log transcript
 	log.replay([]llm.Message{{Role: "user", Content: "an ask from an earlier run"}})
-	if out := stripCodes(log.render(80, false)); strings.Contains(out, "00:00") {
+	if out := stripCodes(log.render(80)); strings.Contains(out, "00:00") {
 		t.Errorf("a replayed ask is stamped with an hour it never had:\n%s", out)
 	}
 }
@@ -62,7 +62,7 @@ func TestAReplayedFoldIsDrawnAsAFold(t *testing.T) {
 	var log transcript
 	log.replay([]llm.Message{{Role: "user", Content: agent.FoldMark + "\nthe older turns were folded into this"}})
 
-	out := stripCodes(log.render(80, false))
+	out := stripCodes(log.render(80))
 	if !strings.Contains(out, "the older turns, folded into this") || !strings.Contains(out, "folded into this") {
 		t.Errorf("the recap of a saved fold is not drawn as a recap:\n%s", out)
 	}
@@ -76,7 +76,7 @@ func TestAResultWhoseCallIsGoneIsStillShown(t *testing.T) {
 	var log transcript
 	log.replay([]llm.Message{{Role: "tool", Name: "exec_command", Content: "the output of a call nobody sees"}})
 
-	out := stripCodes(log.render(80, false))
+	out := stripCodes(log.render(80))
 	if !strings.Contains(out, "exec_command") || !strings.Contains(out, "the output of a call nobody sees") {
 		t.Errorf("a result on its own is not drawn:\n%s", out)
 	}
@@ -89,7 +89,7 @@ func TestNothingButTheConversationIsReplayed(t *testing.T) {
 		{Role: "system", Content: "the system prompt, which was never asked"},
 		{Role: "user", Content: "the ask that was"},
 	})
-	out := stripCodes(log.render(80, false))
+	out := stripCodes(log.render(80))
 	if strings.Contains(out, "never asked") {
 		t.Errorf("the system prompt was replayed:\n%s", out)
 	}

@@ -165,18 +165,6 @@ func TestGrowingTheBoxKeepsTheEndOfTheSession(t *testing.T) {
 	}
 }
 
-func TestToolRowsOpenAndClose(t *testing.T) {
-	m := newTestModel()
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
-	if !m.expanded {
-		t.Error("ctrl+o did not open the tool rows")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
-	if m.expanded {
-		t.Error("ctrl+o again did not close them")
-	}
-}
-
 func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 	m := newTestModel()
 	first, second := make(chan agent.Decision, 1), make(chan agent.Decision, 1)

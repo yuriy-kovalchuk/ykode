@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,67 +9,38 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func TestToolRowsShowMoreWhenOpened(t *testing.T) {
+// a call row says what the call touches and never holds the text it was asked to write
+func TestACallRowSaysWhatItTouches(t *testing.T) {
 	args := `{"path":"src/a.go","old_string":"one very long argument list that does not fit a line","new_string":"a shorter one"}`
 	var log transcript
 	log.toolStart("edit_file", args)
 	log.toolEnd("edit_file", args, "1 edit applied")
 
-	collapsed := log.render(80, false)
-	if strings.Contains(collapsed, "does not fit a line") {
-		t.Errorf("a closed row ran past the result:\n%s", collapsed)
+	out := log.render(80)
+	if !strings.Contains(out, "src/a.go") {
+		t.Errorf("the row does not say what the call touches:\n%s", out)
 	}
-	if !strings.Contains(collapsed, "src/a.go") {
-		t.Errorf("a closed row does not say what the call touches:\n%s", collapsed)
+	if strings.Contains(out, "does not fit a line") {
+		t.Errorf("the row ran past the result into the arguments:\n%s", out)
 	}
-
-	opened := log.render(80, true)
-	if !strings.Contains(opened, "old_string:") || !strings.Contains(opened, "does not fit a line") {
-		t.Errorf("opening the row did not show what it was asked to do:\n%s", opened)
-	}
-	for _, line := range strings.Split(opened, "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		// measured in columns: the band pads a row out to the width of the screen, and the marks in a
 		// row take more bytes than they do columns
 		if got := lipgloss.Width(stripCodes(line)); got > 80 {
-			t.Errorf("an opened row is wider than the screen: %d columns %q", got, stripCodes(line))
+			t.Errorf("a call row is wider than the screen: %d columns %q", got, stripCodes(line))
 		}
 	}
-	if log.render(40, false) == "" {
+	if narrow := log.render(40); narrow == "" {
 		t.Error("a narrow screen rendered nothing")
-	}
-	if !strings.Contains(log.render(40, false), "src/a.go") {
+	} else if !strings.Contains(narrow, "src/a.go") {
 		t.Error("even a narrow row lost the path")
 	}
-}
-
-// an opened call shows the text an argument holds, and says how much of it it left out
-func TestAnOpenedCallShowsTheTextItsArgumentHolds(t *testing.T) {
-	content := strings.Repeat("a line of the file\n", 40)
-	row := stripCodes(openArgs(`{"path":"big.go","content":`+jsonQuote(content)+`}`, 60))
-	if !strings.Contains(row, "path:") || !strings.Contains(row, "a line of the file") {
-		t.Errorf("the fields are not on rows of their own:\n%s", row)
-	}
-	if !strings.Contains(row, "rows more") {
-		t.Errorf("long text was not reported as cut:\n%s", row)
-	}
-	if strings.Contains(row, `\n`) {
-		t.Errorf("the text is still escaped JSON:\n%s", row)
-	}
-}
-
-// jsonQuote puts text in JSON quotes the way the model does
-func jsonQuote(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return `""`
-	}
-	return string(b)
 }
 
 func TestAFailedCallIsMarkedAsOne(t *testing.T) {
 	var log transcript
 	log.failed("write_file", "user refused")
-	out := log.render(80, false)
+	out := log.render(80)
 	if !strings.Contains(out, "✗") || !strings.Contains(out, "user refused") {
 		t.Errorf("a refused call is not obvious:\n%s", out)
 	}
@@ -82,7 +52,7 @@ func TestACallBeingWrittenShowsUntilTheReplyEnds(t *testing.T) {
 	for _, piece := range []string{`{"path":"index.html",`, `"content":"<html>\n<body>\n`, `<p>hi</p>`} {
 		log.draft(0, "write_file", piece)
 	}
-	view := stripCodes(log.render(80, false))
+	view := stripCodes(log.render(80))
 	for _, want := range []string{"write_file", "index.html", "3 lines", "<p>hi</p>"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the call being written does not show %q:\n%s", want, view)
@@ -92,7 +62,7 @@ func TestACallBeingWrittenShowsUntilTheReplyEnds(t *testing.T) {
 		t.Errorf("one call became several rows:\n%s", view)
 	}
 	log.dropDrafts()
-	if strings.Contains(log.render(80, false), "index.html") {
+	if strings.Contains(log.render(80), "index.html") {
 		t.Error("the call being written is still shown after the reply ended")
 	}
 }
@@ -112,9 +82,9 @@ func TestTwoCallsBeingWrittenAreTwoRows(t *testing.T) {
 func TestWideningTheScreenDrawsEveryRowAgain(t *testing.T) {
 	var log transcript
 	log.user("a prompt short enough to fit on one row", time.Now())
-	narrow := strings.Split(log.render(60, false), "\n")[0]
+	narrow := strings.Split(log.render(60), "\n")[0]
 	log.notice("the run shortened an older result") // the next draw only has to reach the newest row
-	if wide := strings.Split(log.render(120, false), "\n")[0]; len(wide) <= len(narrow) {
+	if wide := strings.Split(log.render(120), "\n")[0]; len(wide) <= len(narrow) {
 		t.Errorf("the prompt row kept its %d columns when the screen grew to %d", len(narrow), len(wide))
 	}
 }
@@ -125,7 +95,7 @@ func TestDroppingTheCallsBeingWrittenDrawsTheRowsBelowAgain(t *testing.T) {
 	log.draft(0, "write_file", `{"path":"main.go","content":"package main"`)
 	log.toolStart("read_file", `{"path":"go.mod"}`)
 	log.dropDrafts()
-	if out := log.render(80, false); strings.Contains(out, "✎") {
+	if out := log.render(80); strings.Contains(out, "✎") {
 		t.Errorf("a dropped call is still on the screen:\n%s", out)
 	}
 }
@@ -145,14 +115,14 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		log.answer("more words ")
-		_ = log.render(120, false)
+		_ = log.render(120)
 	}
 }
 
 // what was asked sits in a band across the whole screen, so it reads apart from an answer even
 // when the ask runs over several rows
 func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
-	block := strings.TrimRight(strings.Join(draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60, false), "\n"), "\n")
+	block := strings.TrimRight(strings.Join(draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60), "\n"), "\n")
 	lines := strings.Split(block, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("the band does not reach over more than one row: %q", block)
@@ -177,7 +147,7 @@ func TestACommandAnswerStaysInsideTheScreen(t *testing.T) {
 	log.output(long)
 	log.notice("the model kept asking for the same call: " + strings.Repeat("stopping the tools and asking for an answer in text ", 3))
 
-	view := log.render(80, false)
+	view := log.render(80)
 	for _, row := range strings.Split(view, "\n") {
 		if row != "" && lipgloss.Width(row) > 80 {
 			t.Errorf("a row of %d columns on an 80 column screen: %q", lipgloss.Width(row), row)
@@ -191,7 +161,7 @@ func TestACommandListKeepsItsColumns(t *testing.T) {
 	var log transcript
 	log.output(long)
 
-	view := stripCodes(log.render(80, false))
+	view := stripCodes(log.render(80))
 	if !strings.Contains(view, "  /help   show this") {
 		t.Errorf("the short row was re-flowed:\n%s", view)
 	}
@@ -209,7 +179,7 @@ func TestAWideToolRowStopsAtTheScreenEdge(t *testing.T) {
 	log.toolStart("write_file", args)
 	log.toolEnd("write_file", args, "書き込み 12 行 · ok")
 
-	for _, line := range strings.Split(log.render(44, false), "\n") {
+	for _, line := range strings.Split(log.render(44), "\n") {
 		if got := lipgloss.Width(stripCodes(line)); got > 44 {
 			t.Errorf("a row takes %d columns: %q", got, stripCodes(line))
 		}
@@ -221,7 +191,7 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 	var log transcript
 	log.toolStart("edit_file", `{"path":"src/parser.go"}`)
 	log.toolEnd("edit_file", `{"path":"src/parser.go"}`, editResult)
-	rows := strings.Split(strings.TrimSuffix(log.render(80, false), "\n"), "\n")
+	rows := strings.Split(strings.TrimSuffix(log.render(80), "\n"), "\n")
 
 	var summary, change string
 	for _, row := range rows {
@@ -244,10 +214,10 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 // way pi paints a tool execution.
 func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 	withColour(t)
-	running := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60, false))
-	done := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60, false))
-	failed := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60, false))
-	writing := firstRow(draw(newDraft(1, "write_file", `{"path":"a.go","content":"package main`), 60, false))
+	running := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60))
+	done := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60))
+	failed := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60))
+	writing := firstRow(draw(newDraft(1, "write_file", `{"path":"a.go","content":"package main`), 60))
 
 	checks := []struct {
 		what  string
@@ -282,9 +252,9 @@ func firstRow(block []string) string { return block[0] }
 func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	withColour(t)
 	rows := []string{
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60, false)),
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60, false)),
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60, false)),
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60)),
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60)),
+		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60)),
 	}
 	for _, row := range rows {
 		for _, solid := range []string{"[40m", "[41m", "[42m", "[43m", "[44m", "[45m", "[46m", "[47m", "[100m"} {

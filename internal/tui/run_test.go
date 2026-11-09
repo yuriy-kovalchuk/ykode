@@ -39,7 +39,7 @@ func TestAnAskTheRunTookIsDrawnWhereTheModelReadsIt(t *testing.T) {
 	m.agent.Steer("and the tests too")
 
 	m.handle(agent.Event{Kind: agent.Steered, Text: "and the tests too", Turn: 2})
-	block := m.log.render(80, false)
+	block := m.log.render(80)
 	if !strings.Contains(block, "and the tests too") {
 		t.Errorf("the ask is not in the session:\n%s", block)
 	}
@@ -58,7 +58,7 @@ func TestAnAskLeftOverWhenTheRunEndedStartsItsOwnTurn(t *testing.T) {
 	if !w.m.running {
 		t.Error("the ask did not start a run")
 	}
-	if !strings.Contains(w.m.log.render(80, false), "then run the tests") {
+	if !strings.Contains(w.m.log.render(80), "then run the tests") {
 		t.Error("the ask is not on the screen as a prompt of its own")
 	}
 	if got := w.m.agent.Waiting(); len(got) != 0 {
@@ -73,8 +73,8 @@ func TestASlashCommandAnswersWithoutTheModel(t *testing.T) {
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
 		t.Fatal("/usage should not quit")
 	}
-	if !strings.Contains(m.log.render(80, false), "nothing asked yet") {
-		t.Errorf("/usage answered nothing:\n%s", m.log.render(80, false))
+	if !strings.Contains(m.log.render(80), "nothing asked yet") {
+		t.Errorf("/usage answered nothing:\n%s", m.log.render(80))
 	}
 
 	m.input.SetValue("/exit")
@@ -92,7 +92,7 @@ func TestACommandThatChangesTheConversationWaitsForTheTurn(t *testing.T) {
 	m.running = true
 	m.input.SetValue("/reset")
 	m.submit()
-	out := m.log.render(80, false)
+	out := m.log.render(80)
 	if strings.Contains(out, "history cleared") {
 		t.Error("/reset cut the conversation out from under the turn")
 	}
@@ -106,8 +106,8 @@ func TestAReadOnlyCommandAnswersDuringATurn(t *testing.T) {
 	m.running = true
 	m.input.SetValue("/usage")
 	m.submit()
-	if !strings.Contains(m.log.render(80, false), "nothing asked yet") {
-		t.Errorf("/usage was held up by the turn:\n%s", m.log.render(80, false))
+	if !strings.Contains(m.log.render(80), "nothing asked yet") {
+		t.Errorf("/usage was held up by the turn:\n%s", m.log.render(80))
 	}
 }
 
@@ -134,7 +134,7 @@ func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	if !w.m.running {
 		t.Error("the screen thinks nothing is happening while the summary is being written")
 	}
-	if !strings.Contains(w.m.log.render(80, false), "compacting") {
+	if !strings.Contains(w.m.log.render(80), "compacting") {
 		t.Error("the screen does not say what it is doing")
 	}
 
@@ -146,8 +146,8 @@ func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	if w.m.running {
 		t.Fatal("the summary never reported back")
 	}
-	if !strings.Contains(w.m.log.render(80, false), "tokens smaller") {
-		t.Errorf("no report of what compaction saved:\n%s", w.m.log.render(80, false))
+	if !strings.Contains(w.m.log.render(80), "tokens smaller") {
+		t.Errorf("no report of what compaction saved:\n%s", w.m.log.render(80))
 	}
 }
 

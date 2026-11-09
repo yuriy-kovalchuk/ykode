@@ -15,9 +15,9 @@ const editResult = "edited src/parser.go (120 -> 148 bytes, 1 replacement)\n" +
 	"+\tif line == \"\" || strings.TrimSpace(line) == \"\" {\n" +
 	" \t\treturn\n"
 
-func diffLines(t *testing.T, result string, width int, expanded bool) []string {
+func diffLines(t *testing.T, result string, width int) []string {
 	t.Helper()
-	rows := diffRows(result, width, expanded)
+	rows := diffRows(result, width)
 	if len(rows) == 0 {
 		t.Fatal("the change was not drawn at all")
 	}
@@ -27,7 +27,7 @@ func diffLines(t *testing.T, result string, width int, expanded bool) []string {
 // a change is drawn as a change: added lines kept, removed lines marked, context quiet
 func TestAChangeIsDrawnAsAChange(t *testing.T) {
 	withColour(t)
-	rows := diffLines(t, editResult, 80, false)
+	rows := diffLines(t, editResult, 80)
 	var removed, added, context, hunk string
 	for _, row := range rows {
 		switch {
@@ -55,7 +55,7 @@ func TestAChangeIsDrawnAsAChange(t *testing.T) {
 // a line that changed says which part of it changed: only the new words are reversed out
 func TestAChangedWordIsReversedOut(t *testing.T) {
 	withColour(t)
-	rows := diffLines(t, editResult, 80, false)
+	rows := diffLines(t, editResult, 80)
 	var added string
 	for _, row := range rows {
 		if strings.Contains(stripCodes(row), "TrimSpace") {
@@ -76,25 +76,20 @@ func TestAChangedWordIsReversedOut(t *testing.T) {
 	}
 }
 
-// a long change does not bury the session: the rest is left to ctrl+o, and the row says how much
+// a long change does not bury the session: the row says how much
 func TestALongChangeSaysHowMuchItLeftOut(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("wrote big.go (4000 bytes)\n@@ -1,1 +1,40 @@\n")
 	for i := 0; i < 40; i++ {
 		b.WriteString("+line " + string(rune('a'+i%26)) + " of the new file\n")
 	}
-	rows := diffLines(t, b.String(), 80, false)
+	rows := diffLines(t, b.String(), 80)
 	if len(rows) != diffShown+1 {
 		t.Fatalf("%d rows drawn, want %d and a note", len(rows), diffShown)
 	}
 	last := stripCodes(rows[len(rows)-1])
-	if !strings.Contains(last, "ctrl+o") || !strings.Contains(last, "27") {
+	if !strings.Contains(last, "more lines of the change") || !strings.Contains(last, "27") {
 		t.Errorf("the note does not say what is left out: %q", last)
-	}
-
-	opened := diffRows(b.String(), 80, true)
-	if len(opened) <= len(rows) {
-		t.Errorf("opening the call showed %d rows, more than the %d closed", len(opened), len(rows))
 	}
 }
 
@@ -102,7 +97,7 @@ func TestALongChangeSaysHowMuchItLeftOut(t *testing.T) {
 func TestADiffRowStopsAtTheScreenEdge(t *testing.T) {
 	result := "edited файл.go (10 -> 20 bytes)\n@@ -1,1 +1,1 @@\n+текст" +
 		strings.Repeat(" кодом", 30) + "\n"
-	rows := diffLines(t, result, 40, false)
+	rows := diffLines(t, result, 40)
 	for _, row := range rows {
 		if got := lipgloss.Width(stripCodes(row)); got > 40 {
 			t.Errorf("a diff row takes %d columns: %q", got, stripCodes(row))
@@ -112,7 +107,7 @@ func TestADiffRowStopsAtTheScreenEdge(t *testing.T) {
 
 // a result that is not a change is left alone
 func TestAnAnswerThatIsNotAChangeIsNotDrawnAsOne(t *testing.T) {
-	if rows := diffRows("read src/a.go (150 lines)", 80, false); rows != nil {
+	if rows := diffRows("read src/a.go (150 lines)", 80); rows != nil {
 		t.Errorf("a plain result was drawn as a diff: %v", rows)
 	}
 	if holdsDiff("read src/a.go (150 lines)") {

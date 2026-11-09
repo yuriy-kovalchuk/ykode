@@ -37,10 +37,6 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelRun()
 			return m, nil
 		}
-	case "ctrl+o":
-		m.expanded = !m.expanded
-		m.refresh()
-		return m, nil
 	case "ctrl+_", "ctrl+/":
 		// the list has to open while a prompt is half typed, which ? cannot do; ctrl+/ arrives as
 		// byte 0x1f, which bubbletea names ctrl+_

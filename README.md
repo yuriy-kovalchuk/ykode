@@ -94,7 +94,6 @@ screen opens when the configured server does not answer, with the error on it.
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
-| `ctrl+o` | shows and hides each tool call's arguments, the rest of its change, and a page of a cut command's saved output |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
@@ -132,10 +131,10 @@ italic and colour. goldmark parses the CommonMark; ykode draws it, so the palett
 the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
 arrived, and only the drawing interprets it.
 
-Each call the model makes is one row: the tool, what it touches in plain words — `internal/tui/rows.go:40-159`,
-`"styleBar" in internal *.go`, the command as typed — and what came back. `ctrl+o` opens a call and puts
-each argument on a row of its own, long text as the lines it holds rather than escaped JSON. A question
-about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
+Each call the model makes is one row: the tool, what it touches in plain words — the file, the pattern,
+the command as typed — and what came back. Nothing about a call is hidden behind a key: what would not
+fit the row is left out, and the row says what it left out. A question about a change asks the same
+way: `write_file web/index.html · 200 lines · 1.6 KB`.
 
 That row sits in a band across the screen whose ground is its state: a grey tint while the call is
 being written and running, a green one once it answered, a red one when it failed. The shades are
@@ -146,14 +145,14 @@ on it stay the terminal's own colour. The change under the row keeps its own col
 A call that changed a file puts the change on the rows under its row instead of flattening it into
 one: what came in is kept, what went is marked, the unchanged context stays quiet, and where a line
 stayed but a word inside it changed, only that word is reversed out, so a one word edit reads without
-counting characters. Fourteen rows of a change are shown while the session runs and the row says how
-much was left; `ctrl+o` shows the rest.
+counting characters. Fourteen rows of a change are shown and the row says how many the screen left
+out; the file on disk holds all of it, and the next `read_file` reads as much as you want.
 
-A command that prints past its budget keeps its head and most of its tail in the row, and the whole of
-it is written to a log as the command makes it, under `~/.ykode/logs`, with the path named in the row.
-The output is streamed, not buffered, so a build that prints forty megabytes costs the run a window of
-RAM rather than the forty megabytes. `ctrl+o` reads a page out of the middle of that log — the part the
-cut left out, which is neither the head nor the tail the row already shows.
+A command that prints past its budget keeps its head and most of its tail on the screen, and the whole
+of it is written to a log as the command makes it, under `~/.ykode/logs`, with the path named in the
+result. The output is streamed, not buffered, so a build that prints forty megabytes costs the run a
+window of RAM rather than the forty megabytes. The middle of it is the model's to read, not the
+screen's: the result tells it `read it with exec_command, e.g. sed -n '1,80p' FILE`.
 
 ## Tools
 

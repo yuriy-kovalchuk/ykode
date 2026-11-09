@@ -14,7 +14,7 @@ import (
 func TestQuestionMarkShowsTheKeys(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 24})
-	if strings.Contains(stripCodes(m.View()), "ctrl+o") {
+	if strings.Contains(stripCodes(m.View()), "ctrl+t") {
 		t.Error("the keys are listed before anyone asked")
 	}
 	if !strings.Contains(stripCodes(m.View()), "? keys") {
@@ -22,7 +22,7 @@ func TestQuestionMarkShowsTheKeys(t *testing.T) {
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	view := stripCodes(m.View())
-	if !strings.Contains(view, "ctrl+o a call's arguments") || m.input.Value() != "" {
+	if !strings.Contains(view, "ctrl+t terminal selects") || m.input.Value() != "" {
 		t.Errorf("? with an empty box did not list the keys:\n%s", view)
 	}
 	for i, line := range strings.Split(m.View(), "\n") {
@@ -31,7 +31,7 @@ func TestQuestionMarkShowsTheKeys(t *testing.T) {
 		}
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if strings.Contains(stripCodes(m.View()), "ctrl+o") {
+	if strings.Contains(stripCodes(m.View()), "ctrl+t") {
 		t.Error("a second ? did not hide the keys")
 	}
 }
@@ -180,7 +180,7 @@ func TestTheKeysListNamesTheChordsInTheUse(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.showKeys = true
 	list := stripCodes(m.keysHelp())
-	for _, chord := range []string{"ctrl+u", "ctrl+d", "pgup", "ctrl+/", "ctrl+o", "ctrl+j", "tab"} {
+	for _, chord := range []string{"ctrl+u", "ctrl+d", "pgup", "ctrl+/", "ctrl+j", "tab", "ctrl+t"} {
 		if !strings.Contains(list, chord) {
 			t.Errorf("%s is answered but not listed: %s", chord, list)
 		}
