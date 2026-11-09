@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -22,8 +23,6 @@ var keys = [][2]string{
 	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"},
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
-
-var questionBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorWarn).Padding(0, 1)
 
 // bottomArea is everything under the transcript: the rule, the keys if ? asked for them, what is
 // waiting or being chosen, the question if one waits, the prompt, and under it the two rows the
@@ -64,21 +63,76 @@ func (m *model) waitingRows() []string {
 	return rows
 }
 
-// question is the confirmation a run waits on, in a box of its own above the input.
+// askBar runs down the left of a question, so it reads as one thing apart from the prompt under it.
+const (
+	askBar     = "▎ "
+	askPreview = 6 // lines of what a call would write or run that the question shows
+)
+
+// question is the confirmation a run waits on, above the input: what is asked in a bar of its own,
+// the call in the words a person reads, a few lines of what it would write or run, and the keys.
 func (m *model) question() string {
 	q := m.pending[0]
-	lines := []string{styleWarn.Render("⚠ ") + q.text + " " + styleBold.Render("[y/N/a]")}
+	room := max(m.width-lipgloss.Width(askBar)-2, 10)
+	var lines []string
+	if q.tool == "" {
+		lines = append(lines, styleWarn.Render("⚠ ")+oneLine(q.text, room))
+	} else {
+		lines = append(lines, styleWarn.Render("⚠ ")+styleBold.Render(q.tool)+styleDim.Render("  allow this call?"))
+		if what := described(q.tool, q.args, m.root); what != "" {
+			lines = append(lines, cutToWidth(what, room))
+		}
+		for _, line := range askBody(q.tool, q.args, room) {
+			lines = append(lines, styleDim.Render("┊ ")+styleDim.Render(line))
+		}
+	}
 	if len(q.target) > 0 {
-		lines = append(lines, styleWarn.Render("outside the project: "+strings.Join(q.target, ", ")))
+		lines = append(lines, styleWarn.Render(cutToWidth("outside the project: "+strings.Join(q.target, ", "), room)))
 	}
-	answers := "y yes · a always · n no"
+	answers := styleKey.Render("y") + styleDim.Render(" yes · ") + styleKey.Render("a") + styleDim.Render(" always · ") +
+		styleKey.Render("n") + styleDim.Render(" no")
 	if len(m.pending) > 1 {
-		answers += fmt.Sprintf(" · %d more waiting", len(m.pending)-1)
+		answers += styleDim.Render(fmt.Sprintf(" · %d more waiting", len(m.pending)-1))
 	}
-	lines = append(lines, styleDim.Render(answers))
-	body := strings.Join(lines, "\n")
-	width := min(lipgloss.Width(body)+2, max(m.width-2, 10)) // the box fits its question, never the screen
-	return questionBox.Width(width).Render(body)
+	lines = append(lines, answers)
+	bar := styleWarn.Render(askBar)
+	for i, line := range lines {
+		lines[i] = bar + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+// askBody is the part of a call the question shows beyond its head: the first lines of a file about to
+// be written, or the whole command about to run, which the head squashes onto one line.
+func askBody(tool, args string, width int) []string {
+	var in struct {
+		Content string `json:"content"`
+		Command string `json:"command"`
+	}
+	if json.Unmarshal([]byte(args), &in) != nil {
+		return nil
+	}
+	var text string
+	switch tool {
+	case "write_file":
+		text = in.Content
+	case "exec_command":
+		if !strings.Contains(strings.TrimSpace(in.Command), "\n") {
+			return nil // the head already says a one line command whole
+		}
+		text = in.Command
+	default:
+		return nil
+	}
+	all := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	rows := make([]string, 0, askPreview+1)
+	for _, line := range all[:min(len(all), askPreview)] {
+		rows = append(rows, cutToWidth(diffText(line), width-2))
+	}
+	if len(all) > askPreview {
+		rows = append(rows, fmt.Sprintf("… %d more lines", len(all)-askPreview))
+	}
+	return rows
 }
 
 // promptLines is the input with the prompt mark on its first line.

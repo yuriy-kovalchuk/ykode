@@ -46,22 +46,48 @@ func TestQuestionMarkInAPromptIsTyped(t *testing.T) {
 	}
 }
 
-// a question sits in its own box between the rule and the prompt, which stays visible
-func TestAQuestionHasItsOwnBoxAboveThePrompt(t *testing.T) {
+// a question sits in a bar of its own between the rule and the prompt, which stays visible
+func TestAQuestionHasItsOwnBarAboveThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/a.go?"}, reply: make(chan agent.Decision, 1)})
+	args := `{"path":"src/a.go","content":"package a\nfunc A() {}\n"}`
+	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Tool: "write_file", Args: args, Text: "write_file"}, reply: make(chan agent.Decision, 1)})
 	area := stripCodes(m.bottomArea())
-	question, prompt := strings.Index(area, "write src/a.go?"), strings.Index(area, promptMark)
+	question, prompt := strings.Index(area, "src/a.go"), strings.Index(area, promptMark)
 	if question < 0 || prompt < 0 || question > prompt {
 		t.Errorf("the question is not above the prompt:\n%s", area)
 	}
 	box := stripCodes(m.question())
-	if !strings.Contains(box, "y yes · a always · n no") || !strings.Contains(box, "╭") {
-		t.Errorf("the question is not in a box with its answers:\n%s", box)
+	for _, want := range []string{"write_file", "src/a.go · 2 lines", "func A() {}", "y yes · a always · n no"} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the question lacks %q:\n%s", want, box)
+		}
 	}
-	if boxWidth := lipgloss.Width(strings.Split(box, "\n")[0]); boxWidth >= 80 {
-		t.Errorf("the box spans the screen instead of fitting its question: %q", box)
+	for _, row := range strings.Split(box, "\n") {
+		if !strings.HasPrefix(row, askBar) {
+			t.Errorf("a row of the question is outside its bar: %q", row)
+		}
+		if lipgloss.Width(row) >= 80 {
+			t.Errorf("a row of the question spans the screen: %q", row)
+		}
+	}
+	if strings.Contains(box, `{"`) {
+		t.Errorf("the question shows the call's JSON:\n%s", box)
+	}
+}
+
+// a call whose arguments run past what the screen once kept still reads as words, not as JSON
+func TestALongWriteIsAskedAboutInWords(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	args := `{"path":"data/t.txt","content":"` + strings.Repeat("hello world\\n", 100) + `"}`
+	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Tool: "write_file", Args: args}, reply: make(chan agent.Decision, 1)})
+	box := stripCodes(m.question())
+	if !strings.Contains(box, "data/t.txt · 100 lines") || strings.Contains(box, `{"content"`) {
+		t.Errorf("a long write is not described:\n%s", box)
+	}
+	if !strings.Contains(box, "… 94 more lines") {
+		t.Errorf("the preview does not say what it left out:\n%s", box)
 	}
 }
 
