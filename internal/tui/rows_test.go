@@ -122,7 +122,7 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 // what was asked sits in a band across the whole screen, so it reads apart from an answer even
 // when the ask runs over several rows
 func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
-	block := strings.TrimRight(strings.Join(draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60), "\n"), "\n")
+	block := strings.TrimRight(strings.Join((&transcript{}).draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60), "\n"), "\n")
 	lines := strings.Split(block, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("the band does not reach over more than one row: %q", block)
@@ -214,10 +214,16 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 // way pi paints a tool execution.
 func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 	withColour(t)
-	running := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60))
-	done := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60))
-	failed := firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60))
-	writing := firstRow(draw(newDraft(1, "write_file", `{"path":"a.go","content":"package main`), 60))
+	var log transcript
+	args := `{"path":"a.go"}`
+	log.toolStart("read_file", args)
+	running := callRow(&log, 0)
+	log.toolEnd("read_file", args, "read a.go: lines 1-40 of 40")
+	done := callRow(&log, 0)
+	log.failed("read_file", "no such file")
+	failed := callRow(&log, 1)
+	log.draft(2, "write_file", `{"path":"a.go","content":"package main`)
+	writing := callRow(&log, 2)
 
 	checks := []struct {
 		what  string
@@ -247,15 +253,24 @@ func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 // firstRow is the first row of a block, which is what carries the call.
 func firstRow(block []string) string { return block[0] }
 
+// callRow is one call's row: its own first row, which is where the call sits, and not the change or
+// the failure drawn under it.
+func callRow(log *transcript, at int) string {
+	return log.rows(60)[log.rowStart[at]]
+}
+
 // the ground a call sits in is a tint, not the terminal's solid colour: a whole row of green or red
 // is noise and nothing on it can be read.
 func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	withColour(t)
-	rows := []string{
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`}, 60)),
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "read 40 lines"}, 60)),
-		firstRow(draw(&entry{who: whoTool, tool: "read_file", args: `{"path":"a.go"}`, result: "no such file", failed: true}, 60)),
-	}
+	var log transcript
+	args := `{"path":"a.go"}`
+	log.toolStart("read_file", args)
+	rows := []string{callRow(&log, 0)}
+	log.toolEnd("read_file", args, "read a.go: lines 1-40 of 40")
+	rows = append(rows, callRow(&log, 0))
+	log.failed("read_file", "no such file")
+	rows = append(rows, callRow(&log, 1))
 	for _, row := range rows {
 		for _, solid := range []string{"[40m", "[41m", "[42m", "[43m", "[44m", "[45m", "[46m", "[47m", "[100m"} {
 			if strings.Contains(row, solid) {

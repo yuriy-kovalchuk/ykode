@@ -25,10 +25,10 @@ type entry struct {
 	who    kind
 	text   string // user, thinking, answer, notice
 	tool   string
-	args   string
-	result string // what the tool answered, one line
+	args   string // a call still being written, or one waiting for its answer
+	call   call   // what a finished call leaves on the screen: see call.go
 	failed bool
-	call   int // a draft: which call of the reply it is
+	callID int // a draft: which call of the reply it is
 	at     time.Time
 	took   time.Duration
 
@@ -41,8 +41,9 @@ type entry struct {
 // session of eight thousand rows must not be drawn again to add one.
 type transcript struct {
 	entries []entry
-	stale   int // the first entry that may need drawing again; len(entries) when none do
-	width   int // the screen the rows were drawn for
+	stale   int    // the first entry that may need drawing again; len(entries) when none do
+	width   int    // the screen the rows were drawn for
+	root    string // the project the session runs in, so a path reads from there
 
 	rowsCache []string // the rows the screen reads, one per row on the terminal
 	rowStart  []int    // the row each entry already in rowsCache starts at
@@ -71,7 +72,8 @@ func (t *transcript) notice(text string) {
 	t.entries = append(t.entries, entry{who: whoNotice, text: text})
 }
 func (t *transcript) failed(name, why string) {
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, result: why, failed: true})
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: true,
+		call: call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}})
 }
 
 // thinking and answer stream in pieces: a piece joins the block that is still open.
@@ -98,7 +100,7 @@ func (t *transcript) mark(at int) {
 // draft adds a fragment of a call being written to that call's row.
 func (t *transcript) draft(call int, tool, fragment string) {
 	for i := len(t.entries) - 1; i >= 0 && t.entries[i].who == whoDraft; i-- {
-		if t.entries[i].call == call {
+		if t.entries[i].callID == call {
 			t.entries[i].args += fragment
 			t.mark(i)
 			return
@@ -109,7 +111,7 @@ func (t *transcript) draft(call int, tool, fragment string) {
 
 // newDraft is a call the model has begun writing: the numbers it reports start unset, not at zero.
 func newDraft(call int, tool, args string) *entry {
-	return &entry{who: whoDraft, tool: tool, args: args, call: call, state: newDraftState()}
+	return &entry{who: whoDraft, tool: tool, args: args, callID: call, state: newDraftState()}
 }
 
 // dropDrafts removes the calls being written once the reply is done: the tool rows take their
@@ -126,7 +128,10 @@ func (t *transcript) dropDrafts() {
 }
 
 func (t *transcript) toolStart(name, args string) {
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args})
+	// the row is worded once, when the call begins, and again when it answers: a call being drawn a
+	// hundred times a second is not parsed a hundred times a second
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args,
+		call: call{note: noteFor(name, args, "", false, t.root)}})
 }
 
 // toolEnd fills the call it belongs to. Parallel reads mean the reply may not be the last
@@ -134,11 +139,14 @@ func (t *transcript) toolStart(name, args string) {
 func (t *transcript) toolEnd(name, args, result string) {
 	for i := len(t.entries) - 1; i >= 0; i-- {
 		e := &t.entries[i]
-		if e.who == whoTool && e.result == "" && e.tool == name && e.args == args {
-			e.result = result
+		if e.who == whoTool && e.args != "" && e.args == args {
+			e.call = readCall(name, args, result, false, t.root)
+			e.failed = exitSaid(result) != "" // a command that left non-zero failed, call or no call
+			e.args = ""                       // what the call read is not what the screen keeps
 			t.mark(i)
 			return
 		}
 	}
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, result: result})
+	c := readCall(name, args, result, false, t.root)
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: exitSaid(result) != "", call: c})
 }

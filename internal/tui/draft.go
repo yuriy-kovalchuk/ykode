@@ -47,7 +47,7 @@ type draft struct {
 // call: its path, how much of it is there, and the newest lines.
 func drafted(e *entry) draft {
 	readDraft(&e.state, e.tool, e.args)
-	return draft{call: e.call, tool: e.tool, args: e.args, state: e.state}
+	return draft{call: e.callID, tool: e.tool, args: e.args, state: e.state}
 }
 
 // readDraft keeps the reading of a call's arguments up to date without reading them again.

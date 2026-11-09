@@ -24,15 +24,14 @@ func summaryLine(result string) string {
 	return head
 }
 
-// diffRows draws the change a call made: what was added kept, what was removed marked, the
+// changeRows draws the change a call made: what was added kept, what was removed marked, the
 // unchanged context quiet, and where only part of a line changed, only that part is reversed out.
-func diffRows(result string, width int) []string {
-	if !holdsDiff(result) {
+// left counts the lines of the change that were never handed over, and joins the note about the cut.
+func changeRows(change string, left int, width int) []string {
+	if change == "" {
 		return nil
 	}
-	_, body, _ := strings.Cut(result, "\n")
-	limit := diffShown
-	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(change, "\n"), "\n")
 	rows := make([]string, 0, len(lines))
 	for at := 0; at < len(lines); {
 		line := lines[at]
@@ -59,10 +58,9 @@ func diffRows(result string, width int) []string {
 			rows = append(rows, diffRow(styleDim, "", " "+line, width))
 		}
 	}
-	if len(rows) > limit {
-		left := len(rows) - limit
-		note := cutToWidth(fmt.Sprintf("… %d more lines of the change", left), width-len(diffLead))
-		rows = append(rows[:limit], styleDim.Render(diffLead+note))
+	if over := len(rows) - diffShown; over > 0 || left > 0 {
+		note := cutToWidth(fmt.Sprintf("… %d more lines of the change", over+left), width-len(diffLead))
+		rows = append(rows[:min(len(rows), diffShown)], styleDim.Render(diffLead+note))
 	}
 	return rows
 }

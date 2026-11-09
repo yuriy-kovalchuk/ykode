@@ -86,6 +86,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		width:   defaultWidth,
 		height:  defaultHeight,
 	}
+	m.log.root = a.Root() // a call names its file from where the project starts
 	m.history = append(m.history, resume(&m.log, cfg.Session, a.Conversation())...)
 	m.histIdx = len(m.history)
 	if len(m.history) > 0 {

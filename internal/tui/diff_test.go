@@ -15,9 +15,11 @@ const editResult = "edited src/parser.go (120 -> 148 bytes, 1 replacement)\n" +
 	"+\tif line == \"\" || strings.TrimSpace(line) == \"\" {\n" +
 	" \t\treturn\n"
 
+// diffLines is a change as the screen sees it: the row's sentence first, then the hunks.
 func diffLines(t *testing.T, result string, width int) []string {
 	t.Helper()
-	rows := diffRows(result, width)
+	_, body, _ := strings.Cut(result, "\n")
+	rows := changeRows(body, 0, width)
 	if len(rows) == 0 {
 		t.Fatal("the change was not drawn at all")
 	}
@@ -107,7 +109,7 @@ func TestADiffRowStopsAtTheScreenEdge(t *testing.T) {
 
 // a result that is not a change is left alone
 func TestAnAnswerThatIsNotAChangeIsNotDrawnAsOne(t *testing.T) {
-	if rows := diffRows("read src/a.go (150 lines)", 80); rows != nil {
+	if rows := changeRows("", 0, 80); rows != nil {
 		t.Errorf("a plain result was drawn as a diff: %v", rows)
 	}
 	if holdsDiff("read src/a.go (150 lines)") {

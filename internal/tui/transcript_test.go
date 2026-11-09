@@ -31,15 +31,18 @@ func TestAParallelReplyLandsOnItsOwnCall(t *testing.T) {
 	// the first call answers last: the reply has to find its own row, not the newest one
 	log.toolEnd("read_file", `{"path":"a.go"}`, "a has 3 funcs")
 
-	if log.entries[0].result != "a has 3 funcs" {
-		t.Errorf("a.go's reply landed on another row: %q", log.entries[0].result)
+	if log.entries[0].args != "" {
+		t.Errorf("a.go's row is still waiting for the answer it got: %q", log.entries[0].args)
 	}
-	if log.entries[1].result != "" {
-		t.Errorf("b.go was answered with a.go's result: %q", log.entries[1].result)
+	if !strings.Contains(log.entries[0].call.note, "a has 3 funcs") {
+		t.Errorf("a.go's reply landed on another row: %q", log.entries[0].call.note)
 	}
-	out := log.render(80)
-	if !strings.Contains(out, "working…") {
-		t.Errorf("a call still running should say so:\n%s", out)
+	if log.entries[1].args == "" {
+		t.Errorf("b.go was answered with a.go's result")
+	}
+	out := stripCodes(log.render(80))
+	if !strings.Contains(out, "→ read_file b.go") {
+		t.Errorf("a call still running does not say it is working:\n%s", out)
 	}
 }
 

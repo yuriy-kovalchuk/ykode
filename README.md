@@ -131,10 +131,13 @@ italic and colour. goldmark parses the CommonMark; ykode draws it, so the palett
 the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
 arrived, and only the drawing interprets it.
 
-Each call the model makes is one row: the tool, what it touches in plain words — the file, the pattern,
-the command as typed — and what came back. Nothing about a call is hidden behind a key: what would not
-fit the row is left out, and the row says what it left out. A question about a change asks the same
-way: `write_file web/index.html · 200 lines · 1.6 KB`.
+Each call the model makes is one row — always one row — in plain words: the tool, the file or pattern
+or command it touched **from where the project starts** (`toy_llm/train.py`, not
+`/Users/you/dev/playground/toy_llm/train.py`), and what came back: `lines 1-170 of 170` for a read,
+`5180 → 5410 bytes, 2 replacements` for a change, `exit 1` for a command that left badly, `12 matches`
+for a locate. Nothing is hidden behind a key and nothing the call read is kept for a screen that is
+not going to draw it: a locate's matches and a read's file are counted on the row, not printed into
+the session. A question about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
 
 That row sits in a band across the screen whose ground is its state: a grey tint while the call is
 being written and running, a green one once it answered, a red one when it failed. The shades are
@@ -148,9 +151,12 @@ stayed but a word inside it changed, only that word is reversed out, so a one wo
 counting characters. Fourteen rows of a change are shown and the row says how many the screen left
 out; the file on disk holds all of it, and the next `read_file` reads as much as you want.
 
-A command that prints past its budget keeps its head and most of its tail on the screen, and the whole
-of it is written to a log as the command makes it, under `~/.ykode/logs`, with the path named in the
-result. The output is streamed, not buffered, so a build that prints forty megabytes costs the run a
+A command that came back non-zero, was killed at its timeout or was cancelled reads as a failure —
+its ground and the lines under it, which are the last ones, where the error is.
+
+A command that prints past its budget keeps its head and most of its tail in what the model is sent,
+and the whole of it is written to a log as the command makes it, under `~/.ykode/logs`, with the path
+named in the result. The output is streamed, not buffered, so a build that prints forty megabytes costs the run a
 window of RAM rather than the forty megabytes. The middle of it is the model's to read, not the
 screen's: the result tells it `read it with exec_command, e.g. sed -n '1,80p' FILE`.
 

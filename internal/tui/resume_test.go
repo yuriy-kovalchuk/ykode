@@ -13,12 +13,36 @@ import (
 
 // a session that was saved mid-work: an ask, a call and its answer, and what came of it
 func savedConversation() []llm.Message {
-	args, _ := json.Marshal(map[string]string{"path": "src/parser.go"})
+	return savedConversationIn("")
+}
+
+func savedConversationIn(dir string) []llm.Message {
+	args, _ := json.Marshal(map[string]string{"path": dir + "src/parser.go"})
 	return []llm.Message{
 		{Role: "user", Content: "make parse skip blank lines"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: args}}}},
 		{Role: "tool", Name: "read_file", ToolCallID: "c1", Content: "12: func parse(line string) {"},
 		{Role: "assistant", Content: "done: the blank line check is in place"},
+	}
+}
+
+// a call carried over names its file from where the project starts, not from the root of the disk
+func TestACarriedOverCallNamesItsFileFromTheProject(t *testing.T) {
+	a := agent.New(nil, nil, "test-model", agent.Options{Root: "/home/dev/playground"}, nil)
+	a.Resume(savedConversationIn("/home/dev/playground/"))
+	m := newModel(context.Background(), a, NewHub(), config.Config{Session: "s20260101-120000.000"})
+
+	var row string
+	for _, line := range strings.Split(stripCodes(m.View()), "\n") {
+		if strings.Contains(line, "read_file") {
+			row = line
+		}
+	}
+	if !strings.Contains(row, "read_file src/parser.go") {
+		t.Errorf("the row does not name the file from the project: %q", row)
+	}
+	if strings.Contains(row, "/home/dev/") {
+		t.Errorf("the row writes the whole path: %q", row)
 	}
 }
 

@@ -5,14 +5,12 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
 	noticeChars = 200
 	toolRowMark = 5  // the mark, the gaps around the arguments and the gap before the result
-	toolRowArgs = 12 // what the arguments keep, even when the result wants the row
+	toolRowArgs = 12 // what the note keeps even on a screen too narrow for it
 )
 
 // rows is the session as the screen reads it: one element per row. Only the blocks that changed are
@@ -31,7 +29,7 @@ func (t *transcript) rows(width int) []string {
 	}
 	for i := len(t.rowStart); i < len(t.entries); i++ {
 		t.rowStart = append(t.rowStart, len(t.rowsCache))
-		t.rowsCache = append(t.rowsCache, draw(&t.entries[i], width)...)
+		t.rowsCache = append(t.rowsCache, t.draw(&t.entries[i], width)...)
 	}
 	t.stale = len(t.entries)
 	return t.rowsCache
@@ -47,7 +45,7 @@ func (t *transcript) render(width int) string {
 }
 
 // draw is one entry as the screen sees it, ending with the blank row a block leaves behind.
-func draw(e *entry, width int) []string {
+func (t *transcript) draw(e *entry, width int) []string {
 	var block string
 	switch e.who {
 	case whoUser:
@@ -66,11 +64,14 @@ func draw(e *entry, width int) []string {
 		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), width-2), "· "), "\n")) + "\n"
 	case whoTool:
 		block = toolRow(*e, width) + "\n"
-		if rows := diffRows(e.result, width); rows != nil {
+		if rows := changeRows(e.call.change, e.call.left, width); rows != nil {
+			block += strings.Join(rows, "\n") + "\n"
+		}
+		if rows := tailRows(e.call.tail, width); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
 	case whoDraft:
-		block = draftRows(drafted(e), width) + "\n"
+		block = draftRows(drafted(e), t.root, width) + "\n"
 	}
 	return blockRows(block)
 }
@@ -108,38 +109,29 @@ const (
 	userMark   = "▌"
 )
 
-// toolRow is one call on one row, sitting in a band whose colour is its state: the arguments give
-// way to the result, and a result too wide for the row is cut as well, so a call never runs past the
-// edge of the screen.
+// toolRow is one call on one row, sitting in a ground whose colour is its state. The row is always
+// one row: what a call read, wrote or printed is not on it, only what it touched and what came back.
 func toolRow(e entry, width int) string {
-	mark, note, band := "→", "working…", surfaces().wait
+	mark, band := "→", surfaces().wait
 	switch {
 	case e.failed:
-		mark, note, band = "✗", e.result, surfaces().fail
-	case e.result != "":
-		// a change is a block of its own under the row, so the row keeps only what the call said
-		note = e.result
-		if holdsDiff(note) {
-			note = summaryLine(note)
-		}
+		mark, band = "✗", surfaces().fail
+	case e.args == "":
 		mark, band = "✓", surfaces().done
 	}
-	room := width - toolRowMark - lipgloss.Width(e.tool) - lipgloss.Width(note)
-	if room < toolRowArgs {
-		room = toolRowArgs
-		note = cutToWidth(note, max(width-toolRowMark-lipgloss.Width(e.tool)-room, 4))
-	}
-	// the band does the quieting, so nothing inside it is also faded: a faded mark on a coloured
+	// the note has the whole row to itself, so it is cut only when it truly will not fit
+	room := max(width-toolRowMark-lipgloss.Width(e.tool), toolRowArgs)
+	note := cutToWidth(oneLine(e.call.note, noticeChars), room)
+	// the ground does the quieting, so nothing inside it is also faded: a faded mark on a coloured
 	// ground is near invisible on some terminals
-	head := fmt.Sprintf("%s %s %s  %s", mark, styleBold.Render(e.tool),
-		oneLine(tools.Describe(e.tool, e.args), room), note)
+	head := fmt.Sprintf("%s %s %s", mark, styleBold.Render(e.tool), note)
 	return band.Width(width).Render(head)
 }
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
-func draftRows(d draft, width int) string {
+func draftRows(d draft, root string, width int) string {
 	shown, written, bytes := d.preview()
-	head := fmt.Sprintf("%s %s %s", "✎", styleBold.Render(d.tool), draftHead(d.target(), written, bytes))
+	head := fmt.Sprintf("%s %s %s", "✎", styleBold.Render(d.tool), draftHead(shorten(d.target(), root), written, bytes))
 	row := surfaces().wait.Width(width).Render(head)
 	for i, line := range shown {
 		shown[i] = cutToWidth(line, width-4)
