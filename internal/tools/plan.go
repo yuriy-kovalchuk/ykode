@@ -134,6 +134,32 @@ func (p *Plan) Restore(steps []PlanStep) {
 	}
 }
 
+// Settled says every step has an outcome, so the plan describes work that is over. A failed step is an
+// outcome too: a plan that ended badly is settled, and should stop holding rows on the screen.
+func (p *Plan) Settled() bool { return Settled(p.Steps()) }
+
+// Settled is the same question asked of steps a reader already holds.
+func Settled(steps []PlanStep) bool {
+	if len(steps) == 0 {
+		return false
+	}
+	for _, s := range steps {
+		if s.Status == PlanPending || s.Status == PlanActive {
+			return false
+		}
+	}
+	return true
+}
+
+// DropIfSettled forgets a plan whose every step has an outcome, and keeps one with work left: the
+// steps belonged to the prompt that finished them, while a plan still being worked on belongs to the
+// next prompt as much as to the last.
+func (p *Plan) DropIfSettled() {
+	if p.Settled() {
+		p.Clear()
+	}
+}
+
 // statusOf reads a status, and a step that named none or named one that is not on the list is a step
 // that has not been started.
 func statusOf(status string) string {

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -76,6 +77,39 @@ func TestALongPlanIsCutToAScreen(t *testing.T) {
 	planned(t, p, `{"steps":[`+strings.Join(parts, ",")+`]}`)
 	if got := len(p.Steps()); got != maxPlanSteps {
 		t.Errorf("%d steps kept, want the list cut to %d", got, maxPlanSteps)
+	}
+}
+
+// a step that failed has an outcome, so a plan that ended badly is settled; one with work left is not,
+// and a plan no one wrote is not settled either
+func TestAPlanIsSettledWhenEveryStepHasAnOutcome(t *testing.T) {
+	for _, c := range []struct {
+		what     string
+		statuses []string
+		settled  bool
+		left     int // steps the plan still holds once a settled one is dropped
+	}{
+		{"every step done", []string{PlanDone, PlanDone}, true, 0},
+		{"one step failed", []string{PlanDone, PlanFailed}, true, 0},
+		{"one step still going", []string{PlanDone, PlanActive}, false, 2},
+		{"one step not started", []string{PlanDone, PlanPending}, false, 2},
+		{"no plan at all", nil, false, 0},
+	} {
+		p := NewPlan()
+		if c.statuses != nil {
+			var parts []string
+			for i, s := range c.statuses {
+				parts = append(parts, fmt.Sprintf(`{"text":"step %d","status":%q}`, i+1, s))
+			}
+			planned(t, p, `{"steps":[`+strings.Join(parts, ",")+`]}`)
+		}
+		if got := p.Settled(); got != c.settled {
+			t.Errorf("%s: Settled() = %v, want %v", c.what, got, c.settled)
+		}
+		p.DropIfSettled()
+		if kept := len(p.Steps()); kept != c.left {
+			t.Errorf("%s: %d steps left after DropIfSettled, want %d", c.what, kept, c.left)
+		}
 	}
 }
 

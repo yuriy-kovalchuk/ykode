@@ -148,8 +148,11 @@ pending, active (the one it is on), done or failed, so the list is never half an
 between the transcript and the prompt, where it cannot scroll away: a heading with one cell per step
 (`plan ▰▰▰▱▱ 3/5`, green for done, the accent for the active one, red for failed, hollow for pending), then a row
 per step, the active one turning with the spinner while the turn runs. A plan too long for the room shows the
-steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan with every step
-done fold it to its heading. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
+steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan whose every step
+has an outcome fold it to its heading — `plan ✓ 3/3 done`, or `plan ✗ 2/3` when a step failed, since a plan that
+ended badly is over but did not finish. A plan that is over is dropped when the next prompt starts, so it does
+not sit there for the rest of the session; one with steps still pending or active carries over, which is what a
+stopped turn and a "carry on" leave behind. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
 in the newest plan call, and a fold carries it in its recap so the model never loses the list it is working
 through. Twelve steps at most, a line each; the tool costs about 500 bytes of every request.
 

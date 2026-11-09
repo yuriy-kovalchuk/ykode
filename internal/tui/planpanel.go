@@ -20,20 +20,20 @@ const (
 )
 
 // planRows is the panel as rows of the bottom area. It is empty when the model wrote no plan, and one
-// row when the panel is folded, when the terminal is too short for steps, or when every step is done and
-// nothing is running: a finished plan is a record, not a thing to keep reading.
+// row when the panel is folded, when the terminal is too short for steps, or when every step has an
+// outcome: a finished plan is a record, not a thing to keep reading.
 func (m *model) planRows() []string {
 	steps := m.agent.Plan()
 	if len(steps) == 0 {
 		return nil
 	}
 	done, at := planProgress(steps)
+	finished := tools.Settled(steps)
 	head := planLead + styleBold.Render("plan") + " " + planBar(steps, m.running) + " " +
 		styleDim.Render(fmt.Sprintf("%d/%d", done, len(steps)))
-	finished := done == len(steps)
 	if finished {
-		head = planLead + styleOK.Render("plan ✓") + " " + planBar(steps, false) + " " +
-			styleDim.Render(fmt.Sprintf("%d/%d done", done, len(steps)))
+		head = planLead + planVerdict(steps) + " " + planBar(steps, false) + " " +
+			styleDim.Render(planTally(done, len(steps)))
 	}
 	room := m.height - planChrome
 	if m.planFolded || (finished && !m.running) || room < planMinRows+1 {
@@ -58,6 +58,26 @@ func (m *model) planRows() []string {
 		rows = append(rows, styleDim.Render(fmt.Sprintf("%s… %d more", planLead, len(steps)-last)))
 	}
 	return rows
+}
+
+// planVerdict is a finished plan's word: every step done is a tick, and a step that failed says so in
+// the colour that says so everywhere else.
+func planVerdict(steps []tools.PlanStep) string {
+	for _, s := range steps {
+		if s.Status == tools.PlanFailed {
+			return styleBad.Render("plan ✗")
+		}
+	}
+	return styleOK.Render("plan ✓")
+}
+
+// planTally counts the steps done. "done" is only said when all of them are: a plan that ended with a
+// failed step did not finish.
+func planTally(done, total int) string {
+	if done == total {
+		return fmt.Sprintf("%d/%d done", done, total)
+	}
+	return fmt.Sprintf("%d/%d", done, total)
 }
 
 // planProgress counts the steps done and finds the one being worked on, or -1 when none is.

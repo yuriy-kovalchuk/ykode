@@ -78,3 +78,31 @@ func TestAPlanCallDoesNotResetWhatTheRunRemembersOfTheProject(t *testing.T) {
 		t.Error("changesProject does not tell the plan and the reads from the writes and the commands")
 	}
 }
+
+// a plan whose every step has an outcome belonged to the prompt that finished it, so the next prompt
+// starts without it; a plan still being worked on carries over, which is what a stopped turn and a
+// "carry on" leave behind
+func TestANextPromptKeepsAPlanThatStillHasWork(t *testing.T) {
+	for _, c := range []struct {
+		what   string
+		status string
+		left   int
+	}{
+		{"a finished plan", tools.PlanDone, 0},
+		{"a plan that ended badly", tools.PlanFailed, 0},
+		{"a plan mid-way", tools.PlanActive, 2},
+		{"a plan not started", tools.PlanPending, 2},
+	} {
+		stub := &stubServer{scripts: []string{sse("", "an answer that needs no tool", "", nil, "stop")}}
+		a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, Plan: tools.NewPlan()}, &captureSink{})
+		a.opts.Plan.Restore([]tools.PlanStep{{Text: "read", Status: tools.PlanDone}, {Text: "build", Status: c.status}}) // after newAgent, which starts a conversation and clears any plan
+		if err := a.Ask(context.Background(), "carry on"); err != nil {
+			done()
+			t.Fatal(err)
+		}
+		if got := len(a.Plan()); got != c.left {
+			t.Errorf("%s: %d steps left, want %d", c.what, got, c.left)
+		}
+		done()
+	}
+}

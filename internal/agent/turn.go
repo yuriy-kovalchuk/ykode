@@ -14,6 +14,7 @@ import (
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
+	a.opts.Plan.DropIfSettled() // the steps belonged to the prompt that finished them
 	asked := a.withEnvironment(prompt)
 	a.add(llm.Message{Role: "user", Content: asked})
 	a.task = asked      // what the history holds, which is what compaction looks for
