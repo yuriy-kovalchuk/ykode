@@ -1,6 +1,11 @@
 package tools
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -38,5 +43,20 @@ func TestSearchSummaryStopsScanningAtTheFileLimit(t *testing.T) {
 	got := runSearch(t, tool, `{"pattern":"needle","mode":"count","limit":2}`)
 	if !strings.Contains(got, "after 2 files;") {
 		t.Errorf("the walker must stop at the limit, not scan the tree:\n%s", got)
+	}
+}
+
+// a single file named by the search is refused when it is bigger than the tool reads, rather than
+// pulled into RAM whole
+func TestANamedFilePastTheScanLimitIsRefused(t *testing.T) {
+	root, dir := treeFixture(t, map[string]string{"small.go": "needle\n"})
+	big := bytes.Repeat([]byte("a line of a big log file\n"), 200_000) // ~4 MB
+	if err := os.WriteFile(filepath.Join(dir, "huge.log"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := &SearchText{scope: scope{root: root, dir: dir}} // rgPath empty forces the Go walker
+	_, err := tool.Run(context.Background(), json.RawMessage(`{"pattern":"needle","path":"huge.log"}`))
+	if err == nil || !strings.Contains(err.Error(), "exec_command") {
+		t.Errorf("a 4 MB file was searched instead of refused: %v", err)
 	}
 }

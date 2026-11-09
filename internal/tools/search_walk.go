@@ -96,6 +96,11 @@ func (t SearchText) scanOne(h handle, in searchInput, scan func(path string, dat
 	if err != nil || info.IsDir() {
 		return false, nil
 	}
+	// one named file is read whole, so it gets the limit the walker already applies to a tree
+	if info.Size() > maxScannedFileBytes {
+		return false, fmt.Errorf("search_text %q is %.1f MB, over the %d MB it reads; look inside it with exec_command, e.g. grep -n PATTERN %s",
+			in.Path, float64(info.Size())/(1<<20), maxScannedFileBytes/(1<<20), in.Path)
+	}
 	data, readErr := h.root.ReadFile(h.name)
 	if readErr != nil {
 		return false, toolError(t.Name(), in.Path, readErr)
