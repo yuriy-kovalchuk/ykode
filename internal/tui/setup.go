@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,11 +31,6 @@ type SetupResult struct {
 	CtxSize int
 }
 
-// probeFunc lists a server's models; the screen takes it as a value so a test can answer instead.
-type probeFunc func(ctx context.Context, baseURL, apiKey string) (string, []llm.ModelInfo, error)
-
-const setupProbeTimeout = 10 * time.Second
-
 // Setup asks which server to talk to, checks it answers, and lets the user pick a model.
 func Setup(ctx context.Context, start SetupStart) (SetupResult, error) {
 	m := newSetup(start, probeServer)
@@ -51,23 +45,6 @@ func Setup(ctx context.Context, start SetupStart) (SetupResult, error) {
 	return s.result, nil
 }
 
-// probeServer retries with /v1: llama-server serves the OpenAI routes there, and it is easy to leave off.
-func probeServer(ctx context.Context, baseURL, apiKey string) (string, []llm.ModelInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, setupProbeTimeout)
-	defer cancel()
-	models, err := llm.NewClient(baseURL, apiKey).Models(ctx)
-	if err == nil {
-		return baseURL, models, nil
-	}
-	if !strings.HasSuffix(baseURL, "/v1") {
-		withV1 := baseURL + "/v1"
-		if models, err2 := llm.NewClient(withV1, apiKey).Models(ctx); err2 == nil {
-			return withV1, models, nil
-		}
-	}
-	return baseURL, nil, err
-}
-
 type setupStep int
 
 const (
@@ -75,12 +52,6 @@ const (
 	stepProbing
 	stepModel
 )
-
-type probeDoneMsg struct {
-	baseURL string
-	models  []llm.ModelInfo
-	err     error
-}
 
 type setupModel struct {
 	start  SetupStart
