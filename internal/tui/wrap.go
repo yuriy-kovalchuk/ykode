@@ -14,29 +14,51 @@ func oneLine(text string, max int) string {
 	return cutToWidth(strings.Join(strings.Fields(text), " "), max)
 }
 
-// wrap breaks a line to width without cutting words, keeping long words intact.
+// wrap breaks text to width: words stay whole, and a run of characters with no spaces to break at —
+// text in Chinese, a long path — is cut at the edge rather than kept as one word running off it.
 func wrap(text string, width int) string {
-	if width < 20 {
-		width = 20
-	}
-	var lines []string
+	var rows []string
 	for _, paragraph := range strings.Split(text, "\n") {
 		line := ""
 		for _, word := range strings.Fields(paragraph) {
-			if line != "" && len(line)+1+len(word) > width {
-				lines = append(lines, line)
-				line = word
-				continue
-			}
-			if line == "" {
-				line = word
-			} else {
-				line += " " + word
+			for _, piece := range cutWide(word, width) {
+				if line != "" && lipgloss.Width(line)+1+lipgloss.Width(piece) > width {
+					rows = append(rows, line)
+					line = ""
+				}
+				if line == "" {
+					line = piece
+				} else {
+					line += " " + piece
+				}
 			}
 		}
-		lines = append(lines, line)
+		rows = append(rows, line) // an empty paragraph keeps its blank row
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(rows, "\n")
+}
+
+// cutWide breaks a run of characters wider than the screen into pieces that fit. A word that fits
+// comes back as itself, which is what wrapping does almost always.
+func cutWide(word string, width int) []string {
+	if width < 1 || lipgloss.Width(word) <= width {
+		return []string{word}
+	}
+	runes := []rune(word)
+	var pieces []string
+	for start := 0; start < len(runes); {
+		end, used := start, 0
+		for end < len(runes) && used+lipgloss.Width(string(runes[end])) <= width {
+			used += lipgloss.Width(string(runes[end]))
+			end++
+		}
+		if end == start {
+			end++ // one character wider than the screen still gets a row of its own
+		}
+		pieces = append(pieces, string(runes[start:end]))
+		start = end
+	}
+	return pieces
 }
 
 // wrapKept breaks a line only where it has to: a line that fits is left exactly as it was written,
