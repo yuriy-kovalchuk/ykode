@@ -76,15 +76,15 @@ func draw(e *entry, width int, expanded bool) string {
 	case whoSummary:
 		return styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
 	case whoOutput:
-		return indent(wrapKept(e.text, width-2), "  ") + "\n\n"
+		return strings.Join(indent(wrapKept(e.text, width-2), "  "), "\n") + "\n\n"
 	case whoDone:
 		return fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
 	case whoThink:
-		return fmt.Sprintf("%s\n\n", gutter(wrap(e.text, width-4), styleThink))
+		return fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, width-4), "\n"), styleThink))
 	case whoAnswer:
 		return markdown(e.text, width) + "\n\n"
 	case whoNotice:
-		return styleDim.Render(indent(wrap(oneLine(e.text, noticeChars), width-2), "· ")) + "\n"
+		return styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), width-2), "· "), "\n")) + "\n"
 	case whoTool:
 		row := toolRow(*e, width) + "\n"
 		if rows := diffRows(e.result, width, expanded); rows != nil {
@@ -104,7 +104,7 @@ func draw(e *entry, width int, expanded bool) string {
 // from the answer even when it runs over several lines.
 func promptBlock(e entry, width int) string {
 	when := clock(e.at) // an ask carried over from an earlier run has no hour to show
-	lines := strings.Split(wrap(strings.TrimSpace(e.text), width-promptEdge), "\n")
+	lines := wrap(strings.TrimSpace(e.text), width-promptEdge)
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
@@ -159,7 +159,7 @@ const expandedRows = 14
 func openArgs(args string, width int) string {
 	var fields map[string]any
 	if err := json.Unmarshal([]byte(args), &fields); err != nil {
-		return indent(wrap(oneLine(args, argChars), width-4), "    ")
+		return strings.Join(indent(wrap(oneLine(args, argChars), width-4), "    "), "\n")
 	}
 	var rows []string
 	for _, key := range argOrder(fields) {

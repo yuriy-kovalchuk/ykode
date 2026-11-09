@@ -226,7 +226,7 @@ func (m *setupModel) View() string {
 		if m.step == stepProbing {
 			b.WriteString(setupDim.Render("asking the server for its models…") + "\n\n")
 		} else if m.err != "" {
-			b.WriteString(setupError.Render(wrap(m.err, 60)) + "\n\n")
+			b.WriteString(setupError.Render(strings.Join(wrap(m.err, 60), "\n")) + "\n\n")
 		}
 		b.WriteString(setupDim.Render("enter connects · tab switches field · esc quits"))
 	case stepModel:

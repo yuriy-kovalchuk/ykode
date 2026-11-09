@@ -118,7 +118,7 @@ func (m *model) otherRows() int {
 func inputRows(text string, width int) int {
 	rows := 0
 	for _, line := range strings.Split(text, "\n") {
-		rows += len(strings.Split(wrap(line, width), "\n"))
+		rows += len(wrap(line, width))
 	}
 	return max(rows, 1)
 }

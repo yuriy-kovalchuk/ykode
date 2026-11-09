@@ -54,7 +54,7 @@ func BenchmarkCuttingARow(b *testing.B) {
 // text in characters with no spaces between them still stops at the edge of the screen: it is
 // broken at the column rather than kept as one word that runs off it.
 func TestTextWithoutSpacesIsBrokenAtTheEdge(t *testing.T) {
-	rows := strings.Split(wrap(strings.Repeat("你", 30), 20), "\n")
+	rows := wrap(strings.Repeat("你", 30), 20)
 	if len(rows) != 3 {
 		t.Fatalf("60 columns at 20 wide came as %d rows: %q", len(rows), rows)
 	}
@@ -68,7 +68,7 @@ func TestTextWithoutSpacesIsBrokenAtTheEdge(t *testing.T) {
 // a word wider than the screen - a long path, a URL - is broken instead of overflowing
 func TestAWordWiderThanTheScreenIsBroken(t *testing.T) {
 	text := "see internal/super/calibrated/very/long/path/to/file.go for details"
-	for _, line := range strings.Split(wrap(text, 16), "\n") {
+	for _, line := range wrap(text, 16) {
 		if got := lipgloss.Width(line); got > 16 {
 			t.Errorf("a row takes %d columns of a 16 column screen: %q", got, line)
 		}

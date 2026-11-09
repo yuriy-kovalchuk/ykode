@@ -16,7 +16,7 @@ func oneLine(text string, max int) string {
 
 // wrap breaks text to width: words stay whole, and a run of characters with no spaces to break at —
 // text in Chinese, a long path — is cut at the edge rather than kept as one word running off it.
-func wrap(text string, width int) string {
+func wrap(text string, width int) []string {
 	var rows []string
 	for _, paragraph := range strings.Split(text, "\n") {
 		line := ""
@@ -35,7 +35,7 @@ func wrap(text string, width int) string {
 		}
 		rows = append(rows, line) // an empty paragraph keeps its blank row
 	}
-	return strings.Join(rows, "\n")
+	return rows
 }
 
 // cutWide breaks a run of characters wider than the screen into pieces that fit. A word that fits
@@ -62,12 +62,9 @@ func cutWide(word string, width int) []string {
 }
 
 // wrapKept breaks a line only where it has to: a line that fits is left exactly as it was written,
-// so a table of commands keeps its columns, and only a line that had to break is re-flowed under
-// its own indent.
-func wrapKept(text string, width int) string {
-	if width < 20 {
-		width = 20
-	}
+// so a table of commands keeps its columns, and a line that had to break is re-flowed under its own
+// indent.
+func wrapKept(text string, width int) []string {
 	var rows []string
 	for _, line := range strings.Split(text, "\n") {
 		if lipgloss.Width(line) <= width {
@@ -75,33 +72,16 @@ func wrapKept(text string, width int) string {
 			continue
 		}
 		lead := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		row := ""
-		flush := func() {
-			if row != "" {
-				rows = append(rows, lead+row)
-				row = ""
-			}
-		}
-		for _, word := range strings.Fields(line) {
-			if row != "" && lipgloss.Width(lead+row)+1+lipgloss.Width(word) > width {
-				flush()
-			}
-			if row != "" {
-				row += " "
-			}
-			row += word
-		}
-		flush()
+		rows = append(rows, indent(wrap(strings.TrimLeft(line, " \t"), width-lipgloss.Width(lead)), lead)...)
 	}
-	return strings.Join(rows, "\n")
+	return rows
 }
 
-func indent(text, pad string) string {
-	lines := strings.Split(text, "\n")
-	for i := range lines {
-		lines[i] = pad + lines[i]
+func indent(rows []string, pad string) []string {
+	for i, row := range rows {
+		rows[i] = pad + row
 	}
-	return strings.Join(lines, "\n")
+	return rows
 }
 
 // clock is a message's time of day; the date is the session's, so it is left out.

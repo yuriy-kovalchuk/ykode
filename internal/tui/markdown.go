@@ -38,7 +38,7 @@ func markdown(source string, width int) string {
 func block(node ast.Node, src []byte, width int) []string {
 	switch n := node.(type) {
 	case *ast.Heading:
-		return wrapStyled(styleBold.Render(inline(n, src)), width-2)
+		return wrap(styleBold.Render(inline(n, src)), width-2)
 	case *ast.FencedCodeBlock:
 		return codeRows(n, src, width, string(n.Language(src)))
 	case *ast.CodeBlock:
@@ -61,7 +61,7 @@ func block(node ast.Node, src []byte, width int) []string {
 	case *ast.HTMLBlock:
 		return dimLines(n.Lines(), src, width)
 	default:
-		return wrapStyled(inline(node, src), width-2)
+		return wrap(inline(node, src), width-2)
 	}
 }
 
@@ -200,32 +200,7 @@ func tableRows(table *tableast.Table, src []byte, width int) []string {
 		if _, header := row.(*tableast.TableHeader); header {
 			line = styleBold.Render(line)
 		}
-		rows = append(rows, wrapStyled("  "+line, width)...)
+		rows = append(rows, indent(wrap(line, width-2), "  ")...)
 	}
 	return rows
-}
-
-// wrapStyled breaks a row that already carries styles, measuring what the terminal shows.
-func wrapStyled(line string, width int) []string {
-	if width < 20 {
-		width = 20
-	}
-	if lipgloss.Width(line) <= width {
-		return []string{line}
-	}
-	var rows []string
-	row := ""
-	for _, word := range strings.Split(line, " ") {
-		if row != "" && lipgloss.Width(row)+1+lipgloss.Width(word) > width {
-			rows = append(rows, row)
-			row = word
-			continue
-		}
-		if row == "" {
-			row = word
-		} else {
-			row += " " + word
-		}
-	}
-	return append(rows, row)
 }
