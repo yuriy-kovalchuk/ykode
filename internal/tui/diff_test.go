@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 // what edit_file answers with: one summary line, then the change itself
@@ -122,20 +121,6 @@ func TestAnAnswerThatIsNotAChangeIsNotDrawnAsOne(t *testing.T) {
 	if !holdsDiff(editResult) {
 		t.Error("an edit's change is not recognised")
 	}
-}
-
-// the terminal decides whether colours are emitted at all, so a test that checks what is coloured
-// has to ask for them.
-func withColour(t *testing.T) {
-	t.Helper()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
-}
-
-// codeOf is the escape a style opens its text with.
-func codeOf(style lipgloss.Style) string {
-	open, _, _ := strings.Cut(style.Render("x"), "x")
-	return open
 }
 
 func joinRows(rows []string) string {

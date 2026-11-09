@@ -1,36 +1,19 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
-	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"context"
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
-
-// a code ends at its final byte (@ to ~), not at the next "m": \x1b[?25l has none
-func stripCodes(s string) string {
-	for {
-		i := strings.Index(s, "\x1b[")
-		if i < 0 {
-			return s
-		}
-		j := i + 2
-		for j < len(s) && (s[j] < '@' || s[j] > '~') {
-			j++
-		}
-		if j >= len(s) {
-			return s[:i]
-		}
-		s = s[:i] + s[j+1:]
-	}
-}
 
 func TestTheStatusLineSaysWhatTheSessionCosts(t *testing.T) {
 	usage := agent.Usage{Turns: 3, PromptTok: 1000, CachedTok: 900, GenTok: 17000,
