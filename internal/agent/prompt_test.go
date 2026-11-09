@@ -170,9 +170,9 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 
 	store := tools.NewResultStore(filepath.Join(dir, "results"))
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
-	// 3266 bytes when set: raise it on purpose, not by drift
-	if got := a.SpecBytes(); got > 3600 {
-		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3600", got, got/3)
+	// 3815 bytes with the plan tool (495 of them): raise it on purpose, not by drift
+	if got := a.SpecBytes(); got > 3850 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3850", got, got/3)
 	}
 }
 

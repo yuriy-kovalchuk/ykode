@@ -30,6 +30,7 @@ type Options struct {
 	MaxResultBytes int
 	Store          ResultStore
 	Undo           *UndoStack // where write and edit leave a snapshot for /undo
+	Plan           *Plan      // the steps of a long task, which the model writes and the screen shows
 	Sandbox        bool       // confine exec_command to the project, offline
 }
 
@@ -53,7 +54,12 @@ func BuiltIn(root *os.Root, dir string, opts Options) *Registry {
 	run.MaxBytes = opts.MaxResultBytes
 	run.Sandbox = opts.Sandbox
 
-	return NewRegistry(find, search, read, write, edit, run)
+	plan := opts.Plan
+	if plan == nil {
+		plan = NewPlan()
+	}
+
+	return NewRegistry(find, search, read, write, edit, run, plan)
 }
 
 // Detail is what a tool can say about its last result beyond the text, for the audit log.

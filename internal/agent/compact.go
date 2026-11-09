@@ -97,7 +97,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}
 	a.forget(a.dropping(start, task)...)
 	a.noteFiles(dropped)
-	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary + a.fileBlocks()}}
+	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary + a.fileBlocks() + a.planBlock()}}
 	if task > 0 {
 		// the job in hand is kept word for word: a summary is for what happened, and a model
 		// working from a paraphrase of the request starts answering a question nobody asked

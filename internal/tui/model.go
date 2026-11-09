@@ -50,6 +50,7 @@ type model struct {
 	histIdx    int
 	unsent     string // what is in the box while the earlier prompts are being read
 	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
+	planFolded bool   // ctrl+o folds the plan to its heading
 	showKeys   bool   // ? lists the keys above the prompt
 	unseen     bool   // output arrived below while the reader was scrolled up
 	bottom     string // what sits under the session this message; "" until someone asks for it

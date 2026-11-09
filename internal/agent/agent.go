@@ -66,6 +66,7 @@ func (a *Agent) Reset() {
 	a.meter.clearCost()
 	a.compactedAt = -1
 	a.readFiles, a.modifiedFiles = nil, nil
+	a.opts.Plan.Clear() // the steps belong to the conversation that went
 	a.repeats.changed() // nothing the model saw before is in front of it any more
 	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
@@ -94,6 +95,7 @@ func (a *Agent) Resume(messages []llm.Message) {
 	// already points at, and the store would answer with someone else's output
 	a.callSeq = highestCallID(a.history)
 	a.restoreFiles(a.history)
+	a.restorePlan(a.history)
 	a.sanitizeHistory()
 	a.trimHistory()
 	a.publishUsage()

@@ -59,6 +59,8 @@ func noteFor(tool, args, result string, failed bool, root string) string {
 			how = printedSaid(result)
 		}
 		return oneLine(what+" · "+oneLine(how, execNoteTail), noticeChars)
+	case tool == "plan" && what != "":
+		return what // how far the plan got and what it is on now: the pinned panel has the steps
 	case tool == "search_text" || tool == "find_files":
 		// what a locate found is counted, not printed
 		return what + " · " + countSaid(result, foundWord(tool))

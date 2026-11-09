@@ -31,6 +31,7 @@ type Options struct {
 	Root             string            // the project root, recorded with every call
 	Allow            []string          // what never to ask about: a tool name, or "exec:go test"
 	Undo             Undoer            // the stack /undo reads; wired where the tools are built
+	Plan             *tools.Plan       // the steps of a long task: the model writes them, a front end shows them
 }
 
 // tell reports something the run did that is not a tool call.
@@ -70,6 +71,10 @@ func (a *Agent) Branch() string { return a.branch }
 
 // Model is the model id this agent talks to.
 func (a *Agent) Model() string { return a.model }
+
+// Plan is the steps of the task the run is working through, as the model last wrote them; nil when
+// it wrote none. The run writes them while a front end reads them, so this is a copy.
+func (a *Agent) Plan() []tools.PlanStep { return a.opts.Plan.Steps() }
 
 // SavedMessages counts the conversation this run wrote to its session file.
 func (a *Agent) SavedMessages() int { return a.opts.Session.Count() }

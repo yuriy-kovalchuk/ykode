@@ -11,8 +11,8 @@ import (
 func TestBuiltInToolSchemasAreValid(t *testing.T) {
 	root, dir := setup(t)
 	registry := BuiltIn(root, dir, Options{})
-	if len(registry.All()) != 6 {
-		t.Fatalf("built-in tool count = %d, want 6", len(registry.All()))
+	if len(registry.All()) != 7 {
+		t.Fatalf("built-in tool count = %d, want 7", len(registry.All()))
 	}
 	for _, tool := range registry.All() {
 		if tool.Name() == "" || tool.Description() == "" {

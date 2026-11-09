@@ -21,6 +21,9 @@ func TestEveryRunGetsTheSameStoreUndoAndSettings(t *testing.T) {
 	if toolOpts.Undo != undo || agentOpts.Undo != undo {
 		t.Error("the agent's /undo must read the stack the tools write")
 	}
+	if toolOpts.Plan == nil || toolOpts.Plan != agentOpts.Plan {
+		t.Error("the screen reads the plan the plan tool writes, so they must be one list")
+	}
 	if !toolOpts.Sandbox || toolOpts.ReadLines != 40 || toolOpts.SearchLimit != 7 {
 		t.Errorf("tool options = %+v", toolOpts)
 	}

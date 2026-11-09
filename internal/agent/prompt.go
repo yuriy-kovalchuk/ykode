@@ -19,6 +19,7 @@ Tools:
 - edit_file: precise edits by exact text replacement, several in one call
 - write_file: create a file or rewrite one completely
 - exec_command: run a shell command
+- plan: break a long task into steps and keep them current
 
 Guidelines:
 - Use find_files and search_text to locate code, read_file to read it, instead of shell commands.

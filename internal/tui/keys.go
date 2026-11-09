@@ -78,6 +78,9 @@ func (m *model) sessionKey(key string) (tea.Cmd, bool) {
 			return tea.EnableMouseCellMotion, true
 		}
 		return tea.DisableMouse, true
+	case "ctrl+o":
+		m.planFolded = !m.planFolded
+		m.refresh()
 	case "tab":
 		m.completeCommand()
 		m.refresh()
