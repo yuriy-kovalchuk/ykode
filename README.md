@@ -58,9 +58,9 @@ Four commands change the run rather than the conversation:
 |---|---|
 | `/ctx` | how full the window is, what the server had cached in the last request and in all of them, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
 | `/tools` | the tools the model may call, and the bytes each description adds to every request |
-| `/model [id]` | which model this run asks for, or ask a different one from now on |
+| `/model [id \| number]` | lists every model the server offers, with its window and the one in use marked; an id or the number from that list switches to it (the window follows the model unless `--ctx` fixed one) |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
-| `/settings [key] [value]` | every knob the settings file can set, with its default and who set it; a key and a value write it into `~/.ykode/settings.yaml` |
+| `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, verify, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
 
 A turn owns the conversation and its own settings, so `/reset`, `/compact`, `/undo`,
 `/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage`, `/history` and
@@ -77,6 +77,10 @@ a run that is not on a terminal, and `-p`/`--json`, which write to stdout.
 ```
 ykode                            # or ykode --continue last
 ```
+
+A model pinned in `settings.yaml` that the server does not list (left over from another endpoint) is
+replaced by the server's own, and the screen says so at the top; a model named with `--model` or
+`$LOCAL_LLM_MODEL` is kept, with a warning.
 
 The first time, with no `base_url` in `~/.ykode/settings.yaml` (and none from `--base-url` or
 `$LOCAL_LLM_URL`), the session opens on a setup screen: the server's URL, an optional API key, then
@@ -95,7 +99,7 @@ screen opens when the configured server does not answer, with the error on it.
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
-| `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
+| `y`, `a`, `n` | answers a question about a change, shown in a bar above the prompt with the call in words and the first lines of what it would write: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
 | `tab`, `esc` | `tab` completes a `/command` to what the candidates share; `esc` clears the list, and stops a running turn when there is no list |
 
@@ -121,7 +125,10 @@ all three summed over the whole session; then `cache %` for what the last reques
 full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
 keeps the window. What is happening now sits on the right of that row: the running prompt's clock
 (`✓ done in 51s` once it finishes), then the server's speed, `↑` reading the prompt and `↓` writing, both in
-tokens per second, updated while the reply streams. The cache percentage is llama.cpp's: how much of the request it already
+tokens per second. A server that reports its speeds with every chunk (llama.cpp's own `llama-server`) updates both live. One that
+reports them only at the end of the reply, as Strata does, still gets a live `↓`: ykode counts the streamed text
+(bytes over the bytes-per-token ratio it has learned), reads a one-second sliding window, and shows the result with a `~`; the server's exact
+figures, `↑` included, replace it when the reply ends. The cache percentage is llama.cpp's: how much of the request it already
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
 The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 
@@ -139,24 +146,20 @@ for a locate. Nothing is hidden behind a key and nothing the call read is kept f
 not going to draw it: a locate's matches and a read's file are counted on the row, not printed into
 the session. A question about a change asks the same way: `write_file web/index.html · 200 lines · 1.6 KB`.
 
-That row sits in a band across the screen whose ground is its state: a grey tint while the call is
-being written and running, a green one once it answered, a red one when it failed. The shades are
-picked for the terminal the screen runs in — low tints on a dark one, pale ones on a light one, as
-pi's are — so the ground says where a turn got to without turning the row into noise, and the words
-on it stay the terminal's own colour. The change under the row keeps its own colours.
+The row has no ground behind it: the glyph at its left carries the state — dim `▸` while the call
+runs, green `✓` once it answered, red `✗` when it failed, `✎` while the model is still writing it —
+and the tool's name is bold. The row is as wide as its words, not the screen.
 
 A call that changed a file puts the change on the rows under its row instead of flattening it into
-one. Each changed row sits on a **low ground of its own** — a green tint for what came in, a red tint
-for what went, picked for the terminal the screen runs in and running to its edge — while the words on
-the row stay the terminal's own colour: a whole line painted in the terminal's red or green is noise,
-and nothing on it reads. The one glyph at the row's left (`+`, `-`) carries the colour instead. The
-unchanged context is quiet, and where a line stayed but a word inside it changed, only that word takes
-a stronger tint, so a one word edit reads without counting characters. Fourteen rows of a change are
-shown and the row says how many the screen left out; the file on disk holds all of it, and the next
-`read_file` reads as much as you want.
+one. Each changed row sits on a **low ground of one shade** — green for what came in, red for what
+went, picked for the terminal the screen runs in and running to its edge — led by a glyph (`+`, `-`)
+in the same colour, while the words stay the terminal's own colour. There is no second, stronger
+shade inside a line. The unchanged context is quiet. Fourteen rows of a change are shown and the row
+says how many the screen left out; the file on disk holds all of it, and the next `read_file` reads
+as much as you want.
 
 A command that came back non-zero, was killed at its timeout or was cancelled reads as a failure —
-its ground and the lines under it, which are the last ones, where the error is.
+its red `✗` and the last lines it printed under the row, behind a quiet gutter, where the error is.
 
 A command that prints past its budget keeps its head and most of its tail in what the model is sent,
 and the whole of it is written to a log as the command makes it, under `~/.ykode/logs`, with the path
@@ -228,8 +231,14 @@ already used. In order, cheapest first:
    history keeps one line saying how much went where, because the file on disk has
    the rest. A call that failed keeps its arguments, so a retry still has them.
 2. If that was not enough, the older turns are folded into a summary the **model**
-   writes (goal, files touched, decisions, next step) and the turns it summarised
-   are dropped. This happens once per session, and `/compact` asks for it directly.
+   writes, in fixed sections (goal, constraints, progress done / in progress / blocked,
+   decisions, critical context such as exact names and error text, next steps). The newest
+   work stays whole: at least the two newest calls, and back to a fifth of the window
+   (at most 20k tokens) where the window is known; a cut never separates a call from its
+   results. A later fold updates the earlier summary instead of starting over, and the
+   summary ends with the files the session read (`<read-files>`) and changed
+   (`<modified-files>`), accumulated across folds and restored on resume. `/compact`
+   asks for a fold directly.
 3. Past 9/10 of the window the emergency brake applies: whole tool calls and their
    replies are removed, oldest first.
 
@@ -276,8 +285,13 @@ audit entries stay with its conversation.
 The screen opens with the conversation it came back to — the asks, the calls with what they
 answered, and the recap of any fold — and `ctrl+p` still walks the earlier prompts of it.
 
-A resume reads back what the last run *ended with*: a fold and the recap the model
-wrote for it are saved with the conversation, and `/reset` marks the saved log as
+The model's thinking is saved beside each message and shown again on resume (it is never sent
+back to the server unless `send_reasoning` asks for it).
+
+A resume reads back what the last run *ended with*: a fold is written to the log with its summary,
+the files it covered, how many messages it took out and what the conversation cost before it, and
+the older entries stay in the file, only no longer sent. The recap the model
+wrote for it is saved with the conversation, and `/reset` marks the saved log as
 started over, so nothing that was put away comes back. What a resume cannot save is
 the trimming a turn does to fit the window, so a conversation bigger than the window
 still sheds its oldest turns and keeps the newest.
@@ -290,7 +304,7 @@ is possible but asked about, per call, showing the resolved absolute path —
 `sh -c` in the root with a minimal environment (`PATH`, `HOME`, `TERM`, `LANG`)
 rather than inheriting ykode's.
 
-A confirmation is `[y/N/a]`. `a` means yes, and stop asking about **that tool**
+A confirmation answers to `y`, `a` or `n`, and `n` is the default. `a` means yes, and stop asking about **that tool**
 (`edit_file`) or **that command prefix** (`exec:go test` covers `go test ./...`
 but not `go mod tidy`) for the rest of the run. The same entries in
 `settings.yaml` are allowed from the start:
@@ -420,20 +434,10 @@ sandbox tool is missing, the command is refused rather than run unconfined. A pr
 settings file cannot turn it off. Without it, run ykode as a user with access only to what
 you are willing to let a shell touch, or in a container.
 
-## Evals
+## Benchmarks
 
-`make eval` runs scripted tasks against a real server, three times each, and saves the run to
-`~/.ykode/evals/`. Its own flags and ykode's mix freely:
-
-```sh
-make eval ARGS="--base-url https://host/v1 --only fix --repeat 5"
-make eval ARGS="--baseline last"            # mark what got worse since the previous run
-```
-
-The tasks run with built-in defaults, not your `settings.yaml` (`--use-settings` opts back in).
-Each line reports the pass rate, median turns and tokens, and counters for what the prompt work
-targets: tool calls written as text, unchanged re-reads and re-run commands, verify
-nudges, compactions, long answers.
+The task benchmark against pi lives outside this repository, in `~/Developer/testing-ykode`
+(`./bench.py --agents ykode`); its README and `BASELINE.md` say how to run and read it.
 
 ## Development
 
