@@ -16,66 +16,59 @@ const describeChars = 120
 func Describe(name, args string) string {
 	switch name {
 	case "read_file":
-		var in readInput
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		where := in.Path
-		if in.Offset > 0 {
-			where += fmt.Sprintf(":%d", in.Offset)
-			if in.Limit > 0 {
-				where += fmt.Sprintf("-%d", in.Offset+in.Limit-1)
+		return describeWith(args, func(in readInput) string {
+			where := in.Path
+			if in.Offset > 0 {
+				where += fmt.Sprintf(":%d", in.Offset)
+				if in.Limit > 0 {
+					where += fmt.Sprintf("-%d", in.Offset+in.Limit-1)
+				}
 			}
-		}
-		if in.Outline {
-			where += " (outline)"
-		}
-		return where
+			if in.Outline {
+				where += " (outline)"
+			}
+			return where
+		})
 	case "write_file":
-		var in writeInput
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		return fmt.Sprintf("%s · %d lines · %s", in.Path, lines(in.Content), size.Text(len(in.Content)))
+		return describeWith(args, func(in writeInput) string {
+			return fmt.Sprintf("%s · %d lines · %s", in.Path, lines(in.Content), size.Text(len(in.Content)))
+		})
 	case "edit_file":
-		var in editInput
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		return editShape(in)
+		return describeWith(args, editShape)
 	case "exec_command":
-		var in struct {
+		return describeWith(args, func(in struct {
 			Command string `json:"command"`
-		}
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		return oneLine(strings.Join(strings.Fields(in.Command), " "), describeChars)
+		}) string {
+			return oneLine(strings.Join(strings.Fields(in.Command), " "), describeChars)
+		})
 	case "search_text":
-		var in searchInput
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		where := quote(in.Pattern)
-		if in.Path != "" {
-			where += " in " + in.Path
-		}
-		if in.Glob != "" {
-			where += " " + in.Glob
-		}
-		return where
+		return describeWith(args, func(in searchInput) string {
+			return quote(in.Pattern) + joined(" in ", in.Path) + joined(" ", in.Glob)
+		})
 	case "find_files":
-		var in findInput
-		if err := json.Unmarshal([]byte(args), &in); err != nil {
-			return brief(args)
-		}
-		where := quote(in.Pattern)
-		if in.Path != "" {
-			where += " under " + in.Path
-		}
-		return where
+		return describeWith(args, func(in findInput) string {
+			return quote(in.Pattern) + joined(" under ", in.Path)
+		})
 	}
 	return brief(args)
+}
+
+// describeWith reads a call's arguments as T and words them; arguments that cannot be read are shown
+// as they came, cut short.
+func describeWith[T any](args string, words func(T) string) string {
+	var in T
+	if err := json.Unmarshal([]byte(args), &in); err != nil {
+		return brief(args)
+	}
+	return words(in)
+}
+
+// joined is a phrase and its object, or nothing when there is no object.
+func joined(lead, object string) string {
+	if object == "" {
+		return ""
+	}
+	return lead + object
 }
 
 // editShape is a call that changes a file: how many places, and how the lines move.
