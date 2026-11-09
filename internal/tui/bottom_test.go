@@ -212,3 +212,14 @@ func TestAWaitingAskKeepsItsRowAboveThePrompt(t *testing.T) {
 		t.Error("the waiting ask lost its words")
 	}
 }
+
+// the keys are laid out by what the terminal shows: the arrows take more bytes than they do columns
+func TestTheKeysListStaysInsideANarrowScreen(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 30, Height: 24})
+	for _, row := range strings.Split(m.keysHelp(), "\n") {
+		if got := lipgloss.Width(stripCodes(row)); got > 30 {
+			t.Errorf("a keys row takes %d columns of a 30 column screen: %q", got, stripCodes(row))
+		}
+	}
+}

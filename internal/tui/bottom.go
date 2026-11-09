@@ -139,7 +139,7 @@ func (m *model) keysHelp() string {
 			desc = "give it back"
 		}
 		plain := k[0] + " " + desc
-		if used > 0 && used+3+len(plain) > m.width {
+		if used > 0 && used+3+lipgloss.Width(plain) > m.width {
 			rows, row, used = append(rows, row), "", 0
 		}
 		if used > 0 {
@@ -147,7 +147,7 @@ func (m *model) keysHelp() string {
 			used += 3
 		}
 		row += styleKey.Render(k[0]) + " " + styleDim.Render(desc)
-		used += len(plain)
+		used += lipgloss.Width(plain) // the arrows take more bytes than they do columns
 	}
 	return strings.Join(append(rows, row), "\n")
 }
