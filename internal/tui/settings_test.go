@@ -387,3 +387,54 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 		t.Errorf("command_log_dir appears on %d rows", count)
 	}
 }
+
+// on the thinking level the screen shows what every level lets the model think for, with the selected
+// one marked, and the mark follows the cursor of a choice as it cycles
+func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
+	settingsHome(t, "")
+	withColour(t)
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	openRow(t, m, "thinking_level")
+	view := stripCodes(m.View())
+	for _, want := range []string{"off · minimal 1,024", "low 2,048", "medium 8,192", "high 16,384", "xhigh 32,768", "max no cap"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the budgets lack %q:\n%s", want, view)
+		}
+	}
+	if !strings.Contains(view, "[medium 8,192]") || !strings.Contains(view, "thinking stops at 8,192 tokens") {
+		t.Errorf("the selected level is not marked, or its meaning is not said:\n%s", view)
+	}
+	m.Update(enter) // medium -> high
+	if view := stripCodes(m.View()); !strings.Contains(view, "[high 16,384]") || strings.Contains(view, "[medium") {
+		t.Errorf("the mark did not follow the level:\n%s", view)
+	}
+	for m.cfg.ThinkingLevel != "max" {
+		m.Update(enter)
+	}
+	if view := stripCodes(m.View()); !strings.Contains(view, "[max no cap]") || !strings.Contains(view, "no cap on thinking") {
+		t.Errorf("max does not say it has no cap:\n%s", view)
+	}
+}
+
+// the box keeps its height whichever row the cursor is on, so nothing jumps as it moves
+func TestTheSettingsBoxDoesNotChangeHeightWithTheCursor(t *testing.T) {
+	settingsHome(t, "")
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	openRow(t, m, "thinking_level")
+	with := strings.Count(stripCodes(m.View()), "\n")
+	openRow(t, m, "max_turns")
+	without := strings.Count(stripCodes(m.View()), "\n")
+	if with != without {
+		t.Errorf("the screen is %d rows on the thinking level and %d elsewhere", with, without)
+	}
+}
+
+func TestGroupDigits(t *testing.T) {
+	for in, want := range map[int]string{0: "0", 999: "999", 1024: "1,024", 16384: "16,384", 1234567: "1,234,567"} {
+		if got := groupDigits(in); got != want {
+			t.Errorf("groupDigits(%d) = %q, want %q", in, got, want)
+		}
+	}
+}

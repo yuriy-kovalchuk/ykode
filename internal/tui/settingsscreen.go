@@ -12,6 +12,7 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // settingsScreen is /settings: every knob settings.yaml can set, in one list. The first row is the server
@@ -26,6 +27,10 @@ type settingsScreen struct {
 	note    string // what the last change did, or why it did not happen
 	bad     bool   // the note is a refusal
 }
+
+// detailRows is what the detail under the list always takes, so the box does not change height as the
+// cursor moves: the thinking level needs the most, with its table of budgets.
+const detailRows = 6
 
 // handled are the knobs the server row stands for: they are not listed twice.
 var handled = map[string]bool{"base_url": true, "model": true, "api_key": true}
@@ -180,7 +185,7 @@ func (s *settingsScreen) view(width, height int, cfg config.Config, model string
 		keyW = max(keyW, len(set.Key))
 	}
 	// the title, a blank, the server row, the detail (four rows), the hint, and the box's own edges
-	room := max(height-14, 4)
+	room := max(height-detailRows-10, 4)
 	first := min(max(s.at-room/2, 0), max(len(s.rows)+1-room, 0))
 
 	var b strings.Builder
@@ -226,6 +231,7 @@ func (s *settingsScreen) row(i, keyW, inner int, cfg config.Config, model string
 // detail explains the knob under the cursor, or the last thing that happened.
 func (s *settingsScreen) detail(inner int) string {
 	lines := make([]string, 0, 4)
+	budgets, level := false, ""
 	switch set, ok := s.current(); {
 	case !ok:
 		lines = append(lines, "the server, its key and the model: connect, pick, and the session switches to it")
@@ -241,18 +247,27 @@ func (s *settingsScreen) detail(inner int) string {
 			facts += " · read when ykode starts"
 		}
 		lines = append(lines, setupDim.Render(facts))
+		budgets, level = set.Key == "thinking_level", set.Value
 		if set.From == config.FromEnv || set.From == config.FromFlag {
 			lines = append(lines, styleWarn.Render("a "+set.From+" sets this for the run: the file is changed, the "+set.From+" still wins"))
 		}
 	}
-	wrapped := make([]string, 0, 4)
+	wrapped := make([]string, 0, detailRows)
 	for _, l := range lines {
-		wrapped = append(wrapped, wrap(l, inner)...)
+		wrapped = append(wrapped, wrap(l, inner-4)...)
 	}
-	for len(wrapped) < 3 {
+	if budgets {
+		// the table of budgets is one styled row and is cut to the box, never wrapped: a break inside
+		// the marked level would leave its colour running into the border
+		wrapped = append(wrapped, cutToWidth(budgetLine(level), inner-4))
+		for _, row := range wrap(budgetNote(level), inner-4) {
+			wrapped = append(wrapped, setupDim.Render(row))
+		}
+	}
+	for len(wrapped) < detailRows {
 		wrapped = append(wrapped, "")
 	}
-	out := strings.Join(wrapped[:min(len(wrapped), 4)], "\n")
+	out := strings.Join(wrapped[:min(len(wrapped), detailRows)], "\n")
 	if s.note != "" {
 		style := styleOK
 		if s.bad {
@@ -351,4 +366,51 @@ func (m *model) applyLive(before, now config.Config) {
 		m.mouseOn = now.Mouse
 		m.wantMouse = true // the next update tells the terminal
 	}
+}
+
+// budgetLine is every thinking level with the tokens it lets the model think for, the selected one marked.
+// The numbers are what ykode sends the server, so moving between levels shows what each one costs.
+func budgetLine(selected string) string {
+	parts := make([]string, 0, 7)
+	for _, level := range llm.ThinkingLevels() {
+		text := strings.TrimSpace(level + " " + budgetText(level))
+		if level == selected {
+			text = settingsKey.Render("[" + text + "]")
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// budgetText is a level's thinking budget in words; off has none to give and max has no cap.
+func budgetText(level string) string {
+	budget, _ := llm.ThinkingBudgetTokens(level)
+	switch {
+	case level == llm.ThinkingOff:
+		return "" // nothing to think for: the level's name says it
+	case budget <= 0:
+		return "no cap"
+	}
+	return groupDigits(budget)
+}
+
+// budgetNote says what the selected level's budget does to the reply.
+func budgetNote(level string) string {
+	switch budget, _ := llm.ThinkingBudgetTokens(level); {
+	case level == llm.ThinkingOff:
+		return "the model answers straight away, with no thinking phase"
+	case budget <= 0:
+		return "no cap on thinking: it shares the whole reply with the answer, so a long thought can leave none"
+	default:
+		return fmt.Sprintf("thinking stops at %s tokens and the answer takes the rest of the reply", groupDigits(budget))
+	}
+}
+
+// groupDigits writes 16384 as 16,384.
+func groupDigits(n int) string {
+	text := fmt.Sprint(n)
+	for i := len(text) - 3; i > 0; i -= 3 {
+		text = text[:i] + "," + text[i:]
+	}
+	return text
 }
