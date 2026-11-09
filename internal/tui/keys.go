@@ -25,6 +25,11 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.scrollKey(key) {
 		return m, nil
 	}
+	// The box is as tall as its text, one row at a time, but the textarea scrolls the moment the cursor
+	// wraps onto a row the box does not have yet, and it never scrolls back when the box grows: the start
+	// of what was typed would sit above the top of the box. So the key is handled in a box with the room
+	// the text could grow into, and fitInput cuts it to what the text takes afterwards.
+	m.input.SetHeight(maxInputLines)
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.trackSuggestions()
