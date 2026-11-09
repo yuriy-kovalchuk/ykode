@@ -37,42 +37,19 @@ var (
 	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
 )
 
-// toolSurfaces are the grounds a call sits in, the way pi paints a tool execution: the ground
-// carries the state, so what a call did is read before its words are. pi's grounds are low and
-// unsaturated for a reason - a whole row of the terminal's green or red is noise, and nothing sits
-// readable on it - so a call takes a dark tint on a dark terminal, a pale one on a light one, and
-// the words on it stay the terminal's own colour.
-type toolSurfaces struct {
-	wait, done, fail lipgloss.Style
-}
-
-var surfaces = sync.OnceValue(func() toolSurfaces {
-	dark := lipgloss.HasDarkBackground()
-	return toolSurfaces{
-		wait: ground(dark, "#33343a", "#ececec"),
-		done: ground(dark, "#24402f", "#e3efe4"),
-		fail: ground(dark, "#4c2b26", "#f7e3df"),
-	}
-})
-
-// diffSides are the grounds a change sits on: the side that came in, the side that went, and the
-// stronger shade for the words inside a line that changed. As with a call's ground, these are picked
-// for the terminal the screen runs in, and low enough that the words stay the readable part.
-type diffSurfaces struct {
-	add, del, addMark, delMark lipgloss.Style
-}
+// diffSurfaces are the grounds a change sits on: one low shade for the side that came in and one for
+// the side that went, picked for the terminal the screen runs in (dark tints on a dark one, pale on a
+// light one). Nothing stronger is laid over the words inside a line.
+type diffSurfaces struct{ add, del lipgloss.Style }
 
 var diffSides = sync.OnceValue(func() diffSurfaces {
 	dark := lipgloss.HasDarkBackground()
 	return diffSurfaces{
-		add:     ground(dark, "#1d2b21", "#eef6ef"),
-		del:     ground(dark, "#2b1e1f", "#f7eecd"),
-		addMark: ground(dark, "#3f5a45", "#cfe6d3"),
-		delMark: ground(dark, "#57332f", "#f0cfc4"),
+		add: ground(dark, "#1d2b21", "#eef6ef"),
+		del: ground(dark, "#2b1e1f", "#f7e8e4"),
 	}
 })
 
-// ground is one surface: the dark terminal's shade or the light terminal's.
 func ground(isDark bool, darkShade, lightShade string) lipgloss.Style {
 	if isDark {
 		return lipgloss.NewStyle().Background(lipgloss.Color(darkShade))

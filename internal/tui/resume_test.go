@@ -121,3 +121,15 @@ func TestNothingButTheConversationIsReplayed(t *testing.T) {
 		t.Errorf("the ask was not replayed:\n%s", out)
 	}
 }
+
+// what the model thought was saved with what it said, so a resumed session shows it again
+func TestAResumedConversationShowsWhatTheModelThought(t *testing.T) {
+	var log transcript
+	log.replay([]llm.Message{
+		{Role: "system", Content: "s"}, {Role: "user", Content: "fix it"},
+		{Role: "assistant", Content: "done", Reasoning: "the bug is in a.go"},
+	})
+	if out := stripCodes(log.render(80)); !strings.Contains(out, "the bug is in a.go") {
+		t.Errorf("the thinking did not come back:\n%s", out)
+	}
+}

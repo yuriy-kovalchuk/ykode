@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -26,113 +27,47 @@ func diffLines(t *testing.T, result string, width int) []string {
 	return rows
 }
 
-// a change is drawn as a change: added lines kept, removed lines marked, context quiet
-func TestAChangeIsDrawnAsAChange(t *testing.T) {
+// a change is drawn as a change: one low ground per side, a glyph in the side's colour, and no second,
+// stronger shade inside a line
+func TestAChangeHasOneGroundPerSide(t *testing.T) {
 	withColour(t)
-	rows := diffLines(t, editResult, 80)
-	var removed, added, context, hunk string
+	rows := diffLines(t, "edited a.go\n@@ -1,2 +1,2 @@\n ctx\n-timeout=500, rate=0.001\n+timeout=100, rate=0.001\n", 80)
+	var del, add string
 	for _, row := range rows {
-		switch {
-		case strings.Contains(stripCodes(row), "@@") && strings.Contains(row, codeOf(styleDim)):
-			hunk = row
-		case strings.Contains(stripCodes(row), "if line ==") && strings.Contains(row, codeOf(diffSides().del)):
-			removed = row
-		case strings.Contains(stripCodes(row), "TrimSpace") && strings.Contains(row, codeOf(diffSides().add)):
-			added = row
-		case strings.Contains(stripCodes(row), "func parse"):
-			context = row
+		switch plain := strings.TrimSpace(stripCodes(row)); {
+		case strings.HasPrefix(plain, "-"):
+			del = row
+		case strings.HasPrefix(plain, "+"):
+			add = row
 		}
 	}
-	for name, row := range map[string]string{"the removed line": removed, "the added line": added, "the context line": context, "the hunk": hunk} {
-		if row == "" {
-			t.Errorf("%s is not drawn as such:\n%s", name, joinRows(rows))
-			continue
+	sides := diffSides()
+	if !strings.Contains(del, codeOf(sides.del)) || !strings.Contains(add, codeOf(sides.add)) {
+		t.Fatalf("the sides do not sit on their grounds:\n%q\n%q", del, add)
+	}
+	if codeOf(sides.add) == codeOf(sides.del) {
+		t.Error("both sides share one ground")
+	}
+	for _, row := range []string{del, add} {
+		if n := len(regexp.MustCompile(`\x1b\[48;[0-9;]*m`).FindAllString(row, -1)); n == 0 {
+			t.Errorf("a changed row has no ground: %q", row)
 		}
-		if !strings.HasPrefix(stripCodes(row), "  ") {
-			t.Errorf("%s does not sit under the call row: %q", name, stripCodes(row))
+		grounds := map[string]bool{}
+		for _, g := range regexp.MustCompile(`\x1b\[48;[0-9;]*m`).FindAllString(row, -1) {
+			grounds[g] = true
+		}
+		if len(grounds) != 1 {
+			t.Errorf("a changed row uses %d shades, want the one of its side: %q", len(grounds), row)
+		}
+		if got := lipgloss.Width(stripCodes(row)); got != 80 {
+			t.Errorf("a changed row takes %d of 80 columns", got)
 		}
 	}
-}
-
-// an added or removed line sits on a low ground and keeps the terminal's own words: the whole line
-// painted red or green is noise, and nothing on it reads
-func TestADiffLineSitsOnAGroundAndKeepsItsWords(t *testing.T) {
-	withColour(t)
-	rows := diffLines(t, editResult, 80)
-	var removed, added string
-	for _, row := range rows {
-		switch {
-		case strings.Contains(stripCodes(row), "TrimSpace"):
-			added = row
-		case strings.Contains(stripCodes(row), "if line =="):
-			removed = row
-		}
-	}
-	for name, row := range map[string]string{"a removed line": removed, "an added line": added} {
-		if row == "" {
-			t.Fatalf("%s is missing", name)
-		}
-		if !strings.Contains(row, codeOf(diffSides().del)) && !strings.Contains(row, codeOf(diffSides().add)) {
-			t.Errorf("%s does not sit on a ground of its own: %q", name, stripCodes(row))
-		}
-		if strings.Contains(row, "\x1b[7m") {
-			t.Errorf("%s is reversed out, which reads as a block over the words: %q", name, stripCodes(row))
-		}
-		// only the mark at the front of the row carries a colour of its own; the words are the
-		// terminal's, so they stay readable on any theme
-		_, words, _ := strings.Cut(row, "\x1b[0m")
-		if strings.Contains(words, "38;2;") {
-			t.Errorf("%s paints its words in a colour: %q", name, stripCodes(words))
-		}
+	if !strings.Contains(del, codeOf(styleDelMark)) || !strings.Contains(add, codeOf(styleAddMark)) {
+		t.Error("the glyphs are not coloured by side")
 	}
 }
 
-// a line that changed says which part of it changed: the new words are set apart, the ones that
-// stayed are not, and neither side is a solid block
-func TestAChangedWordIsSetApart(t *testing.T) {
-	withColour(t)
-	rows := diffLines(t, editResult, 80)
-	var added string
-	for _, row := range rows {
-		if strings.Contains(stripCodes(row), "TrimSpace") {
-			added = row
-		}
-	}
-	if added == "" {
-		t.Fatal("the added line is missing")
-	}
-	mark := codeOf(diffSides().addMark)
-	if !strings.Contains(added, mark) {
-		t.Fatalf("nothing is set apart as what changed: %q", added)
-	}
-	at := strings.Index(added, mark)
-	if before := added[:at]; strings.Contains(before, "38;2;") {
-		t.Errorf("the words that stayed are marked as changed: %q", stripCodes(before))
-	}
-	if !strings.Contains(added[:at], codeOf(diffSides().add)) {
-		t.Errorf("the line that changed does not sit on its ground: %q", stripCodes(added))
-	}
-	if strings.Contains(added, "\x1b[7m") {
-		t.Errorf("the change is marked by reversing the words out: %q", stripCodes(added))
-	}
-}
-
-// the ground of a changed line runs to the edge of the screen: a band that stops where the words do
-// reads as a mistake in the drawing
-func TestAChangedRowFillsItsGround(t *testing.T) {
-	withColour(t)
-	for _, row := range diffLines(t, editResult, 80) {
-		text := stripCodes(row)
-		if !strings.HasPrefix(text, "  -") && !strings.HasPrefix(text, "  +") {
-			continue
-		}
-		if got := lipgloss.Width(text); got != 80 {
-			t.Errorf("a changed row fills %d columns of an 80 column screen: %q", got, text)
-		}
-	}
-}
-
-// a failure's own note is not repeated under the row that already says how the command left
 func TestAFailureTailLeavesOutItsOwnNote(t *testing.T) {
 	var log transcript
 	args := `{"command":"make"}`
@@ -147,20 +82,16 @@ func TestAFailureTailLeavesOutItsOwnNote(t *testing.T) {
 	}
 }
 
-// a command that left badly is not painted as one that succeeded, and what it printed last is what
+// a command that left badly is not marked as one that succeeded, and what it printed last is what
 // explains it
 func TestACommandThatLeftBadlyReadsAsOne(t *testing.T) {
-	withColour(t)
 	var log transcript
 	args := `{"command":"python3 toy_llm/train.py"}`
 	log.toolStart("exec_command", args)
 	log.toolEnd("exec_command", args, "Traceback\nTypeError: bad\n[exit status 1]")
-	row := callRow(&log, 0)
-	if !strings.Contains(row, codeOf(surfaces().fail)) {
-		t.Errorf("a command that left 1 sits in the ground of a success: %q", stripCodes(row))
-	}
-	if strings.Contains(row, codeOf(surfaces().done)) {
-		t.Errorf("a command that left 1 sits in the ground of a success: %q", stripCodes(row))
+	row := stripCodes(callRow(&log, 0))
+	if !strings.Contains(row, "✗") || strings.Contains(row, "✓") {
+		t.Errorf("a command that left 1 is marked as a success: %q", row)
 	}
 }
 
@@ -204,12 +135,4 @@ func TestAnAnswerThatIsNotAChangeIsNotDrawnAsOne(t *testing.T) {
 	if !holdsDiff(editResult) {
 		t.Error("an edit's change is not recognised")
 	}
-}
-
-func joinRows(rows []string) string {
-	var plain []string
-	for _, row := range rows {
-		plain = append(plain, stripCodes(row))
-	}
-	return strings.Join(plain, "\n")
 }

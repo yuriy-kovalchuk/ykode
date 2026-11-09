@@ -39,7 +39,7 @@ func TestACallRowSaysWhatItTouches(t *testing.T) {
 
 func TestAFailedCallIsMarkedAsOne(t *testing.T) {
 	var log transcript
-	log.failed("write_file", "user refused")
+	log.failed("write_file", "", "user refused")
 	out := log.render(80)
 	if !strings.Contains(out, "✗") || !strings.Contains(out, "user refused") {
 		t.Errorf("a refused call is not obvious:\n%s", out)
@@ -210,9 +210,9 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 	}
 }
 
-// a call is read as an execution of its own: it sits in a band of colour that says what it did, the
-// way pi paints a tool execution.
-func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
+// a call carries no ground: its state is the colour of the mark at its left, and the row is the
+// width of its words, not of the screen
+func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
 	withColour(t)
 	var log transcript
 	args := `{"path":"a.go"}`
@@ -220,43 +220,25 @@ func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 	running := callRow(&log, 0)
 	log.toolEnd("read_file", args, "read a.go: lines 1-40 of 40")
 	done := callRow(&log, 0)
-	log.failed("read_file", "no such file")
+	log.failed("read_file", "", "no such file")
 	failed := callRow(&log, 1)
 	log.draft(2, "write_file", `{"path":"a.go","content":"package main`)
 	writing := callRow(&log, 2)
 
-	checks := []struct {
-		what  string
-		row   string
-		style lipgloss.Style
-	}{
-		{"a call waiting", running, surfaces().wait},
-		{"a call finished", done, surfaces().done},
-		{"a call that failed", failed, surfaces().fail},
-		{"a call being written", writing, surfaces().wait},
-	}
-	for _, c := range checks {
-		if !strings.Contains(c.row, codeOf(c.style)) {
-			t.Errorf("%s is not drawn in a band of its own: %q", c.what, stripCodes(c.row))
+	for what, want := range map[string]struct{ row, mark string }{
+		"a call waiting": {running, "▸"}, "a call finished": {done, "✓"},
+		"a call that failed": {failed, "✗"}, "a call being written": {writing, "✎"},
+	} {
+		if !strings.Contains(stripCodes(want.row), want.mark) {
+			t.Errorf("%s lacks its mark %q: %q", what, want.mark, stripCodes(want.row))
+		}
+		if strings.Contains(want.row, "48;") || strings.Contains(want.row, "\x1b[7m") {
+			t.Errorf("%s is painted behind its words: %q", what, want.row)
 		}
 	}
-	if codeOf(surfaces().wait) == codeOf(surfaces().done) || codeOf(surfaces().done) == codeOf(surfaces().fail) {
-		t.Error("waiting, finished and failed share a colour, so the band says nothing")
+	if done == failed || codeOf(styleOK) == codeOf(styleBad) {
+		t.Error("finished and failed read the same, so the mark says nothing")
 	}
-	for _, row := range []string{running, done, failed, writing} {
-		if got := lipgloss.Width(stripCodes(row)); got != 60 {
-			t.Errorf("the band takes %d columns of a 60 column screen: %q", got, stripCodes(row))
-		}
-	}
-}
-
-// firstRow is the first row of a block, which is what carries the call.
-func firstRow(block []string) string { return block[0] }
-
-// callRow is one call's row: its own first row, which is where the call sits, and not the change or
-// the failure drawn under it.
-func callRow(log *transcript, at int) string {
-	return log.rows(60)[log.rowStart[at]]
 }
 
 // the ground a call sits in is a tint, not the terminal's solid colour: a whole row of green or red
@@ -269,7 +251,7 @@ func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	rows := []string{callRow(&log, 0)}
 	log.toolEnd("read_file", args, "read a.go: lines 1-40 of 40")
 	rows = append(rows, callRow(&log, 0))
-	log.failed("read_file", "no such file")
+	log.failed("read_file", "", "no such file")
 	rows = append(rows, callRow(&log, 1))
 	for _, row := range rows {
 		for _, solid := range []string{"[40m", "[41m", "[42m", "[43m", "[44m", "[45m", "[46m", "[47m", "[100m"} {
@@ -278,4 +260,10 @@ func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 			}
 		}
 	}
+}
+
+// callRow is one call's row: its own first row, which is where the call sits, and not the change or
+// the failure drawn under it.
+func callRow(log *transcript, at int) string {
+	return log.rows(60)[log.rowStart[at]]
 }

@@ -40,6 +40,9 @@ func (t *transcript) replay(messages []llm.Message) []string {
 			t.user(m.Content, time.Time{})
 			asks = append(asks, m.Content)
 		case "assistant":
+			if thought := strings.TrimSpace(m.Reasoning); thought != "" {
+				t.thinking(thought) // what the model thought is saved with what it said
+			}
 			if text := strings.TrimSpace(m.Content); text != "" {
 				t.answer(text)
 			}

@@ -41,7 +41,7 @@ func TestAParallelReplyLandsOnItsOwnCall(t *testing.T) {
 		t.Errorf("b.go was answered with a.go's result")
 	}
 	out := stripCodes(log.render(80))
-	if !strings.Contains(out, "→ read_file b.go") {
+	if !strings.Contains(out, "▸ read_file b.go") {
 		t.Errorf("a call still running does not say it is working:\n%s", out)
 	}
 }
@@ -143,5 +143,19 @@ func TestTheSessionKnowsWhatItHasNotDrawnYet(t *testing.T) {
 	log.rows(60)
 	if log.hasPending() {
 		t.Error("drawn output is still reported as waiting")
+	}
+}
+
+// a call that fails closes its own row instead of leaving it asking beside a second row that says why
+func TestAFailureLandsOnTheRowOfItsCall(t *testing.T) {
+	var log transcript
+	args := `{"path":"a.txt","content":"x"}`
+	log.toolStart("write_file", args)
+	log.failed("write_file", args, "mkdir data: file exists")
+	if len(log.entries) != 1 || !log.entries[0].failed || log.entries[0].args != "" {
+		t.Fatalf("the failure did not end its call's row: %+v", log.entries)
+	}
+	if out := stripCodes(log.render(80)); strings.Contains(out, "▸") || !strings.Contains(out, "file exists") {
+		t.Errorf("a row is still asking, or the reason is missing:\n%s", out)
 	}
 }

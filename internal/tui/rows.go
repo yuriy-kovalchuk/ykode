@@ -9,7 +9,7 @@ import (
 
 const (
 	noticeChars = 200
-	toolRowMark = 5  // the mark, the gaps around the arguments and the gap before the result
+	toolRowMark = 7  // the indent, the mark and the gaps around the name and the note
 	toolRowArgs = 12 // what the note keeps even on a screen too narrow for it
 )
 
@@ -67,7 +67,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 		if rows := changeRows(e.call.change, e.call.left, width); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
-		if rows := tailRows(e.call.tail, width); rows != nil {
+		if rows := tailRows(e.call.tail, e.call.note, width); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
 	case whoDraft:
@@ -109,30 +109,32 @@ const (
 	userMark   = "▌"
 )
 
-// toolRow is one call on one row, sitting in a ground whose colour is its state. The row is always
-// one row: what a call read, wrote or printed is not on it, only what it touched and what came back.
+// toolRow is one call on one row, with no ground behind it: the mark at its left carries the state
+// (a coloured glyph is read before the words are, and a whole row of green or red is noise), the tool's
+// name is bold and what it touched follows. The row is always one row: what a call read, wrote or
+// printed is not on it, only what it touched and what came back.
 func toolRow(e entry, width int) string {
-	mark, band := "→", surfaces().wait
+	mark, ink := "▸", styleDim // asked for, and not answered yet
 	switch {
 	case e.failed:
-		mark, band = "✗", surfaces().fail
+		mark, ink = "✗", styleBad
 	case e.args == "":
-		mark, band = "✓", surfaces().done
+		mark, ink = "✓", styleOK
 	}
-	// the note has the whole row to itself, so it is cut only when it truly will not fit
-	room := max(width-toolRowMark-lipgloss.Width(e.tool), toolRowArgs)
-	note := cutToWidth(oneLine(e.call.note, noticeChars), room)
-	// the ground does the quieting, so nothing inside it is also faded: a faded mark on a coloured
-	// ground is near invisible on some terminals
-	head := fmt.Sprintf("%s %s %s", mark, styleBold.Render(e.tool), note)
-	return band.Width(width).Render(head)
+	return callHead(mark, ink, e.tool, e.call.note, width)
+}
+
+// callHead is a call's one row: its mark, its name, and a note cut so the row never wraps.
+func callHead(mark string, ink lipgloss.Style, tool, note string, width int) string {
+	room := max(width-toolRowMark-lipgloss.Width(tool), toolRowArgs)
+	note = cutToWidth(oneLine(note, noticeChars), room)
+	return "  " + ink.Render(mark) + " " + styleBold.Render(tool) + " " + styleDim.Render(note)
 }
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
 func draftRows(d draft, root string, width int) string {
 	shown, written, bytes := d.preview()
-	head := fmt.Sprintf("%s %s %s", "✎", styleBold.Render(d.tool), draftHead(shorten(d.target(), root), written, bytes))
-	row := surfaces().wait.Width(width).Render(head)
+	row := callHead("✎", styleAccent, d.tool, draftHead(shorten(d.target(), root), written, bytes), width)
 	for i, line := range shown {
 		shown[i] = cutToWidth(line, width-4)
 	}

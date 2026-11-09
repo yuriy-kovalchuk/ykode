@@ -17,6 +17,7 @@ const (
 	tailShown    = 8    // rows of a failure the screen takes
 	execNoteRun  = 100  // how much of a command fits in its row
 	execNoteTail = 40   // and how much of what it ended with
+	tailLead     = "    │ "
 )
 
 // call is what the screen remembers of one call.
@@ -188,25 +189,27 @@ func shorten(s, root string) string {
 	return shortenHome(s)
 }
 
-// tailRows is what went wrong, as the rows under the row that did it.
-func tailRows(tail string, width int) []string {
-	if tail == "" {
+// tailRows is what went wrong, as the rows under the row that did it: quiet, behind a gutter, with
+// no ground of their own. A line the row above already said is not said again.
+func tailRows(tail, note string, width int) []string {
+	if tail == "" || strings.TrimSpace(tail) == "" {
 		return nil
 	}
 	lines := strings.Split(tail, "\n")
+	if len(lines) == 1 && strings.Contains(note, strings.TrimSpace(lines[0])) {
+		return nil
+	}
 	left := 0
 	if len(lines) > tailShown {
 		left = len(lines) - tailShown
 		lines = lines[len(lines)-tailShown:]
 	}
-	ground := diffSides().del
 	rows := make([]string, 0, len(lines)+1)
-	for _, line := range lines {
-		rows = append(rows, padGround(ground.Render(diffLead+cutToWidth(line, width-len(diffLead)-1)), ground, width))
-	}
 	if left > 0 {
-		rows = append(rows[:1], styleDim.Render(diffLead+
-			cutToWidth(fmt.Sprintf("… %d more lines", left), width-len(diffLead))))
+		rows = append(rows, styleDim.Render(tailLead+cutToWidth(fmt.Sprintf("… %d earlier lines", left), width-len(tailLead))))
+	}
+	for _, line := range lines {
+		rows = append(rows, styleDim.Render(tailLead+cutToWidth(diffText(line), width-len(tailLead)-1)))
 	}
 	return rows
 }

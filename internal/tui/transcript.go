@@ -71,9 +71,24 @@ func (t *transcript) output(text string) {
 func (t *transcript) notice(text string) {
 	t.entries = append(t.entries, entry{who: whoNotice, text: text})
 }
-func (t *transcript) failed(name, why string) {
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: true,
-		call: call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}})
+
+// failed ends a call that did not run or did not finish. The call's own row is waiting for an answer,
+// so the failure lands on it: a row left asking forever beside a second one that says why is two
+// rows for one call.
+func (t *transcript) failed(name, args, why string) {
+	c := call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}
+	for i := len(t.entries) - 1; i >= 0; i-- {
+		e := &t.entries[i]
+		if e.who == whoTool && e.args != "" && e.tool == name && (args == "" || e.args == args) {
+			if shown := noteFor(name, e.args, why, true, t.root); shown != "" {
+				c.note = shown
+			}
+			e.call, e.failed, e.args = c, true, ""
+			t.mark(i)
+			return
+		}
+	}
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: true, call: c})
 }
 
 // thinking and answer stream in pieces: a piece joins the block that is still open.
