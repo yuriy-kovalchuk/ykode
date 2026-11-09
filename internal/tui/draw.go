@@ -24,11 +24,16 @@ func (m *model) refresh() {
 	}
 }
 
+// topRows is a blank row between the terminal's top edge and the session, so the first row of an
+// answer does not sit against the border. It is taken off the session's height wherever that height
+// is worked out, so the screen stays exactly as tall as the terminal.
+const topRows = 1
+
 // layout shrinks the transcript, because the question, the keys and the input can all grow. A
 // reader at the end of the session stays there: the box growing must not lift them off it.
 func (m *model) layout() {
 	atBottom := m.view.atBottom()
-	m.view.height = max(m.height-lipgloss.Height(m.screenBottom()), 3)
+	m.view.height = max(m.height-lipgloss.Height(m.screenBottom())-topRows, 3)
 	if atBottom {
 		m.view.gotoBottom()
 	}
@@ -53,7 +58,7 @@ func (m *model) View() string {
 	}
 	// stacked by hand: both blocks already stop at the screen's edge, and JoinVertical measures
 	// every row of both again to find that out
-	return m.view.view() + "\n" + m.screenBottom()
+	return strings.Repeat("\n", topRows) + m.view.view() + "\n" + m.screenBottom()
 }
 
 func rule(width int) string {

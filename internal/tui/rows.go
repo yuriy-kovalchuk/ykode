@@ -13,6 +13,14 @@ const (
 	toolRowArgs = 12 // what the note keeps even on a screen too narrow for it
 )
 
+// The session is read inside a margin: two columns at the left, one column held back from the right
+// edge so a row is never the terminal's own problem, and the ask that opened a turn keeps the whole
+// width - it is a band, and a band that stops short reads as a mistake rather than a margin.
+const (
+	messageLead  = "  "
+	messageRight = 1
+)
+
 // rows is the session as the screen reads it: one element per row. Only the blocks that changed are
 // drawn again
 // again, and the rows are only rebuilt from there; a different screen, or rows that moved, starts
@@ -46,34 +54,48 @@ func (t *transcript) render(width int) string {
 
 // draw is one entry as the screen sees it, ending with the blank row a block leaves behind.
 func (t *transcript) draw(e *entry, width int) []string {
+	if e.who == whoUser {
+		return blockRows(promptBlock(*e, width) + "\n\n") // the band: edge to edge
+	}
+	inner := max(width-lipgloss.Width(messageLead)-messageRight, 1)
 	var block string
 	switch e.who {
-	case whoUser:
-		block = promptBlock(*e, width) + "\n\n"
 	case whoSummary:
-		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
+		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, inner) + "\n\n"
 	case whoOutput:
-		block = strings.Join(indent(wrapKept(e.text, width-2), "  "), "\n") + "\n\n"
+		block = strings.Join(indent(wrapKept(e.text, max(inner-2, 1)), "  "), "\n") + "\n\n"
 	case whoDone:
 		block = fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
 	case whoThink:
-		block = fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, width-4), "\n"), styleThink))
+		// the gutter is laid on after the wrap, so the wrap keeps room for it on any screen
+		block = fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, max(inner-4, 1)), "\n"), styleThink))
 	case whoAnswer:
-		block = markdown(e.text, width) + "\n\n"
+		block = markdown(e.text, inner) + "\n\n"
 	case whoNotice:
-		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), width-2), "· "), "\n")) + "\n"
+		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), max(inner-2, 1)), "· "), "\n")) + "\n"
 	case whoTool:
-		block = toolRow(*e, width) + "\n"
-		if rows := changeRows(e.call.change, e.call.left, width); rows != nil {
+		block = toolRow(*e, inner) + "\n"
+		if rows := changeRows(e.call.change, e.call.left, inner); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
-		if rows := tailRows(e.call.tail, e.call.note, width); rows != nil {
+		if rows := tailRows(e.call.tail, e.call.note, inner); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
 	case whoDraft:
-		block = draftRows(drafted(e), t.root, width) + "\n"
+		block = draftRows(drafted(e), t.root, inner) + "\n"
 	}
-	return blockRows(block)
+	return margined(blockRows(block))
+}
+
+// margined puts a block inside the session's margin. A blank row stays blank: padding it would leave
+// spaces on a row that says nothing.
+func margined(rows []string) []string {
+	for i, row := range rows {
+		if row != "" {
+			rows[i] = messageLead + row
+		}
+	}
+	return rows
 }
 
 // blockRows turns what a block drew into the rows it takes. A block's own ending newline is not a row

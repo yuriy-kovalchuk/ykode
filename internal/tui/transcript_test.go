@@ -68,7 +68,7 @@ func TestCommandOutputKeepsItsLines(t *testing.T) {
 	var log transcript
 	log.output("commands:\n  /help   show this\n  /usage  what it cost")
 	view := stripCodes(log.render(80))
-	if !strings.Contains(view, "\n    /help   show this\n") || !strings.Contains(view, "/usage  what it cost") {
+	if !strings.Contains(view, "\n      /help   show this\n") || !strings.Contains(view, "/usage  what it cost") {
 		t.Errorf("the output lost its lines:\n%s", view)
 	}
 }
