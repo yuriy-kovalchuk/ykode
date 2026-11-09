@@ -72,8 +72,13 @@ func draw(e *entry, width int, expanded bool) []string {
 		if rows := diffRows(e.result, width, expanded); rows != nil {
 			block += strings.Join(rows, "\n") + "\n"
 		}
-		if expanded && e.args != "" {
-			block += openArgs(e.args, width) + "\n"
+		if expanded {
+			if e.args != "" {
+				block += openArgs(e.args, width) + "\n"
+			}
+			if rows := spillRows(e.result, width); rows != nil {
+				block += strings.Join(rows, "\n") + "\n"
+			}
 		}
 	case whoDraft:
 		block = draftRows(drafted(e), width) + "\n"

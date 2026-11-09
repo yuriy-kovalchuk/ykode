@@ -94,7 +94,7 @@ screen opens when the configured server does not answer, with the error on it.
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
-| `ctrl+o` | shows and hides each tool call's arguments and the rest of its change |
+| `ctrl+o` | shows and hides each tool call's arguments, the rest of its change, and a page of a cut command's saved output |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a box above the prompt: yes, always, no — `n` is the default |
 | `ctrl+/`, `?` | shows and hides this list of keys; `?` only when the box is empty |
@@ -149,6 +149,12 @@ stayed but a word inside it changed, only that word is reversed out, so a one wo
 counting characters. Fourteen rows of a change are shown while the session runs and the row says how
 much was left; `ctrl+o` shows the rest.
 
+A command that prints past its budget keeps its head and most of its tail in the row, and the whole of
+it is written to a log as the command makes it, under `~/.ykode/logs`, with the path named in the row.
+The output is streamed, not buffered, so a build that prints forty megabytes costs the run a window of
+RAM rather than the forty megabytes. `ctrl+o` reads a page out of the middle of that log — the part the
+cut left out, which is neither the head nor the tail the row already shows.
+
 ## Tools
 
 `find_files`, `search_text`, `read_file`, `write_file`, `edit_file` and
@@ -158,7 +164,10 @@ descriptions cost about 3.3 KB on every request, and a test keeps them under 3.6
 `find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`
-window reports the next `offset`, a cut `exec_command` log reports the saved file.
+window reports the next `offset`, a cut `exec_command` log reports the saved file. Nothing reads a
+file it cannot hold: `read_file` and `search_text` stop at 1 MB and name the tool that can (a
+`search_text` over a tree skips such files, one named on `path` is refused), and `exec_command`
+streams its output through a window instead of waiting for all of it.
 `edit_file` takes several `edits[]` in one call and matches them atomically, so a
 bad pair never applies half an edit. `edit_file` and `write_file` answer with a
 short diff, and every path they name is one the next call can use: project-relative
