@@ -24,39 +24,19 @@ const (
 // the whole session again.
 func (t *transcript) rows(width int, expanded bool) []string {
 	if width != t.width || expanded != t.expanded {
-		t.width, t.expanded, t.lines, t.stale = width, expanded, nil, 0
-		t.rowsCache, t.rowed, t.rowStart = nil, 0, nil
+		t.width, t.expanded, t.stale, t.rowed = width, expanded, 0, 0
+		t.rowsCache, t.rowStart = nil, nil
 	}
-	for len(t.lines) < len(t.entries) {
-		t.lines = append(t.lines, "")
-	}
-	from := t.stale
-	for i := t.stale; i < len(t.entries); i++ {
-		t.lines[i] = draw(&t.entries[i], width, expanded)
-	}
-	t.stale = len(t.entries)
-	t.reflow(from)
-	return t.rowsCache
-}
-
-// reflow puts drawn blocks into rows from the first block that changed. A block's own ending newline
-// is not a row of its own, so the rows read exactly as the blocks joined with "" did.
-func (t *transcript) reflow(from int) {
-	if from > t.rowed {
-		from = t.rowed
-	}
-	if from < t.rowed {
-		t.rowsCache, t.rowed = t.rowsCache[:t.rowStart[from]], from
+	if t.stale < t.rowed {
+		// what was redrawn takes a different number of rows, so everything below it moves
+		t.rowsCache, t.rowed = t.rowsCache[:t.rowStart[t.stale]], t.stale
 	}
 	for i := t.rowed; i < len(t.entries); i++ {
 		t.rowStart = append(t.rowStart, len(t.rowsCache))
-		block := strings.Split(t.lines[i], "\n")
-		if last := len(block) - 1; last >= 0 && block[last] == "" {
-			block = block[:last]
-		}
-		t.rowsCache = append(t.rowsCache, block...)
+		t.rowsCache = append(t.rowsCache, draw(&t.entries[i], width, expanded)...)
 	}
-	t.rowed = len(t.entries)
+	t.rowed, t.stale = len(t.entries), len(t.entries)
+	return t.rowsCache
 }
 
 // hasPending says output arrived that has not been drawn yet: a reader who scrolled up is told with
@@ -68,36 +48,46 @@ func (t *transcript) render(width int, expanded bool) string {
 	return strings.TrimRight(strings.Join(t.rows(width, expanded), "\n"), "\n")
 }
 
-// draw is one entry as the screen sees it, ending with the blank line a block leaves behind.
-func draw(e *entry, width int, expanded bool) string {
+// draw is one entry as the screen sees it, ending with the blank row a block leaves behind.
+func draw(e *entry, width int, expanded bool) []string {
+	var block string
 	switch e.who {
 	case whoUser:
-		return promptBlock(*e, width) + "\n\n"
+		block = promptBlock(*e, width) + "\n\n"
 	case whoSummary:
-		return styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
+		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, width) + "\n\n"
 	case whoOutput:
-		return strings.Join(indent(wrapKept(e.text, width-2), "  "), "\n") + "\n\n"
+		block = strings.Join(indent(wrapKept(e.text, width-2), "  "), "\n") + "\n\n"
 	case whoDone:
-		return fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
+		block = fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
 	case whoThink:
-		return fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, width-4), "\n"), styleThink))
+		block = fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, width-4), "\n"), styleThink))
 	case whoAnswer:
-		return markdown(e.text, width) + "\n\n"
+		block = markdown(e.text, width) + "\n\n"
 	case whoNotice:
-		return styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), width-2), "· "), "\n")) + "\n"
+		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), width-2), "· "), "\n")) + "\n"
 	case whoTool:
-		row := toolRow(*e, width) + "\n"
+		block = toolRow(*e, width) + "\n"
 		if rows := diffRows(e.result, width, expanded); rows != nil {
-			row += strings.Join(rows, "\n") + "\n"
+			block += strings.Join(rows, "\n") + "\n"
 		}
 		if expanded && e.args != "" {
-			row += openArgs(e.args, width) + "\n"
+			block += openArgs(e.args, width) + "\n"
 		}
-		return row
 	case whoDraft:
-		return draftRows(drafted(e), width) + "\n"
+		block = draftRows(drafted(e), width) + "\n"
 	}
-	return ""
+	return blockRows(block)
+}
+
+// blockRows turns what a block drew into the rows it takes. A block's own ending newline is not a row
+// of its own, so the rows read exactly as the blocks joined with "" did.
+func blockRows(block string) []string {
+	rows := strings.Split(block, "\n")
+	if last := len(rows) - 1; last >= 0 && rows[last] == "" {
+		rows = rows[:last]
+	}
+	return rows
 }
 
 // promptBlock is what was asked, as a band across the whole screen: the ask then reads apart

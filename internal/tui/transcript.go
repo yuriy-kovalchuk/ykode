@@ -35,22 +35,19 @@ type entry struct {
 	state draftState // what has been read of a call the model is still writing; see draft.go
 }
 
-// transcript is what has been said so far. Rendering is separate so the rules can be
-// tested without a screen. What each entry drew is kept, because a stream redraws the screen per
-// token and only the entry still open changes between draws.
+// transcript is what has been said so far. Rendering is separate so the rules can be tested without
+// a screen. The rows it drew are kept between draws and only rebuilt from the block that changed:
+// a streamed token redraws the screen while only the block still open has new text in it, and a
+// session of eight thousand rows must not be drawn again to add one.
 type transcript struct {
 	entries  []entry
-	lines    []string // what each entry drew last, with the blank line a block leaves behind
-	stale    int      // the first entry that may need drawing again; len(entries) when none do
-	width    int      // the screen the rows were drawn for
-	expanded bool     // whether call arguments were shown
+	stale    int  // the first entry that may need drawing again; len(entries) when none do
+	width    int  // the screen the rows were drawn for
+	expanded bool // whether call arguments were shown
 
-	// rows are what the screen reads: one element per row on the terminal. They are kept between
-	// draws and only rebuilt from the block that changed, because a streamed token redraws the
-	// session while only the block still open has new text in it.
-	rowsCache []string
-	rowed     int   // entries whose block is already in rowsCache
-	rowStart  []int // the row each of those blocks starts at
+	rowsCache []string // the rows the screen reads, one per row on the terminal
+	rowed     int      // entries whose rows are already in rowsCache
+	rowStart  []int    // the row each of those entries starts at
 }
 
 func (t *transcript) user(text string, at time.Time) {
@@ -126,7 +123,7 @@ func (t *transcript) dropDrafts() {
 			kept = append(kept, e)
 		}
 	}
-	t.entries, t.lines, t.stale = kept, nil, 0
+	t.entries, t.stale = kept, 0
 	t.rowsCache, t.rowed, t.rowStart = nil, 0, nil
 }
 

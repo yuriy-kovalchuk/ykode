@@ -152,7 +152,7 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 // what was asked sits in a band across the whole screen, so it reads apart from an answer even
 // when the ask runs over several rows
 func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
-	block := strings.TrimRight(draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60, false), "\n")
+	block := strings.TrimRight(strings.Join(draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60, false), "\n"), "\n")
 	lines := strings.Split(block, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("the band does not reach over more than one row: %q", block)
@@ -275,7 +275,7 @@ func TestACallSitsInABandThatSaysWhatItDid(t *testing.T) {
 }
 
 // firstRow is the first row of a block, which is what carries the call.
-func firstRow(block string) string { return strings.SplitN(block, "\n", 2)[0] }
+func firstRow(block []string) string { return block[0] }
 
 // the ground a call sits in is a tint, not the terminal's solid colour: a whole row of green or red
 // is noise and nothing on it can be read.
