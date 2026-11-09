@@ -70,6 +70,7 @@ func BenchmarkAFrameOfALongSession(b *testing.B) {
 		b.Run(strconv.Itoa(calls)+" calls", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
+				m.bottom = "" // what every message does: what sits under the session is rebuilt
 				m.refresh()
 				_ = m.View()
 			}

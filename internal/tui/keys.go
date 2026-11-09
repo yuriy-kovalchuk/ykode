@@ -116,8 +116,8 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	m.fitInput()
 	m.trackSuggestions()
+	m.fitInput() // after the suggestions: the box is sized against the rows the bottom will hold
 	m.layout()
 	return m, cmd
 }

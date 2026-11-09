@@ -52,6 +52,7 @@ type model struct {
 	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
 	showKeys   bool   // ? lists the keys above the prompt
 	unseen     bool   // output arrived below while the reader was scrolled up
+	bottom     string // what sits under the session this message; "" until someone asks for it
 
 	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
 	// token of it would otherwise redraw the screen, and the stream waits for that draw.
@@ -97,6 +98,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 func (m *model) Init() tea.Cmd { return textarea.Blink }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.bottom = "" // the screen under the session is rebuilt for this message, whoever asks first
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height

@@ -105,12 +105,15 @@ func (m *model) fitInput() {
 	if room := m.height - m.otherRows() - minTranscriptRows; rows > room {
 		rows = max(room, 1)
 	}
-	m.input.SetHeight(rows)
+	if rows != m.input.Height() {
+		m.input.SetHeight(rows)
+		m.bottom = "" // the box changed, so the rows under the session changed with it
+	}
 }
 
 // otherRows is the bottom area apart from the box itself: the rule, the report, the gaps.
 func (m *model) otherRows() int {
-	return lipgloss.Height(m.bottomArea()) - m.input.Height()
+	return lipgloss.Height(m.screenBottom()) - m.input.Height()
 }
 
 // inputRows counts the rows the text takes once the box has wrapped it: a long line typed without

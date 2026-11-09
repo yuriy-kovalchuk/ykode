@@ -103,6 +103,8 @@ func (m *model) cancelRun() {
 }
 
 func (m *model) handle(ev agent.Event) {
+	m.bottom = "" // an event changes what sits under the session, so it is rebuilt
+
 	switch ev.Kind {
 	case agent.Thinking, agent.Answer:
 		// a streamed block is drawn once per spin, not once per token: the answer is re-laid out
