@@ -21,21 +21,22 @@ const (
 
 // status is what the two footer rows report.
 type status struct {
-	root     string // the project the session works in
-	branch   string // what HEAD points at there; "" outside a repository
-	model    string
-	thinking string // how deeply the model thinks on the turns that follow
-	usage    agent.Usage
-	ctxSize  int
-	prefill  float64 // tokens per second the server read the prompt at
-	decode   float64 // tokens per second it writes at
-	running  bool
-	waiting  int
-	elapsed  time.Duration // how long the running prompt has been working
-	took     time.Duration // how long the last prompt took, once it finished
-	spinner  string
-	keysHint bool // say that ? shows the keys
-	width    int  // 0 leaves the two sides unaligned
+	root      string // the project the session works in
+	branch    string // what HEAD points at there; "" outside a repository
+	model     string
+	thinking  string // how deeply the model thinks on the turns that follow
+	usage     agent.Usage
+	ctxSize   int
+	prefill   float64 // tokens per second the server read the prompt at
+	decode    float64 // tokens per second it writes at
+	estimated bool    // both were measured on this side while the reply streamed, so they carry a ~
+	running   bool
+	waiting   int
+	elapsed   time.Duration // how long the running prompt has been working
+	took      time.Duration // how long the last prompt took, once it finished
+	spinner   string
+	keysHint  bool // say that ? shows the keys
+	width     int  // 0 leaves the two sides unaligned
 }
 
 // rootRoom and modelRoom are how much of the path and the model name the session line keeps when
@@ -129,10 +130,10 @@ func statusActivity(s status) []string {
 		now = append(now, styleOK.Render("✓ done in "+duration(s.took)))
 	}
 	if s.prefill > 0 {
-		now = append(now, styleDim.Render("↑ ")+fmt.Sprintf("%.0f tok/s", s.prefill))
+		now = append(now, styleDim.Render("↑ ")+rate(s.prefill, false))
 	}
 	if s.decode > 0 {
-		now = append(now, styleDim.Render("↓ ")+fmt.Sprintf("%.0f tok/s", s.decode))
+		now = append(now, styleDim.Render("↓ ")+rate(s.decode, s.estimated))
 	}
 	if s.keysHint {
 		now = append(now, styleDim.Render("? keys"))
@@ -186,10 +187,19 @@ func tokCount(n int) string {
 func (m *model) status() status {
 	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
 		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
-		decode: m.decode, running: m.running, waiting: len(m.agent.Waiting()), took: m.took, spinner: m.spin.View(),
+		decode: m.decode, estimated: m.estimated, running: m.running, waiting: len(m.agent.Waiting()), took: m.took, spinner: m.spin.View(),
 		keysHint: !m.showKeys, width: m.width}
 	if m.running {
 		s.elapsed = time.Since(m.started)
 	}
 	return s
+}
+
+// rate is a speed in tokens per second; a measured one says so with a ~, because the server's own
+// figure, which replaces it when the reply ends, is the exact one.
+func rate(perSecond float64, estimated bool) string {
+	if estimated {
+		return fmt.Sprintf("~%.0f tok/s", perSecond)
+	}
+	return fmt.Sprintf("%.0f tok/s", perSecond)
 }

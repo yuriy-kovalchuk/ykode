@@ -167,3 +167,13 @@ func TestTheFooterReadsTheAgentsNumbersAtDrawTime(t *testing.T) {
 		t.Errorf("the footer kept its numbers after the conversation grew:\n%s\n%s", before, after)
 	}
 }
+
+// a speed the client measured says so, and the server's own figure does not
+func TestAMeasuredSpeedCarriesATilde(t *testing.T) {
+	if got := rate(81.4, true); got != "~81 tok/s" {
+		t.Errorf("measured: %q", got)
+	}
+	if got := rate(81.4, false); got != "81 tok/s" {
+		t.Errorf("reported: %q", got)
+	}
+}

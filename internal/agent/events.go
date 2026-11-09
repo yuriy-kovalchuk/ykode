@@ -96,4 +96,5 @@ type Stats struct {
 	DecodeTokSec   float64
 	DraftN         int // tokens a draft model proposed, when the server has one
 	DraftNAccepted int
+	Estimated      bool // the speeds were measured by the client, not reported by the server
 }
