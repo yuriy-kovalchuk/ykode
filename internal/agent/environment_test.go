@@ -15,7 +15,7 @@ func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
 	prompt := a.history[0].Content
 
 	for _, want := range []string{
-		"Guidelines:", "project root: " + root, "os: " + runtime.GOOS + "/" + runtime.GOARCH,
+		"Guidelines:", "project root: " + root, "working directory: " + root, "needs no cd", "os: " + runtime.GOOS + "/" + runtime.GOARCH,
 		"date: " + time.Now().Format("2006-01-02"), "git: not a git repository", "be terse",
 	} {
 		if !strings.Contains(prompt, want) {

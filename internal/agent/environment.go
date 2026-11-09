@@ -14,6 +14,7 @@ import (
 func withEnvironment(prompt, root string) (text, branch string) {
 	state, branch := gitState(root)
 	return prompt + "\n<environment>\nproject root: " + root +
+		"\nworking directory: " + root + " (exec_command starts here, so a command needs no cd, and a relative path is from here)" +
 		"\nos: " + runtime.GOOS + "/" + runtime.GOARCH +
 		"\nshell for exec_command: sh\ndate: " + time.Now().Format("2006-01-02") +
 		"\ngit: " + state + "\n</environment>\n", branch
