@@ -71,3 +71,55 @@ func kindsText(kinds []EventKind) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// a front end draws a call from the events, so they carry it whole: a write longer than a log line
+// was once cut into broken JSON, and a result was squashed onto one line
+func TestToolEventsCarryTheWholeCallAndResult(t *testing.T) {
+	content := strings.Repeat("hello world\\n", 40) // far past 200 bytes of arguments
+	args := `{"path":"a.txt","content":"` + content + `"}`
+	stub := &stubServer{scripts: []string{
+		sse("", "", "write_file", []string{args}, "tool_calls"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, AssumeYes: true}, sink)
+	defer done()
+	if err := a.Ask(context.Background(), "write it"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range sink.events {
+		if ev.Kind != ToolStart && ev.Kind != ToolEnd {
+			continue
+		}
+		if ev.Args != args {
+			t.Fatalf("%v carries %d bytes of arguments, want the call's %d", ev.Kind, len(ev.Args), len(args))
+		}
+	}
+}
+
+// a call written as text never reaches the answer: it is stripped, and the model is asked once to make
+// the call properly
+func TestACallWrittenAsTextIsStrippedAndTheModelAskedOnce(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "It is in ops.go.<tool_call><function=read_file></function></tool_call>", "", nil, "stop"),
+		sse("", "It is in ops.go.", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 64, NoVerify: true}, sink)
+	defer done()
+	if err := a.Ask(context.Background(), "where is it?"); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range a.history {
+		if m.Role == "assistant" && hasTextCall(m.Content) {
+			t.Errorf("the markup stayed in the conversation: %q", m.Content)
+		}
+	}
+	var told bool
+	for _, ev := range sink.events {
+		told = told || (ev.Kind == Notice && strings.Contains(ev.Text, "tool call as text"))
+	}
+	if !told || len(stub.requests) != 2 {
+		t.Errorf("nudged %v, %d requests; want one nudge and a second request", told, len(stub.requests))
+	}
+}

@@ -56,9 +56,9 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 			ev.Stats.PrefillTokSec, ev.Stats.DecodeTokSec, ev.Stats.FinishReason)
 	case agent.ToolStart:
 		v.endThinking()
-		fmt.Fprintf(v.log, "  -> %s %s\n", ev.Tool, ev.Args)
+		fmt.Fprintf(v.log, "  -> %s %s\n", ev.Tool, flat(ev.Args))
 	case agent.ToolEnd:
-		fmt.Fprintf(v.log, "  <- %s %s\n", ev.Tool, ev.Text)
+		fmt.Fprintf(v.log, "  <- %s %s\n", ev.Tool, flat(ev.Text))
 	case agent.ToolFail:
 		fmt.Fprintf(v.log, "  !! %s: %s\n", ev.Tool, ev.Text)
 	case agent.Summary:
@@ -109,4 +109,13 @@ func isTerminal(w io.Writer) bool {
 	}
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// flat puts a call or its result on one short line: the line log is read as a list, not as a document.
+func flat(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 200 {
+		return string(r[:200]) + "..."
+	}
+	return s
 }
