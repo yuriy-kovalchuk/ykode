@@ -24,6 +24,9 @@ type Agent struct {
 	prompt        string       // the system message, built once so the cached prefix never moves
 	branch        string       // the branch the prompt was built on, which the screen can show at once
 	task          string       // the prompt being answered, which compaction keeps word for word
+	fold          foldNote     // what the fold in progress did, until the log has it
+	readFiles     []string     // files the folded turns read, oldest first
+	modifiedFiles []string     // and the ones they wrote or edited
 	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
 	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
@@ -62,6 +65,7 @@ func (a *Agent) Reset() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.meter.clearCost()
 	a.compactedAt = -1
+	a.readFiles, a.modifiedFiles = nil, nil
 	a.repeats.changed() // nothing the model saw before is in front of it any more
 	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
@@ -89,6 +93,7 @@ func (a *Agent) Resume(messages []llm.Message) {
 	// the new calls continue the saved numbering, or a fresh result would take an id that recall
 	// already points at, and the store would answer with someone else's output
 	a.callSeq = highestCallID(a.history)
+	a.restoreFiles(a.history)
 	a.sanitizeHistory()
 	a.trimHistory()
 	a.publishUsage()

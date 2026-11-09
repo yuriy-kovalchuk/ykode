@@ -92,7 +92,7 @@ func describeLine(c *Conversation, line string, first bool) {
 	if json.Unmarshal([]byte(line), &b) == nil && b.Boundary != "" {
 		c.Messages, c.First = 0, "" // what came before the mark no longer counts
 		for _, kept := range b.Kept {
-			note(c, kept)
+			note(c, kept.Message)
 		}
 		return
 	}

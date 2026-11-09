@@ -373,7 +373,7 @@ func lastFoldSawTheEarlierSummary(stub *stubServer) bool {
 		}
 		seen = false
 		for _, raw := range messages[1:] {
-			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), FoldMark) {
+			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), "<previous-summary>\nGoal: read them. Files: three") {
 				seen = true
 			}
 		}
@@ -536,4 +536,95 @@ func firstChars(s string) string {
 		return s[:40]
 	}
 	return s
+}
+
+// the files the folded turns touched are listed beside the recap, are not summarised again, and
+// accumulate across folds and a resume
+func TestAFoldNamesTheFilesItFoldedAwayAndTheListSurvivesAResume(t *testing.T) {
+	a := &Agent{}
+	a.noteFiles([]llm.Message{
+		{Role: "assistant", ToolCalls: []llm.ToolCall{
+			{Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}},
+			{Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}},
+			{Function: llm.FunctionCall{Name: "edit_file", Arguments: []byte(`{"path":"b.go"}`)}},
+			{Function: llm.FunctionCall{Name: "exec_command", Arguments: []byte(`{"command":"ls"}`)}},
+		}},
+	})
+	blocks := a.fileBlocks()
+	if !strings.Contains(blocks, "<read-files>\na.go\n</read-files>") || !strings.Contains(blocks, "<modified-files>\nb.go\n</modified-files>") {
+		t.Fatalf("a modified file is listed as read only, or a list is missing:\n%s", blocks)
+	}
+	recap := llm.Message{Role: "user", Content: FoldMark + "\nGoal: x" + blocks}
+	if text, ok := recapOf(recap); !ok || strings.Contains(text, "a.go") || !strings.Contains(text, "Goal: x") {
+		t.Errorf("the summary handed back for updating carries the file lists: %q", text)
+	}
+	b := &Agent{}
+	b.restoreFiles([]llm.Message{recap})
+	if got := b.fileBlocks(); got != blocks {
+		t.Errorf("a resume lost the lists:\n%s\nwant\n%s", got, blocks)
+	}
+}
+
+// the kept part reaches back until it holds the room asked for, and never starts on a tool result
+func TestTheKeptPartReachesBackToTheRoomAskedFor(t *testing.T) {
+	var h []llm.Message
+	h = append(h, llm.Message{Role: "system", Content: "s"}, llm.Message{Role: "user", Content: "task"})
+	for i := 0; i < 6; i++ {
+		id := fmt.Sprintf("c%d", i)
+		h = append(h,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f"}`)}}}},
+			llm.Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("x", 4000)})
+	}
+	a := &Agent{history: h, task: "task"}
+	plain, _ := a.compactCut()
+	a.opts.KeepRecentTokens = 7000 // more than the two newest calls hold
+	wide, _ := a.compactCut()
+	if wide == 0 || wide >= plain {
+		t.Fatalf("a room of 7000 tokens kept from %d, the two newest calls from %d", wide, plain)
+	}
+	if h[wide].Role == "tool" {
+		t.Errorf("the cut lands on a tool result at %d", wide)
+	}
+	a.opts.KeepRecentTokens = 1 << 20
+	if at, _ := a.compactCut(); at != 0 {
+		t.Errorf("a room bigger than the conversation still cut at %d", at)
+	}
+}
+
+// a reply that is not a summary never replaces the conversation: a model shown a transcript of calls
+// may write more calls, and a recap of that would be noise
+func TestAReplyThatIsNotASummaryIsNotKept(t *testing.T) {
+	for what, reply := range map[string]string{
+		"a call written as text": "I'll read the files.\n<tool_call>\n<function=read_file>\n</function>\n</tool_call>",
+		"no sections at all":     "ok",
+		"nothing":                "",
+	} {
+		if err := checkSummary(reply); err == nil {
+			t.Errorf("%s was accepted as a summary", what)
+		}
+	}
+	if err := checkSummary("## Goal\nfix the bug\n## Next steps\n1. run the tests"); err != nil {
+		t.Errorf("a real summary was refused: %v", err)
+	}
+}
+
+// the ask comes after the transcript, and the transcript is quoted, so the model reads it as material
+func TestTheSummaryRequestEndsWithTheAskNotTheTranscript(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "## Goal\nx", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64}, &captureSink{})
+	defer done()
+	if _, err := a.summariseWithModel(context.Background(), "an earlier recap", "user: fix it"); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := stub.requests[0]["messages"].([]any)
+	last, _ := msgs[len(msgs)-1].(map[string]any)
+	text := fmt.Sprint(last["content"])
+	for _, want := range []string{"<previous-summary>\nan earlier recap", "<conversation>\nuser: fix it", "Write the summary now"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the request lacks %q:\n%s", want, text)
+		}
+	}
+	if !strings.HasSuffix(text, compactAsk) {
+		t.Error("the ask is not the last thing the model reads")
+	}
 }

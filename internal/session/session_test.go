@@ -27,7 +27,7 @@ func TestAConversationSurvivesAReStart(t *testing.T) {
 		{Role: "user", Content: "fix the bug"},
 		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.go"}`)}}}},
 		{Role: "tool", Content: "package main", ToolCallID: "c1", Name: "read_file"},
-		{Role: "assistant", Content: "fixed", Reasoning: "this thinking is not saved"},
+		{Role: "assistant", Content: "fixed", Reasoning: "this thinking is saved"},
 	}
 	for _, m := range messages {
 		if err := log.Append(m); err != nil {
@@ -48,8 +48,8 @@ func TestAConversationSurvivesAReStart(t *testing.T) {
 	if back[2].ToolCallID != "c1" {
 		t.Errorf("the reply lost its call id: %+v", back[2])
 	}
-	if back[3].Reasoning != "" {
-		t.Errorf("thinking was saved to disk: %q", back[3].Reasoning)
+	if back[3].Reasoning != "this thinking is saved" {
+		t.Errorf("thinking did not come back: %q", back[3].Reasoning)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -220,7 +220,7 @@ func TestAFoldIsSavedSoAResumeStartsFromIt(t *testing.T) {
 		{Role: "user", Content: "[ykode compacted the earlier turns into this summary]\nGoal: the fix"},
 		{Role: "user", Content: "the ask still in hand"},
 	}
-	if err := log.Folded(kept); err != nil {
+	if err := log.Folded(Fold{Kept: kept}); err != nil {
 		t.Fatal(err)
 	}
 	if err := log.Append(llm.Message{Role: "assistant", Content: "kept answer"}); err != nil {
@@ -244,5 +244,31 @@ func TestAFoldIsSavedSoAResumeStartsFromIt(t *testing.T) {
 		if strings.Contains(m.Content, "the tool result it needed") {
 			t.Error("what was folded away is back")
 		}
+	}
+}
+
+// thinking is saved beside the message it came with, and a fold keeps it and says what it did
+func TestThinkingAndAFoldSurviveAResume(t *testing.T) {
+	dir := t.TempDir()
+	log := New(dir, "s1", "/p")
+	if err := log.Append(llm.Message{Role: "assistant", Content: "done", Reasoning: "first I check a.go"}); err != nil {
+		t.Fatal(err)
+	}
+	kept := []llm.Message{{Role: "user", Content: "recap"}, {Role: "assistant", Content: "next", Reasoning: "then b.go"}}
+	if err := log.Folded(Fold{Kept: kept, Summary: "recap", ReadFiles: []string{"a.go"}, ModifiedFiles: []string{"b.go"}, Dropped: 7, TokensBefore: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "s1.jsonl"))
+	for _, want := range []string{`"thinking":"first I check a.go"`, `"dropped":7`, `"modified_files":["b.go"]`, `"tokens_before":9000`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("the log lacks %s:\n%s", want, raw)
+		}
+	}
+	got, err := Load(filepath.Join(dir, "s1.jsonl"), "/p")
+	if err != nil || len(got) != 2 || got[1].Reasoning != "then b.go" {
+		t.Fatalf("after the fold: %+v, %v", got, err)
+	}
+	if strings.Contains(string(mustJSON(got[1])), "then b.go") {
+		t.Error("thinking leaked into the message a request would carry")
 	}
 }

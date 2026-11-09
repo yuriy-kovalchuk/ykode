@@ -28,11 +28,43 @@ type header struct {
 	Root string `json:"root"`
 }
 
+// record is a message as the log keeps it: the message the server sees, and beside it the thinking
+// that came with it, which no request carries but a resumed session should still be able to show.
+type record struct {
+	llm.Message
+	Thinking string `json:"thinking,omitempty"`
+}
+
+func recordOf(m llm.Message) record { return record{Message: m, Thinking: m.Reasoning} }
+
+func (r record) message() llm.Message {
+	r.Message.Reasoning = r.Thinking
+	return r.Message
+}
+
 // A boundary line says the conversation before it no longer counts: a cleared one starts again, and
-// a folded one continues from the messages the fold kept. The log stays append-only either way.
+// a folded one continues from the messages the fold kept. The log stays append-only either way: what
+// came before a boundary is still in the file, it is only no longer sent. A fold also says what it
+// did, so the file can be read on its own: the summary, the files the folded turns touched, and how
+// much it took away.
 type boundary struct {
-	Boundary string        `json:"boundary"`
-	Kept     []llm.Message `json:"kept,omitempty"`
+	Boundary      string   `json:"boundary"`
+	Kept          []record `json:"kept,omitempty"`
+	Summary       string   `json:"summary,omitempty"`
+	ReadFiles     []string `json:"read_files,omitempty"`
+	ModifiedFiles []string `json:"modified_files,omitempty"`
+	Dropped       int      `json:"dropped,omitempty"`       // messages the fold took out of the conversation
+	TokensBefore  int      `json:"tokens_before,omitempty"` // what the conversation cost before it
+}
+
+// Fold is what a compaction did, for the log to keep beside the messages that survived it.
+type Fold struct {
+	Kept          []llm.Message
+	Summary       string
+	ReadFiles     []string
+	ModifiedFiles []string
+	Dropped       int
+	TokensBefore  int
 }
 
 const (
@@ -61,7 +93,7 @@ func (l *Log) Append(m llm.Message) error {
 	if l == nil {
 		return nil
 	}
-	raw, err := json.Marshal(m)
+	raw, err := json.Marshal(recordOf(m))
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
@@ -80,8 +112,13 @@ func (l *Log) Cleared() error {
 
 // Folded saves what a fold left standing, so a resume starts from the recap rather than reloading
 // the turns that were folded away and trimming them again.
-func (l *Log) Folded(kept []llm.Message) error {
-	return l.write(mustJSON(boundary{Boundary: boundaryFolded, Kept: kept}))
+func (l *Log) Folded(f Fold) error {
+	kept := make([]record, len(f.Kept))
+	for i, m := range f.Kept {
+		kept[i] = recordOf(m)
+	}
+	return l.write(mustJSON(boundary{Boundary: boundaryFolded, Kept: kept, Summary: f.Summary,
+		ReadFiles: f.ReadFiles, ModifiedFiles: f.ModifiedFiles, Dropped: f.Dropped, TokensBefore: f.TokensBefore}))
 }
 
 // write appends JSON lines, opening the file with its project header when it is new.
@@ -141,17 +178,20 @@ func Load(path, root string) ([]llm.Message, error) {
 		}
 		var b boundary
 		if json.Unmarshal([]byte(line), &b) == nil && b.Boundary != "" {
-			messages = b.Kept // what came before the mark no longer counts
+			messages = messages[:0] // what came before the mark no longer counts
+			for _, r := range b.Kept {
+				messages = append(messages, r.message())
+			}
 			continue
 		}
-		var m llm.Message
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
+		var r record
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
 			if i == len(lines)-1 {
 				break // the tail was cut short: keep what is whole
 			}
 			return nil, fmt.Errorf("session: %s line %d: %w", filepath.Base(path), i+1, err)
 		}
-		messages = append(messages, m)
+		messages = append(messages, r.message())
 	}
 	return messages, nil
 }

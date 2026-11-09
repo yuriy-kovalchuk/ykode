@@ -52,7 +52,7 @@ func TestAFoldedConversationIsListedAsItNowStands(t *testing.T) {
 		{Role: "assistant", Content: "and a long answer with it"},
 	})
 	log := New(dir, "s20260101-120000", "the project")
-	if err := log.Folded([]llm.Message{{Role: "user", Content: "Goal: the fix\nNext step: tests"}}); err != nil {
+	if err := log.Folded(Fold{Kept: []llm.Message{{Role: "user", Content: "Goal: the fix\nNext step: tests"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); err != nil {

@@ -2,22 +2,62 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
-	compactKeep   = 2               // the newest tool calls stay in full
-	foldGap       = compactKeep + 4 // new calls between folds: each fold costs a request and the whole prompt cache
-	compactPrompt = `Summarise the earlier part of a coding session so it can be dropped from the context.
-Answer in four short sections - Goal, Files touched, What was decided, Next step.
-Only state what the transcript shows. Under 150 words.`
-	compactLineCap   = 300  // bytes of one message in the transcript handed to the summariser
-	compactMaxTokens = 400  // the summary is meant to be short
-	maxSummaryChars  = 2000 // a runaway summary is cut, not kept
+	compactKeep = 2               // the newest tool calls always stay in full
+	foldGap     = compactKeep + 4 // new calls between folds: each fold costs a request and the whole prompt cache
+	// the summary is the only memory of everything folded away, so it is told what that memory is for
+	// and what shape to keep it in. A fold after the first updates the last summary instead of
+	// starting over, so what was decided early survives any number of folds.
+	compactPrompt = `You write the memory of a coding agent whose context window is full. The agent will carry on the work from your summary alone, plus the files listed beside it and the newest messages, so what you leave out is lost.
+
+Write these sections in this order, in markdown. Write "none" under a section that has nothing.
+
+## Goal
+What the user is trying to get done, in their terms. Quote their wording where it is specific.
+
+## Constraints and preferences
+Rules, style, limits and things to avoid that the user or the project stated.
+
+## Progress
+### Done
+What is finished and, where it matters, how it was checked.
+### In progress
+What was being worked on when the window filled.
+### Blocked
+What failed and why, with the error text that says so.
+
+## Key decisions
+One line each: what was chosen, and why.
+
+## Critical context
+Exact names the next step needs: paths, functions, types, commands that worked or failed, values, test names. Copy them verbatim.
+
+## Next steps
+Ordered and concrete: the first one is what the agent does next.
+
+Rules:
+- State only what the transcript shows. Do not guess, and do not invent paths or results.
+- Facts, not narrative. Leave out greetings, apologies and anything the agent can re-read from a file.
+- Do not list files: they are attached separately.
+- The newest messages are kept word for word right after your summary. Describe the state at the end of what you are given, say "as of this point" under In progress and Next steps, and never claim that something still has to be done when you cannot tell.
+- If a <previous-summary> is given, update it instead of starting over: keep what is still true, move finished work to Done, drop what no longer matters, and add what the new turns changed.`
+	compactAsk       = "Write the summary now, in the sections above, starting with \"## Goal\". Do not call tools and do not continue the conversation."
+	compactLineCap   = 2000 // bytes of one message in the transcript handed to the summariser
+	compactArgCap    = 200  // bytes of one argument of a call in that transcript
+	compactMaxTokens = 1500 // room for the sections above
+	maxSummaryChars  = 6000 // a runaway summary is cut, not kept
+	maxListedFiles   = 60   // files one list names; the newest win
 )
 
 // FoldMark starts the message a fold leaves in the conversation: the recap of what was put away. A
@@ -35,16 +75,29 @@ func (a *Agent) Compact(ctx context.Context) int {
 		a.trimHistory()
 		return a.foldFreed(before)
 	}
-	summary, err := a.summariseWithModel(ctx, a.transcriptOf(a.dropping(start, task)))
+	dropped := a.dropping(start, task)
+	previous := ""
+	if len(dropped) > 0 {
+		if earlier, ok := recapOf(dropped[0]); ok {
+			// the last fold's summary is updated, not summarised again as if it were a conversation
+			previous, dropped = earlier, dropped[1:]
+		}
+	}
+	summary, err := a.summariseWithModel(ctx, previous, a.transcriptOf(dropped))
 	if err != nil {
 		a.tell("the model could not summarise the older turns; shortening tool results instead")
 		a.shrinkForCompaction()
 		a.trimHistory()
 		return a.foldFreed(before)
 	}
-	dropped := a.dropping(start, task)
-	a.forget(dropped...)
-	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary}}
+	if len(summary) >= historyBytes(dropped) {
+		// the recap would be as big as what it replaces: folding would cost a request and save nothing
+		a.tell("the older turns are already smaller than a summary of them: nothing was folded")
+		return a.foldFreed(before)
+	}
+	a.forget(a.dropping(start, task)...)
+	a.noteFiles(dropped)
+	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary + a.fileBlocks()}}
 	if task > 0 {
 		// the job in hand is kept word for word: a summary is for what happened, and a model
 		// working from a paraphrase of the request starts answering a question nobody asked
@@ -52,6 +105,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	}
 	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
 	a.compactedAt = callBlocks(a.history)
+	a.fold = foldNote{summary: summary, dropped: len(dropped) + 1, before: before}
 	a.emit(Event{Kind: Summary, Text: summary})
 	return a.foldFreed(before)
 }
@@ -61,7 +115,10 @@ func (a *Agent) Compact(ctx context.Context) int {
 func (a *Agent) foldFreed(before int) int {
 	a.publishUsage()
 	// what the fold left standing is what a resume should read back, not what was folded away from it
-	a.reportSave(a.opts.Session.Folded(a.history[1:]))
+	note := a.fold
+	a.fold = foldNote{}
+	a.reportSave(a.opts.Session.Folded(session.Fold{Kept: a.history[1:], Summary: note.summary,
+		ReadFiles: a.readOnlyFiles(), ModifiedFiles: a.modifiedFiles, Dropped: note.dropped, TokensBefore: note.before}))
 	return before - a.estimateTokens()
 }
 
@@ -104,10 +161,12 @@ func (a *Agent) canCompact() bool {
 	return callBlocks(a.history) > compactKeep
 }
 
-// compactCut picks where the kept part starts: the beginning of the second newest tool call, so a
-// call and its replies always move together. It also picks the newest user message in the part being
-// folded away, which is kept for its wording rather than summarised.
-// The second value is the index of that message, or 0 when the folded part holds none.
+// compactCut picks where the kept part starts. The newest compactKeep tool calls are always kept; where
+// the run knows how much room the recent work should have (KeepRecentTokens), the kept part reaches
+// back until it holds that much, so a fold never throws away what the model was reading a moment ago.
+// A cut never lands on a tool result: a call and its replies always move together. It also picks the
+// newest user message in the part being folded away, which is kept for its wording rather than
+// summarised. The second value is the index of that message, or 0 when the folded part holds none.
 func (a *Agent) compactCut() (start, task int) {
 	var blocks []int
 	for i, m := range a.history {
@@ -122,6 +181,23 @@ func (a *Agent) compactCut() (start, task int) {
 	if first := blocks[0]; first < 2 {
 		return 0, 0
 	}
+	if budget := a.opts.KeepRecentTokens; budget > 0 {
+		rate := max(a.meter.bytesPerTok, minBytesPerTok)
+		kept := int(float64(historyBytes(a.history[start:])) / rate)
+		reached := kept >= budget
+		for i := start - 1; i >= 2 && !reached; i-- {
+			kept += int(float64(historyBytes(a.history[i:i+1]))/rate) + 4
+			if reached = kept >= budget; reached {
+				for i > 2 && a.history[i].Role == "tool" {
+					i-- // a result stays with the call that asked for it
+				}
+				start = i
+			}
+		}
+		if !reached || start < 2 {
+			return 0, 0 // everything older than the newest calls is less than the room asked for: nothing to fold
+		}
+	}
 	for i := start - 1; i > 0; i-- {
 		if a.history[i].Role == "user" && a.history[i].Content == a.task { // ykode's own notes are user messages too
 			return start, i
@@ -130,19 +206,24 @@ func (a *Agent) compactCut() (start, task int) {
 	return start, 0
 }
 
-// transcriptOf flattens messages into the text the summariser is asked about.
+// transcriptOf flattens messages into the text the summariser is asked about: a call as the line that
+// made it, and every result cut to what a summary can use, with the cut counted so the summariser
+// knows there was more.
 func (a *Agent) transcriptOf(messages []llm.Message) string {
 	var b strings.Builder
 	for _, m := range messages {
 		switch {
 		case m.Role == "tool":
-			fmt.Fprintf(&b, "%s %s -> %s\n", m.CallID, m.Name, oneLine(m.Content, compactLineCap))
+			fmt.Fprintf(&b, "result %s %s:\n%s\n", m.CallID, m.Name, cutText(m.Content, compactLineCap))
 		case len(m.ToolCalls) > 0:
+			if text := strings.TrimSpace(m.Content); text != "" {
+				fmt.Fprintf(&b, "assistant: %s\n", cutText(text, compactLineCap))
+			}
 			for _, call := range m.ToolCalls {
-				fmt.Fprintf(&b, "call %s %s\n", call.Function.Name, oneLine(string(call.Function.Arguments), compactLineCap))
+				fmt.Fprintf(&b, "call %s\n", callLine(call))
 			}
 		default:
-			fmt.Fprintf(&b, "%s: %s\n", m.Role, oneLine(m.Content, compactLineCap))
+			fmt.Fprintf(&b, "%s: %s\n", m.Role, cutText(m.Content, compactLineCap))
 		}
 	}
 	if a.opts.CtxSize <= 0 {
@@ -152,7 +233,42 @@ func (a *Agent) transcriptOf(messages []llm.Message) string {
 	return tools.FormatResult(b.String(), int(float64(a.opts.CtxSize*2/5)*a.meter.bytesPerTok))
 }
 
-// summariseWithModel asks for the summary in its own request: no tools, a small answer, no history tailoring.
+// cutText keeps the start of a text and says how much it left out.
+func cutText(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s\n[… %d more characters]", s[:cut], len(s)-cut)
+}
+
+// callLine writes a call the way it would be typed: read_file(path="a.go"). A long argument, such as the
+// text of a file being written, is cut, because what a summary needs is which file, not its contents.
+func callLine(call llm.ToolCall) string {
+	var args map[string]json.RawMessage
+	if json.Unmarshal(call.Function.Arguments, &args) != nil {
+		return call.Function.Name + "(" + cutText(string(call.Function.Arguments), compactArgCap) + ")"
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		var text string
+		if json.Unmarshal(args[k], &text) != nil {
+			text = string(args[k])
+		}
+		parts = append(parts, fmt.Sprintf("%s=%q", k, cutText(text, compactArgCap)))
+	}
+	return call.Function.Name + "(" + strings.Join(parts, ", ") + ")"
+}
+
 // keepSummary caps a runaway summary without flattening the sections it was written in: the model
 // answers in short blocks, and a screen reads them better than one long line.
 func keepSummary(text string) string {
@@ -163,15 +279,23 @@ func keepSummary(text string) string {
 	return strings.TrimRight(string([]rune(text)[:maxSummaryChars]), " \n") + "…"
 }
 
-func (a *Agent) summariseWithModel(ctx context.Context, transcript string) (string, error) {
+// summariseWithModel asks for the summary in its own request: no tools, a small answer, no history tailoring.
+func (a *Agent) summariseWithModel(ctx context.Context, previous, transcript string) (string, error) {
 	if transcript == "" {
 		return "", fmt.Errorf("nothing to summarise")
 	}
+	var request strings.Builder
+	if previous != "" {
+		request.WriteString("<previous-summary>\n" + previous + "\n</previous-summary>\n\n")
+	}
+	// the transcript is quoted material, and the ask comes last: a model that sees calls and results
+	// in its input goes on writing calls unless the final words tell it what the task is
+	request.WriteString("<conversation>\n" + transcript + "\n</conversation>\n\n" + compactAsk)
 	turn, err := a.client.ChatStream(ctx, llm.ChatRequest{
 		Model: a.model,
 		Messages: []llm.Message{
 			{Role: "system", Content: compactPrompt},
-			{Role: "user", Content: transcript},
+			{Role: "user", Content: request.String()},
 		},
 		MaxTokens: compactMaxTokens,
 		// a summary needs no thinking phase, and thinking costs the window we are trying to free
@@ -181,8 +305,22 @@ func (a *Agent) summariseWithModel(ctx context.Context, transcript string) (stri
 		return "", err
 	}
 	summary := keepSummary(turn.Message.Content)
-	if summary == "" {
-		return "", fmt.Errorf("the model answered with nothing to keep")
+	if err := checkSummary(summary); err != nil {
+		return "", err
 	}
 	return summary, nil
+}
+
+// checkSummary refuses a reply that is not a summary. A model shown a transcript of tool calls may go
+// on writing them as text, and a recap made of that would replace real context with noise.
+func checkSummary(summary string) error {
+	switch {
+	case summary == "":
+		return fmt.Errorf("the model answered with nothing to keep")
+	case hasTextCall(summary):
+		return fmt.Errorf("the model wrote a tool call instead of a summary")
+	case !strings.Contains(strings.ToLower(summary), "goal"):
+		return fmt.Errorf("the model's reply is not in the summary's sections")
+	}
+	return nil
 }
