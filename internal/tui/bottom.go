@@ -156,7 +156,7 @@ func (m *model) promptLines() string {
 // would have too few rows left to read.
 func (m *model) fitInput() {
 	rows := min(inputRows(m.input.Value(), m.input.Width()), maxInputLines)
-	if room := m.height - m.otherRows() - minTranscriptRows; rows > room {
+	if room := m.height - topRows - m.otherRows() - minTranscriptRows; rows > room {
 		rows = max(room, 1)
 	}
 	if rows != m.input.Height() {

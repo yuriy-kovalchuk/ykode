@@ -114,7 +114,10 @@ racing it.
 The box a prompt is typed in grows with what is typed, to ten rows, and past that scrolls the text
 inside itself; a long prompt therefore keeps the rows it wraps over on the screen. What was asked
 stands in a band across the whole width, so a prompt reads apart from an answer even when it runs
-over several rows.
+over several rows. Everything else — the answer, the thinking, a call and what it changed, notices —
+is read inside a margin: two columns clear of the left edge and one held back from the right, so the
+nesting of an answer, its code and its changes stays visible and nothing sits against the terminal's
+border. The session also starts one row below the top edge.
 
 The footer is two rows. The first names where the session runs on the left — the project root and the
 branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` — and on the right the
