@@ -24,6 +24,7 @@ type Agent struct {
 	prompt        string       // the system message, built once so the cached prefix never moves
 	branch        string       // the branch the prompt was built on, which the screen can show at once
 	task          string       // the prompt being answered, which compaction keeps word for word
+	environment   string       // the date and git state the last ask carried, so an ask that changes nothing repeats nothing
 	fold          foldNote     // what the fold in progress did, until the log has it
 	readFiles     []string     // files the folded turns read, oldest first
 	modifiedFiles []string     // and the ones they wrote or edited
@@ -50,8 +51,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
 	a.repeats = newLoopGuard()
-	environment, branch := withEnvironment(SystemPrompt, opts.Root)
-	a.prompt, a.branch = withInstructions(environment, opts.Instructions), branch
+	a.prompt, a.branch = withInstructions(withEnvironment(SystemPrompt, opts.Root), opts.Instructions), GitBranch(opts.Root)
 	a.Reset()
 	return a
 }
@@ -66,6 +66,8 @@ func (a *Agent) Reset() {
 	a.meter.clearCost()
 	a.compactedAt = -1
 	a.readFiles, a.modifiedFiles = nil, nil
+	a.environment = ""
+	a.opts.Plan.Clear() // the steps belong to the conversation that went
 	a.repeats.changed() // nothing the model saw before is in front of it any more
 	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
@@ -94,6 +96,8 @@ func (a *Agent) Resume(messages []llm.Message) {
 	// already points at, and the store would answer with someone else's output
 	a.callSeq = highestCallID(a.history)
 	a.restoreFiles(a.history)
+	a.restorePlan(a.history)
+	a.environment = lastEnvironment(a.history)
 	a.sanitizeHistory()
 	a.trimHistory()
 	a.publishUsage()

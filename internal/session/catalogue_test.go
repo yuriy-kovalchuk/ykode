@@ -122,3 +122,17 @@ func save(t *testing.T, dir, id, root string, messages []llm.Message) string {
 	}
 	return log.Path()
 }
+
+// a listing names a conversation by what was typed, not by the note ykode ended the ask with
+func TestAListingShowsTheAskWithoutItsNote(t *testing.T) {
+	dir := t.TempDir()
+	log := New(dir, "s1", "/p")
+	ask := "fix the parser" + EnvironmentOpen + "date: 2026-11-09\ngit: branch main, clean" + EnvironmentClose
+	if err := log.Append(llm.Message{Role: "user", Content: ask}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := Describe(dir, 5)
+	if err != nil || len(list) != 1 || list[0].First != "fix the parser" {
+		t.Errorf("listing = %+v, %v", list, err)
+	}
+}

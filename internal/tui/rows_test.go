@@ -262,6 +262,51 @@ func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	}
 }
 
+// the ask keeps the whole width, and everything else is read inside a margin: two columns at the
+// left, and a row that stops short of the right edge so a wide glyph or a cursor has room
+func TestAMessageSitsInsideTheMargins(t *testing.T) {
+	var log transcript
+	log.user("count the lines", time.Now())
+	log.answer("the change goes in the status line, drawn per frame by the screen that reads it")
+	log.thinking("considering where the width is decided")
+	log.toolStart("edit_file", `{"path":"src/a.go"}`)
+	log.notice("the model asked for the same read again")
+
+	rows := log.rows(80)
+	if ask := rows[log.rowStart[0]]; !strings.HasPrefix(ask, userMark) || lipgloss.Width(ask) != 80 {
+		t.Errorf("the ask does not keep the whole width: %q", stripCodes(ask))
+	}
+	for _, i := range []int{1, 2, 3, 4} {
+		row := rows[log.rowStart[i]]
+		if !strings.HasPrefix(row, messageLead) {
+			t.Errorf("the message does not start inside the margin: %q", stripCodes(row))
+		}
+		if got := lipgloss.Width(row); got > 80-messageRight {
+			t.Errorf("a message row reaches %d of the 80 columns: %q", got, stripCodes(row))
+		}
+	}
+	if answer := stripCodes(rows[log.rowStart[1]]); strings.HasPrefix(answer, userMark) {
+		t.Errorf("an answer is drawn as a band: %q", answer)
+	}
+}
+
+// a terminal narrower than the margin still fits: the margin shrinks rather than pushing a row past
+// the edge, where the terminal would break it and the columns would go missing
+func TestAMarginNeverPushesARowPastANarrowScreen(t *testing.T) {
+	var log transcript
+	log.answer(strings.Repeat("the change goes in the status line ", 8))
+	log.thinking(strings.Repeat("considering where the width is decided ", 6))
+	log.notice("the model asked for the same read_file again, which costs a row of its own")
+
+	for _, width := range []int{20, 30, 40} {
+		for _, row := range log.rows(width) {
+			if row != "" && lipgloss.Width(row) > width {
+				t.Errorf("at width %d a row is %d: %q", width, lipgloss.Width(row), stripCodes(row))
+			}
+		}
+	}
+}
+
 // callRow is one call's row: its own first row, which is where the call sits, and not the change or
 // the failure drawn under it.
 func callRow(log *transcript, at int) string {

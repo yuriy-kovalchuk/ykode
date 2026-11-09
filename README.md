@@ -58,6 +58,7 @@ Four commands change the run rather than the conversation:
 |---|---|
 | `/ctx` | how full the window is, what the server had cached in the last request and in all of them, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
 | `/tools` | the tools the model may call, and the bytes each description adds to every request |
+| `/plan` | the steps of the task the model is working through, as it last wrote them |
 | `/model [id \| number]` | lists every model the server offers, with its window and the one in use marked; an id or the number from that list switches to it (the window follows the model unless `--ctx` fixed one) |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
 | `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, verify, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
@@ -96,6 +97,7 @@ screen opens when the configured server does not answer, with the error on it.
 | `ctrl+p`, `ctrl+n` | walk the prompts you sent this session; a line you were writing waits at the end of the walk |
 | mouse wheel | scrolls the transcript, once the screen has the mouse (`ctrl+t`, or `mouse: true`); scrolled up, the rule above the status says where you are and when new output arrived below |
 | `end` | back to the end of the transcript (with an empty box) |
+| `ctrl+o` | folds the plan to its heading, or opens it again |
 | `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
@@ -114,7 +116,10 @@ racing it.
 The box a prompt is typed in grows with what is typed, to ten rows, and past that scrolls the text
 inside itself; a long prompt therefore keeps the rows it wraps over on the screen. What was asked
 stands in a band across the whole width, so a prompt reads apart from an answer even when it runs
-over several rows.
+over several rows. Everything else — the answer, the thinking, a call and what it changed, notices —
+is read inside a margin: two columns clear of the left edge and one held back from the right, so the
+nesting of an answer, its code and its changes stays visible and nothing sits against the terminal's
+border. The session also starts one row below the top edge.
 
 The footer is two rows. The first names where the session runs on the left — the project root and the
 branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` — and on the right the
@@ -137,6 +142,16 @@ An answer is drawn as the model shaped it: headings, lists, tables, block quotes
 italic and colour. goldmark parses the CommonMark; ykode draws it, so the palette and the width stay
 the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
 arrived, and only the drawing interprets it.
+
+For a long task the model keeps a checklist with the `plan` tool: it sends every step each time, each
+pending, active (the one it is on), done or failed, so the list is never half an edit. The screen pins it
+between the transcript and the prompt, where it cannot scroll away: a heading with one cell per step
+(`plan ▰▰▰▱▱ 3/5`, green for done, the accent for the active one, red for failed, hollow for pending), then a row
+per step, the active one turning with the spinner while the turn runs. A plan too long for the room shows the
+steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan with every step
+done fold it to its heading. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
+in the newest plan call, and a fold carries it in its recap so the model never loses the list it is working
+through. Twelve steps at most, a line each; the tool costs about 500 bytes of every request.
 
 Each call the model makes is one row — always one row — in plain words: the tool, the file or pattern
 or command it touched **from where the project starts** (`toy_llm/train.py`, not
@@ -205,7 +220,10 @@ estimate used to set each reply's `max_tokens` (when no cap was asked for) and t
 trim old tool output, so the context budget stops guessing.
 
 What ykode does about the server's prompt cache is keep still rather than instruct: the system message
-and the tool list are built once per session so the prefix never moves, folding older turns waits
+and the tool list hold nothing that changes from one run to the next, so the prefix is the same bytes in
+every run and a resumed conversation is not read again. The date and whether the git tree has changes
+travel with an ask instead, as a short `<environment>` note at its end, and only when they differ from
+what the last ask said; a listing or a replay shows the ask without it. Within a run, folding older turns waits
 until enough has changed to be worth the reset it costs, and `/ctx` reports what the server says it
 found. There are no `cache_control` breakpoints, no `prompt_cache_key`, no retention setting: a local
 `llama.cpp` decides what to keep from the prefix it was already handed, and asking it is a different

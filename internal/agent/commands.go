@@ -36,6 +36,7 @@ func Commands() []CommandSpec {
 		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
 		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it"},
 		{Name: "/sessions", Note: "the conversations saved for this project, and how to come back to one"},
+		{Name: "/plan", Note: "the steps of the task the model is working through, as it last wrote them"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
 		{Name: "/model", Args: "[id | number]", Note: "lists the models this server offers; an id or a number switches to it", Waits: true},
@@ -120,6 +121,8 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		return a.History(arg, historyLimit), false, nil
 	case "/sessions":
 		return a.Sessions(sessionsLimit), false, nil
+	case "/plan":
+		return a.opts.Plan.Report() + "\n", false, nil
 	case "/ctx":
 		return a.ContextLine() + "\n", false, nil
 	case "/tools":

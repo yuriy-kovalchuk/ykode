@@ -11,6 +11,7 @@ import (
 func Options(cfg config.Config, model string, ctxSize int, store tools.ResultStore, undo *tools.UndoStack) (tools.Options, agent.Options) {
 	resultBytes := tools.ResultBytesFor(ctxSize)
 	thinking, noThink := cfg.SamplingFor(model)
+	plan := tools.NewPlan() // one list: the tool writes it while the screen reads it
 	return tools.Options{
 		ReadLines:      cfg.ReadLines,
 		SearchLimit:    cfg.SearchLimit,
@@ -19,6 +20,7 @@ func Options(cfg config.Config, model string, ctxSize int, store tools.ResultSto
 		MaxResultBytes: resultBytes,
 		Store:          store,
 		Undo:           undo,
+		Plan:           plan,
 		Sandbox:        cfg.Sandbox,
 	}, agent.Options{
 		MaxTurns:         cfg.MaxTurns,
@@ -37,5 +39,6 @@ func Options(cfg config.Config, model string, ctxSize int, store tools.ResultSto
 		Undo:             undo,
 		Allow:            cfg.Allow,
 		Root:             cfg.Root,
+		Plan:             plan,
 	}
 }

@@ -272,3 +272,21 @@ func TestThinkingAndAFoldSurviveAResume(t *testing.T) {
 		t.Error("thinking leaked into the message a request would carry")
 	}
 }
+
+// the note ykode ends an ask with is split off again wherever an ask is shown to a person
+func TestTheNoteAtTheEndOfAnAskIsSplitOffAgain(t *testing.T) {
+	note := "date: 2026-11-09\ngit: branch main, clean"
+	ask := "fix the bug\n\nin two lines" + EnvironmentOpen + note + EnvironmentClose
+	text, got := SplitEnvironment(ask)
+	if text != "fix the bug\n\nin two lines" || got != note {
+		t.Errorf("split into %q and %q", text, got)
+	}
+	if WithoutEnvironment(ask) != text {
+		t.Error("WithoutEnvironment disagrees with the split")
+	}
+	for _, plain := range []string{"just an ask", "mentions <environment> in passing", "ends oddly\n\n<environment>\nno close"} {
+		if text, note := SplitEnvironment(plain); text != plain || note != "" {
+			t.Errorf("%q was split into %q and %q", plain, text, note)
+		}
+	}
+}

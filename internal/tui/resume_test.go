@@ -9,6 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
 // a session that was saved mid-work: an ask, a call and its answer, and what came of it
@@ -131,5 +132,21 @@ func TestAResumedConversationShowsWhatTheModelThought(t *testing.T) {
 	})
 	if out := stripCodes(log.render(80)); !strings.Contains(out, "the bug is in a.go") {
 		t.Errorf("the thinking did not come back:\n%s", out)
+	}
+}
+
+// an ask comes back as it was typed, without the note ykode ended it with, and so does the history
+func TestAResumedAskShowsWhatWasTyped(t *testing.T) {
+	var log transcript
+	asks := log.replay([]llm.Message{
+		{Role: "system", Content: "s"},
+		{Role: "user", Content: "fix it" + session.EnvironmentOpen + "date: 2026-11-09\ngit: branch main, clean" + session.EnvironmentClose},
+		{Role: "assistant", Content: "done"},
+	})
+	if len(asks) != 1 || asks[0] != "fix it" {
+		t.Errorf("the walkable asks are %q", asks)
+	}
+	if out := stripCodes(log.render(80)); strings.Contains(out, "environment") || strings.Contains(out, "git:") || !strings.Contains(out, "fix it") {
+		t.Errorf("the replay shows the note, or lost the ask:\n%s", out)
 	}
 }

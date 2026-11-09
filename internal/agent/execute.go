@@ -61,7 +61,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 		if guardedTools[name] {
 			a.repeats.release(repeatKey(call)) // it answered nothing, so trying again is not a repeat
 		}
-		if !readOnlyTools[name] {
+		if changesProject(name) {
 			a.repeats.changed() // a command that failed may still have changed files on the way
 		}
 		a.record(id, name, argsText, targets, outside, decision, "error", "", tools.Detail{}, start)
@@ -77,7 +77,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	}
 	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
 	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result})
-	if !readOnlyTools[name] {
+	if changesProject(name) {
 		a.repeats.changed() // the project changed: what was read before is no longer the answer
 	}
 	return result
@@ -171,3 +171,7 @@ func (a *Agent) normalizedArgs(name string, args json.RawMessage) json.RawMessag
 	}
 	return args
 }
+
+// changesProject says a tool may have changed what is on disk, so what was read before is no longer the
+// answer. A search is not one, and neither is the plan, which only the screen and the model read.
+func changesProject(name string) bool { return !readOnlyTools[name] && name != "plan" }

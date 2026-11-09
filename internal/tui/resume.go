@@ -7,6 +7,7 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
 // resume puts the conversation a run came back to on the screen, above the prompt that continues it,
@@ -36,9 +37,11 @@ func (t *transcript) replay(messages []llm.Message) []string {
 				t.summary(strings.TrimSpace(recap))
 				continue
 			}
-			// the hour was never saved, so a carried-over ask shows no clock
-			t.user(m.Content, time.Time{})
-			asks = append(asks, m.Content)
+			// the hour was never saved, so a carried-over ask shows no clock; the note ykode added to the
+			// end of it is not what was typed
+			ask := session.WithoutEnvironment(m.Content)
+			t.user(ask, time.Time{})
+			asks = append(asks, ask)
 		case "assistant":
 			if thought := strings.TrimSpace(m.Reasoning); thought != "" {
 				t.thinking(thought) // what the model thought is saved with what it said

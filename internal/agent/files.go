@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // foldNote is what the fold in progress did, held until it is written to the session log.
@@ -19,6 +20,8 @@ const (
 	readFilesClose    = "</read-files>"
 	modifiedFilesOpen = "<modified-files>"
 	modifiedFilesEnd  = "</modified-files>"
+	planOpen          = "<plan>"
+	planClose         = "</plan>"
 )
 
 // noteFiles adds the files the folded turns touched to the lists the run keeps. The lists accumulate
@@ -101,10 +104,10 @@ func recapOf(m llm.Message) (string, bool) {
 	if !ok || m.Role != "user" {
 		return "", false
 	}
-	if at := strings.Index(text, "\n\n"+readFilesOpen); at >= 0 {
-		text = text[:at]
-	} else if at := strings.Index(text, "\n\n"+modifiedFilesOpen); at >= 0 {
-		text = text[:at]
+	for _, open := range []string{readFilesOpen, modifiedFilesOpen, planOpen} {
+		if at := strings.Index(text, "\n\n"+open); at >= 0 {
+			text = text[:at] // the blocks after the summary are not part of it
+		}
 	}
 	return strings.TrimSpace(text), true
 }
@@ -129,4 +132,41 @@ func block(text, open, end string) []string {
 	}
 	body, _, _ := strings.Cut(rest, "\n"+end)
 	return strings.Split(body, "\n")
+}
+
+// planBlock is the plan at the end of a recap, so a fold that drops the call which wrote it does not
+// leave the model without the list it is working through.
+func (a *Agent) planBlock() string {
+	if len(a.opts.Plan.Steps()) == 0 {
+		return ""
+	}
+	return "\n\n" + planOpen + "\n" + a.opts.Plan.Report() + "\n" + planClose
+}
+
+// restorePlan finds the plan in a resumed conversation: the newest plan call that ran, or else the one
+// a fold carried in its recap. The model wrote it and a front end shows it, so it has to be back before
+// either looks.
+func (a *Agent) restorePlan(history []llm.Message) {
+	ran := map[string]bool{} // a call whose answer was an error left the plan as it was
+	for _, m := range history {
+		if m.Role == "tool" && m.Name == "plan" && !strings.HasPrefix(m.Content, "error:") {
+			ran[m.ToolCallID] = true
+		}
+	}
+	for i := len(history) - 1; i >= 0; i-- {
+		for j := len(history[i].ToolCalls) - 1; j >= 0; j-- {
+			call := history[i].ToolCalls[j]
+			if call.Function.Name == "plan" && ran[call.ID] {
+				a.opts.Plan.Restore(tools.StepsFrom(call.Function.Arguments))
+				return
+			}
+		}
+	}
+	for _, m := range history {
+		if _, folded := recapOf(m); folded {
+			_, rest, _ := strings.Cut(m.Content, planOpen+"\n")
+			body, _, _ := strings.Cut(rest, "\n"+planClose)
+			a.opts.Plan.Restore(tools.StepsFromReport(body))
+		}
+	}
 }

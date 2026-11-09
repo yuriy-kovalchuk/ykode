@@ -49,6 +49,8 @@ func Describe(name, args string) string {
 		return describeWith(args, func(in findInput) string {
 			return quote(in.Pattern) + joined(" under ", in.Path)
 		})
+	case "plan":
+		return describeWith(args, planShape)
 	}
 	return brief(args)
 }

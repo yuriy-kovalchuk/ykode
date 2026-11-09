@@ -20,7 +20,7 @@ var keys = [][2]string{
 	{"enter", "send"}, {"ctrl+j", "newline"}, {"ctrl+p ctrl+n", "earlier prompts"},
 	{"tab", "complete a /command"},
 	{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
-	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"},
+	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"}, {"ctrl+o", "fold the plan"},
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 
@@ -32,6 +32,7 @@ func (m *model) bottomArea() string {
 	if m.showKeys {
 		rows = append(rows, m.keysHelp())
 	}
+	rows = append(rows, m.planRows()...)
 	rows = append(rows, m.waitingRows()...)
 	rows = append(rows, m.suggestRows()...)
 	if len(m.pending) > 0 {
@@ -156,7 +157,7 @@ func (m *model) promptLines() string {
 // would have too few rows left to read.
 func (m *model) fitInput() {
 	rows := min(inputRows(m.input.Value(), m.input.Width()), maxInputLines)
-	if room := m.height - m.otherRows() - minTranscriptRows; rows > room {
+	if room := m.height - topRows - m.otherRows() - minTranscriptRows; rows > room {
 		rows = max(room, 1)
 	}
 	if rows != m.input.Height() {

@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/size"
 )
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
-	a.add(llm.Message{Role: "user", Content: prompt})
-	a.task = prompt
+	asked := a.withEnvironment(prompt)
+	a.add(llm.Message{Role: "user", Content: asked})
+	a.task = asked      // what the history holds, which is what compaction looks for
 	a.repeats.changed() // between prompts the user may have changed the files: nothing is a repeat yet
 
 	usedTools, nudged, forceTool, emptyNudged, textNudged, loops := false, false, false, false, false, 0
@@ -199,4 +201,30 @@ func callBytes(c *llm.CallDelta) int {
 		return 0
 	}
 	return len(c.Args)
+}
+
+// withEnvironment ends an ask with the date and the git state when they differ from what the last ask
+// said: the model learns of a commit or a new day from the message that follows it, and a run that
+// changed nothing adds nothing.
+func (a *Agent) withEnvironment(ask string) string {
+	note := environmentNote(a.opts.Root, time.Now())
+	if note == a.environment {
+		return ask
+	}
+	a.environment = note
+	return ask + session.EnvironmentOpen + note + session.EnvironmentClose
+}
+
+// lastEnvironment is the note the newest ask in a conversation carried, so a resumed run repeats it only
+// when something changed.
+func lastEnvironment(history []llm.Message) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != "user" {
+			continue
+		}
+		if _, note := session.SplitEnvironment(history[i].Content); note != "" {
+			return note
+		}
+	}
+	return ""
 }

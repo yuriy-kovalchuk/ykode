@@ -1,12 +1,16 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
 func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
@@ -16,7 +20,7 @@ func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
 
 	for _, want := range []string{
 		"Guidelines:", "project root: " + root, "working directory: " + root, "needs no cd", "os: " + runtime.GOOS + "/" + runtime.GOARCH,
-		"date: " + time.Now().Format("2006-01-02"), "git: not a git repository", "be terse",
+		"be terse",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt misses %q", want)
@@ -27,6 +31,13 @@ func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
 	}
 	if strings.Contains(prompt, "{{") {
 		t.Error("a placeholder was left unfilled")
+	}
+	// what changes between runs is not in the prompt: it would move the cached prefix, and with it the
+	// tool definitions and the whole conversation, whenever a commit or a new day changed it
+	for _, volatile := range []string{"date:", "git:", time.Now().Format("2006-01-02")} {
+		if strings.Contains(prompt, volatile) {
+			t.Errorf("the prompt carries %q, which changes between runs and would move the cached prefix", volatile)
+		}
 	}
 }
 
@@ -86,8 +97,8 @@ func TestTheAgentKeepsTheBranchItsPromptWasBuiltOn(t *testing.T) {
 	if a.Branch() != "footer" {
 		t.Errorf("the agent knows branch %q, want footer", a.Branch())
 	}
-	if prompt := a.history[0].Content; !strings.Contains(prompt, "git: branch footer, clean") {
-		t.Errorf("the prompt does not say what is checked out:\n%s", prompt)
+	if prompt := a.history[0].Content; strings.Contains(prompt, "footer") {
+		t.Errorf("the prompt names the branch, which a checkout would change:\n%s", prompt)
 	}
 }
 
@@ -100,5 +111,92 @@ func TestThePromptSaysWhenTheTreeHasChanges(t *testing.T) {
 	state, branch := gitState(dir)
 	if state != "branch footer, uncommitted changes" || branch != "footer" {
 		t.Errorf("gitState = %q, %q", state, branch)
+	}
+}
+
+// an ask ends with the date and the state of the tree, and again only when one of them changed
+func TestAnAskCarriesTheDateAndTheTreeStateOnlyWhenTheyChange(t *testing.T) {
+	dir := gitRepo(t)
+	stub := &rawStub{scripts: []string{sse("", "ok", "", nil, "stop")}}
+	log := session.New(t.TempDir(), "s1", dir)
+	a, done := stub.agent(t, dir, log)
+	defer done()
+	a.opts.NoVerify = true
+	ask := func(text string) string {
+		t.Helper()
+		if err := a.Ask(context.Background(), text); err != nil {
+			t.Fatal(err)
+		}
+		for i := len(a.history) - 1; i >= 0; i-- {
+			if a.history[i].Role == "user" {
+				return a.history[i].Content
+			}
+		}
+		return ""
+	}
+
+	first := ask("first")
+	text, note := session.SplitEnvironment(first)
+	if text != "first" || !strings.Contains(note, "date: "+time.Now().Format("2006-01-02")) || !strings.Contains(note, "git: branch footer, clean") {
+		t.Errorf("the first ask is %q: want the ask, then the date and a clean tree", first)
+	}
+	if again := ask("second"); again != "second" {
+		t.Errorf("an ask that changed nothing repeated the note: %q", again)
+	}
+	if err := os.WriteFile(dir+"/work.txt", []byte("edit"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, note := session.SplitEnvironment(ask("third")); !strings.Contains(note, "uncommitted changes") {
+		t.Errorf("a tree that changed was not said: %q", note)
+	}
+	a.Reset()
+	if _, note := session.SplitEnvironment(ask("after a reset")); note == "" {
+		t.Error("a new conversation starts without the note")
+	}
+}
+
+// a resume after the tree changed repeats the earlier requests exactly: only the new ask differs, and the
+// note on it says what changed. This is what keeps the server's cache of a long conversation alive
+func TestAResumeAfterTheTreeChangedKeepsEverythingBeforeTheNewAsk(t *testing.T) {
+	dir := gitRepo(t)
+	home := t.TempDir()
+	log := session.New(home, "s1", dir)
+	first := &rawStub{scripts: []string{sse("", "five lines", "", nil, "stop")}}
+	a, done := first.agent(t, dir, log)
+	defer done()
+	a.opts.NoVerify = true
+	if err := a.Ask(context.Background(), "how big is this?"); err != nil {
+		t.Fatal(err)
+	}
+	before := shape(t, first.bodies[0])
+
+	if err := os.WriteFile(dir+"/work.txt", []byte("edit"), 0o600); err != nil { // what an edit session does to the tree
+		t.Fatal(err)
+	}
+	back, err := session.Load(filepath.Join(home, "s1.jsonl"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := &rawStub{scripts: []string{sse("", "ok", "", nil, "stop")}}
+	b, done2 := second.agent(t, dir, nil)
+	defer done2()
+	b.opts.NoVerify = true
+	b.Resume(back)
+	if err := b.Ask(context.Background(), "and now?"); err != nil {
+		t.Fatal(err)
+	}
+	after := shape(t, second.bodies[0])
+
+	if string(before.Tools) != string(after.Tools) {
+		t.Error("the tool definitions moved")
+	}
+	for i := range before.Messages { // the system prompt, and the first ask with its note
+		if string(before.Messages[i]) != string(after.Messages[i]) {
+			t.Fatalf("message %d moved, so the server would read the conversation again:\n before: %.300s\n after:  %.300s",
+				i, before.Messages[i], after.Messages[i])
+		}
+	}
+	if last := string(after.Messages[len(after.Messages)-1]); !strings.Contains(last, "uncommitted changes") {
+		t.Errorf("the new ask does not say the tree changed: %s", last)
 	}
 }
