@@ -16,9 +16,10 @@ func TestANoCapReplyGetsTheRoomTheWindowHasLeft(t *testing.T) {
 	if !ok {
 		t.Fatal("a known window must still bound the reply")
 	}
-	// the window minus the margin is the ceiling; the prompt in front of it eats part of that room
-	if maxTokens > 8000-4096 {
-		t.Errorf("max_tokens = %v: want at most the window minus the margin", maxTokens)
+	// the window minus the reserve is the ceiling; the prompt in front of it eats part of that room.
+	// The reserve is the margin asked for, but never more than a quarter of the window
+	if maxTokens > 8000-8000/4 {
+		t.Errorf("max_tokens = %v: want at most the window minus the reserve", maxTokens)
 	}
 	if maxTokens < 1024 {
 		t.Errorf("max_tokens = %v: what is left after the prompt should still be a usable reply", maxTokens)

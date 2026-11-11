@@ -1,5 +1,9 @@
 // Package session keeps a run's conversation on disk so another run can pick it up.
-// The log is append-only: one JSON line per message, never edited, never trimmed.
+// The log is append-only: one JSON line per message, never edited, never trimmed. What a run does to
+// the conversation after it was said - shortening an old result, dropping a turn - is a line of its
+// own, so reading the file back gives the conversation as the run last sent it, byte for byte. That
+// is what a server's prompt cache compares: a resume that words one old message differently makes
+// the server read everything after it again.
 package session
 
 import (
@@ -68,9 +72,27 @@ type Fold struct {
 }
 
 const (
-	boundaryCleared = "cleared"
-	boundaryFolded  = "folded"
+	boundaryCleared   = "cleared"
+	boundaryFolded    = "folded"
+	boundaryRewritten = "rewritten"
 )
+
+// change is a line that alters the conversation written so far without starting it over: one
+// message put in another's place, or a run of messages taken out. A position counts the messages
+// since the last boundary, from 0. A line of this kind can also carry what the run learned about the
+// server, which is no part of the conversation and is needed to carry it on the same way.
+type change struct {
+	Revised       *int    `json:"revised,omitempty"`
+	Message       *record `json:"message,omitempty"`
+	Removed       []int   `json:"removed,omitempty"`         // [from, to): the messages taken out
+	BytesPerToken float64 `json:"bytes_per_token,omitempty"` // how the server counted the last request
+}
+
+// Saved is a conversation as a log holds it, and what the run that wrote it had learned.
+type Saved struct {
+	Messages      []llm.Message
+	BytesPerToken float64 // 0 when the run never heard a count from its server
+}
 
 // New points a log at <dir>/<id>.jsonl for the project at root; an empty id means sessions are off.
 func New(dir, id, root string) *Log {
@@ -121,6 +143,34 @@ func (l *Log) Folded(f Fold) error {
 		ReadFiles: f.ReadFiles, ModifiedFiles: f.ModifiedFiles, Dropped: f.Dropped, TokensBefore: f.TokensBefore}))
 }
 
+// Rewritten saves the conversation whole, as it now stands: for a repair that moved messages about
+// rather than changing one.
+func (l *Log) Rewritten(kept []llm.Message) error {
+	records := make([]record, len(kept))
+	for i, m := range kept {
+		records[i] = recordOf(m)
+	}
+	return l.write(mustJSON(boundary{Boundary: boundaryRewritten, Kept: records}))
+}
+
+// Revise puts m in the place of the message at position at: the run shortened it, and what it sends
+// from now on is the short one.
+func (l *Log) Revise(at int, m llm.Message) error {
+	r := recordOf(m)
+	return l.write(mustJSON(change{Revised: &at, Message: &r}))
+}
+
+// Remove takes the messages in [from, to) out of the conversation.
+func (l *Log) Remove(from, to int) error {
+	return l.write(mustJSON(change{Removed: []int{from, to}}))
+}
+
+// Learned keeps how many bytes the server counted as one token. A run that comes back without it
+// measures the same conversation with a guess, and may trim what the first run had no need to.
+func (l *Log) Learned(bytesPerToken float64) error {
+	return l.write(mustJSON(change{BytesPerToken: bytesPerToken}))
+}
+
 // write appends JSON lines, opening the file with its project header when it is new.
 func (l *Log) write(lines ...[]byte) error {
 	if l == nil {
@@ -159,6 +209,19 @@ func (l *Log) Count() int {
 // Load reads a conversation back for the project at root, refusing one another project started.
 // A half-written last line (the process was killed mid-write) is dropped rather than failing the resume.
 func Load(path, root string) ([]llm.Message, error) {
+	saved, err := LoadAll(path, root)
+	return saved.Messages, err
+}
+
+// LoadAll is Load with what the run had learned beside the conversation.
+func LoadAll(path, root string) (Saved, error) {
+	var saved Saved
+	messages, err := load(path, root, &saved)
+	saved.Messages = messages
+	return saved, err
+}
+
+func load(path, root string, saved *Saved) ([]llm.Message, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("session: %w", err)
@@ -184,6 +247,14 @@ func Load(path, root string) ([]llm.Message, error) {
 			}
 			continue
 		}
+		var c change
+		if json.Unmarshal([]byte(line), &c) == nil && (c.Revised != nil || c.Removed != nil || c.BytesPerToken > 0) {
+			messages = c.apply(messages)
+			if c.BytesPerToken > 0 {
+				saved.BytesPerToken = c.BytesPerToken
+			}
+			continue
+		}
 		var r record
 		if err := json.Unmarshal([]byte(line), &r); err != nil {
 			if i == len(lines)-1 {
@@ -194,6 +265,18 @@ func Load(path, root string) ([]llm.Message, error) {
 		messages = append(messages, r.message())
 	}
 	return messages, nil
+}
+
+// apply makes a change to the conversation read so far. A change that points outside it was written
+// by a run whose file lost lines since: it is left out rather than failing the whole resume.
+func (c change) apply(messages []llm.Message) []llm.Message {
+	if c.Revised != nil && c.Message != nil && *c.Revised >= 0 && *c.Revised < len(messages) {
+		messages[*c.Revised] = c.Message.message()
+	}
+	if len(c.Removed) == 2 && c.Removed[0] >= 0 && c.Removed[0] <= c.Removed[1] && c.Removed[1] <= len(messages) {
+		messages = append(messages[:c.Removed[0]], messages[c.Removed[1]:]...)
+	}
+	return messages
 }
 
 // List names the saved conversations, newest first. The ids are stamped with the run time,

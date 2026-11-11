@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // readOnlyTools change nothing, so several of them in one turn can run at the same time.
@@ -20,8 +21,39 @@ func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 		return
 	}
 	for i, call := range calls {
-		a.add(a.toolMessage(call, a.runTool(ctx, call, ids[i]), ids[i]))
+		result := a.runTool(ctx, call, ids[i])
+		if i == len(calls)-1 {
+			result += a.planReminder(calls)
+		}
+		a.add(a.toolMessage(call, result, ids[i]))
 	}
+}
+
+// planStaleCalls is how many calls a plan with open steps may go without being touched before the
+// model is reminded it has one.
+const planStaleCalls = 6
+
+// planReminder is a line added to the newest result when the model has worked for a while without
+// touching its plan. A model writes the list, gets absorbed in the work, and marks every step done in
+// one go at the end: the list on the screen then says nothing while it matters. The reminder rides on
+// a result the model is about to read anyway, so it costs no round-trip and moves nothing already sent.
+func (a *Agent) planReminder(calls []llm.ToolCall) string {
+	for _, call := range calls {
+		if call.Function.Name == "plan" {
+			a.sincePlan = 0
+			return ""
+		}
+	}
+	steps := a.opts.Plan.Steps()
+	if len(steps) == 0 || tools.Settled(steps) {
+		a.sincePlan = 0
+		return ""
+	}
+	if a.sincePlan += len(calls); a.sincePlan < planStaleCalls {
+		return ""
+	}
+	a.sincePlan = 0
+	return "\n\n[ykode: the plan has not been updated for a while. If a step is finished, call plan now with it marked done and the next one active.]"
 }
 
 // runAtOnce runs a batch of read-only calls together and keeps their replies in call order.
@@ -36,6 +68,7 @@ func (a *Agent) runAtOnce(ctx context.Context, calls []llm.ToolCall, ids []strin
 		}(i, call)
 	}
 	wg.Wait()
+	results[len(results)-1] += a.planReminder(calls)
 	for i, call := range calls {
 		a.add(a.toolMessage(call, results[i], ids[i]))
 	}

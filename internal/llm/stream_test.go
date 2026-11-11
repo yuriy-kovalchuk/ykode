@@ -222,3 +222,19 @@ func TestTimingsAreReportedWhileStreaming(t *testing.T) {
 		t.Errorf("speeds while streaming = %v, want one per chunk ending at 38.5", speeds)
 	}
 }
+
+// a server with no timings of its own still says what the request cost, in the stream's last chunk:
+// the prompt's size and the part of it the cache served are read from there
+func TestAServerThatOnlyCountsUsageStillReportsTheCache(t *testing.T) {
+	acc := newStreamAccumulator()
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1200,\"completion_tokens\":7,\"prompt_tokens_details\":{\"cached_tokens\":1000}}}\n\n" +
+		"data: [DONE]\n\n"
+	if err := readSSE(strings.NewReader(stream), acc, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := acc.turn().Timings
+	if got.PromptTokens() != 1200 || got.CacheN != 1000 || got.PredictedN != 7 {
+		t.Errorf("read %+v, want a prompt of 1200 with 1000 cached and 7 written", got)
+	}
+}

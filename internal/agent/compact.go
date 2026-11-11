@@ -88,11 +88,13 @@ func (a *Agent) Compact(ctx context.Context) int {
 		a.tell("the model could not summarise the older turns; shortening tool results instead")
 		a.shrinkForCompaction()
 		a.trimHistory()
+		a.compactedAt = callBlocks(a.history) // the next try waits for new work, not for the next turn
 		return a.foldFreed(before)
 	}
 	if len(summary) >= historyBytes(dropped) {
 		// the recap would be as big as what it replaces: folding would cost a request and save nothing
 		a.tell("the older turns are already smaller than a summary of them: nothing was folded")
+		a.compactedAt = callBlocks(a.history) // asking again every turn would cost a request and the cache each time
 		return a.foldFreed(before)
 	}
 	a.forget(a.dropping(start, task)...)

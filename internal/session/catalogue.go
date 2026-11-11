@@ -96,6 +96,14 @@ func describeLine(c *Conversation, line string, first bool) {
 		}
 		return
 	}
+	var ch change
+	if json.Unmarshal([]byte(line), &ch) == nil && (ch.Revised != nil || ch.Removed != nil || ch.BytesPerToken > 0) {
+		// counted as Load applies it: a range that does not fit the conversation is left out there too
+		if len(ch.Removed) == 2 && ch.Removed[0] >= 0 && ch.Removed[0] <= ch.Removed[1] && ch.Removed[1] <= c.Messages {
+			c.Messages -= ch.Removed[1] - ch.Removed[0]
+		}
+		return // a change to what was said is not something said
+	}
 	var m llm.Message
 	if json.Unmarshal([]byte(line), &m) != nil {
 		return // a half-written tail: the shape of what is whole still stands

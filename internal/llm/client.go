@@ -131,6 +131,7 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(Delta)) (Turn, error) {
 	var empty Turn
 	body.Stream = true
+	body.StreamOptions = &StreamOptions{IncludeUsage: true}
 	body.Messages = offTheWire(body.Messages)
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -219,6 +220,19 @@ func (f chatFailure) Error() string {
 		msg += " (a router like this one loads models on demand, so the model may still be starting)"
 	}
 	return msg
+}
+
+// overflowWords is how servers say a request was bigger than the model's window.
+var overflowWords = regexp.MustCompile(`(?i)(exceeds? the (available )?context|context (size|length|window)|maximum context|too many tokens|prompt is too long|n_ctx)`)
+
+// IsOverflow says a request failed because it did not fit the model's window. The count that said it
+// would fit was an estimate, so the run can make room and ask again instead of giving up.
+func IsOverflow(err error) bool {
+	var failure chatFailure
+	if !errors.As(err, &failure) {
+		return false
+	}
+	return (failure.code == http.StatusBadRequest || failure.code == http.StatusRequestEntityTooLarge) && overflowWords.MatchString(failure.detail)
 }
 
 // couldPassLater reports a failure where asking again is worth the wait.

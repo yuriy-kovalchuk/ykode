@@ -84,7 +84,16 @@ func (p *Plan) Run(_ context.Context, args json.RawMessage) (string, error) {
 		return "", errors.New("plan: no step to keep; send the list again with its steps written out")
 	}
 	p.set(steps)
-	return p.Report(), nil
+	report := p.Report()
+	if written := len(cleanSteps(in.Steps[:min(len(in.Steps), maxPlanSteps)])); len(in.Steps) > maxPlanSteps && written == maxPlanSteps {
+		// said, not done quietly: a model that believes it has fifteen steps marks ones the plan never held
+		report += fmt.Sprintf("\n(a plan holds %d steps: the %d after those were left out. Fold steps together if the rest matter.)",
+			maxPlanSteps, len(in.Steps)-maxPlanSteps)
+	}
+	if !Settled(steps) {
+		report += "\n(call plan again when the active step is finished, before starting the next)"
+	}
+	return report, nil
 }
 
 // cleanSteps is a list as the plan keeps it: each step on one line, a step with nothing in it dropped

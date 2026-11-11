@@ -13,7 +13,7 @@ import (
 // Defaults used when no setting, env var or flag says otherwise.
 const (
 	defaultBaseURL       = "http://127.0.0.1:8080/v1"
-	defaultMaxTurns      = 25
+	defaultMaxTurns      = 100
 	defaultReadLines     = 150
 	defaultSearchLimit   = 50
 	defaultExecTimeout   = 60 * time.Second
@@ -89,7 +89,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.APIKey, "api-key", "", "bearer token for servers that ask for one ($LOCAL_LLM_API_KEY)")
 	fs.StringVar(&f.Model, "model", "", "model id; default is the first from /models ($LOCAL_LLM_MODEL)")
 	fs.StringVar(&f.Root, "root", ".", "project root; every file tool is confined to it")
-	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request (default 25)")
+	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request (default 100)")
 	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "tokens per model response; 0 leaves the reply the room the window has left (default)")
 	fs.IntVar(&f.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
 	fs.StringVar(&f.ThinkingLevel, "thinking", "", "how deeply the model thinks: off, minimal, low, medium, high, xhigh, max")

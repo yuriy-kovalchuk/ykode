@@ -36,6 +36,8 @@ type Agent struct {
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	meter         meter
+	savedRatio    float64    // the byte ratio the session log last heard of
+	sincePlan     int        // tool calls since the model last touched its plan
 	usageMu       sync.Mutex // the numbers a front end reads while a turn runs elsewhere
 	report        Usage      // what the conversation cost as of the last finished turn
 	waitingMu     sync.Mutex // asks typed while a turn ran, taken between round-trips
@@ -89,6 +91,28 @@ func (a *Agent) add(m llm.Message) {
 	a.reportSave(a.opts.Session.Append(m))
 }
 
+// The saved conversation is kept the same as the one being sent, message for message: whatever
+// rewrites the history says so to the log through one of these. A run that comes back then sends the
+// bytes this one sent, and the server's cache still holds them.
+
+// revised says history[i] was changed in place.
+func (a *Agent) revised(i int) {
+	a.reportSave(a.opts.Session.Revise(i-1, storable(a.history[i]))) // the log does not hold the system prompt
+}
+
+// removed says history[from:to] is about to be, or has just been, taken out.
+func (a *Agent) removed(from, to int) {
+	a.reportSave(a.opts.Session.Remove(from-1, to-1))
+}
+
+// Learned hands a run that is coming back what the earlier one had learned about its server: the
+// same conversation is then measured the same way, and what fitted before is not trimmed now.
+func (a *Agent) Learned(bytesPerTok float64) {
+	if bytesPerTok >= minBytesPerTok && bytesPerTok <= maxBytesPerTok {
+		a.meter.bytesPerTok, a.savedRatio = bytesPerTok, bytesPerTok
+	}
+}
+
 // Resume continues where a saved conversation stopped.
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
@@ -98,9 +122,24 @@ func (a *Agent) Resume(messages []llm.Message) {
 	a.restoreFiles(a.history)
 	a.restorePlan(a.history)
 	a.environment = lastEnvironment(a.history)
+	if hasRecap(a.history) {
+		// the conversation was folded before it was saved: the next fold waits for new work to pile up,
+		// as it would have in the run that folded it, instead of coming at the first sign of pressure
+		a.compactedAt = min(callBlocks(a.history), compactKeep)
+	}
 	a.sanitizeHistory()
 	a.trimHistory()
 	a.publishUsage()
+}
+
+// hasRecap says a conversation begins with what a fold left.
+func hasRecap(history []llm.Message) bool {
+	for _, m := range history {
+		if _, ok := recapOf(m); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // highestCallID is the largest rN a conversation already holds; 0 when it holds none.
@@ -134,5 +173,10 @@ func (a *Agent) note(text string) {
 // modelNote answers the model in the user's voice: a request whose last line is an assistant
 // message is continued by the server as prefill instead of answered.
 func (a *Agent) modelNote(text string) {
-	a.add(llm.Message{Role: "user", Content: text})
+	a.add(llm.Message{Role: "user", Content: NoteMark + text})
 }
+
+// NoteMark opens a message ykode wrote to the model in the user's place. Without it the model takes
+// the note for something the user typed - and a model reading this very repository has answered one
+// as "a string from your own codebase, a slip" and carried on as if nothing had been said.
+const NoteMark = "[ykode, the program running this session, not the user] "

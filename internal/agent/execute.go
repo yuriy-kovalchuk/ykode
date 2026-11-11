@@ -76,7 +76,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 		status = "timeout"
 	}
 	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
-	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result})
+	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result, Change: detailOf(tool).Change})
 	if changesProject(name) {
 		a.repeats.changed() // the project changed: what was read before is no longer the answer
 	}

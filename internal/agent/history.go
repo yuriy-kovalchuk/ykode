@@ -18,29 +18,30 @@ func (a *Agent) estimateTokens() int {
 // trimHistory keeps the conversation inside the window: large tool results are blanked first, then,
 // if that was not enough, whole tool calls and their replies are dropped from the oldest end.
 func (a *Agent) trimHistory() {
-	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.opts.CtxSize*3/4 {
+	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.pressureMark() {
 		return
 	}
-	a.trimResults(1, a.firstUnseen(), a.opts.CtxSize/2)
+	a.trimResults(1, a.firstUnseen(), a.trimGoal())
 	// dropping whole calls is the emergency brake: it costs the model its recent work, so it waits
 	// until the window is nearly full, after shortening and compaction have had their turn.
-	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestToolCall() {
+	for a.estimateTokens() > a.ceiling() && a.dropOldestToolCall() {
 		a.tell("dropped an older tool call and its result to fit the context")
 	}
 	// a resumed conversation can be all prose, and prose has to go some day
-	for a.estimateTokens() > a.opts.CtxSize*9/10 && a.dropOldestExchange() {
+	for a.estimateTokens() > a.ceiling() && a.dropOldestExchange() {
 		a.tell("dropped an older turn to fit the context")
 	}
 	// last resort: a reply too big for what is left is cut rather than failing the request
-	a.trimResults(a.firstUnseen(), len(a.history), a.opts.CtxSize*9/10)
+	a.trimResults(a.firstUnseen(), len(a.history), a.ceiling())
 }
 
 // trimResults blanks large results in history[from:to], oldest first, until the estimate is under goal.
 func (a *Agent) trimResults(from, to, goal int) {
 	for i := from; i < to && a.estimateTokens() > goal; i++ {
-		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > 400 && !strings.HasPrefix(m.Content, shrinkMark) {
+		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > summaryFloor && !strings.HasPrefix(m.Content, shrinkMark) {
 			a.forget(*m)
 			m.Content = a.trimmed(m)
+			a.revised(i)
 			a.tell("trimmed a tool result to fit the context")
 		}
 	}
@@ -84,6 +85,7 @@ func (a *Agent) dropOldestToolCall() bool {
 		return false // a call whose replies are still owed must stay: the API pairs them
 	}
 	a.forget(a.history[i:end]...)
+	a.removed(i, end)
 	a.history = append(a.history[:i], a.history[end:]...)
 	return true
 }
@@ -102,6 +104,7 @@ func (a *Agent) dropOldestExchange() bool {
 		if !anotherTurnFollows(a.history[end:]) {
 			return false // never drop the question being answered now
 		}
+		a.removed(i, end)
 		a.history = append(a.history[:i], a.history[end:]...)
 		return true
 	}

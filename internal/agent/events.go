@@ -62,6 +62,7 @@ type Event struct {
 	Tool   string
 	Args   string
 	Text   string
+	Change string   // on a ToolEnd that changed a file: the whole change, for a screen; Text holds the model's short one
 	Target []string // paths outside the project root, on a Confirm event
 	Stats  Stats
 	Call   int // on a ToolDraft: which call of the reply, as the server numbers them

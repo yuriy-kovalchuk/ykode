@@ -26,7 +26,7 @@ func TestAPlanCallReplacesTheListAndReadsBack(t *testing.T) {
 	planned(t, p, `{"steps":[{"text":"read the loop","status":"done"},{"text":"write the panel","status":"active"},{"text":"test it"}]}`)
 
 	got := planned(t, p, `{"steps":[{"text":"write the panel","status":"done"},{"text":"test it","status":"active"}]}`)
-	want := "plan 1/2\n[x] write the panel\n[*] test it"
+	want := "plan 1/2\n[x] write the panel\n[*] test it\n(call plan again when the active step is finished, before starting the next)"
 	if got != want {
 		t.Errorf("answered:\n%s\nwant:\n%s", got, want)
 	}
@@ -182,5 +182,25 @@ func TestAPlanCanBeReadBackFromItsCallAndItsReport(t *testing.T) {
 	q.Restore(want)
 	if !reflect.DeepEqual(q.Steps(), want) {
 		t.Error("a restored plan differs")
+	}
+}
+
+// a plan with work left says to come back to it, one that is over does not, and steps past what a
+// plan holds are said to have been left out rather than dropped quietly
+func TestAPlanSaysWhatTheModelShouldKnow(t *testing.T) {
+	p := NewPlan()
+	if got := planned(t, p, `{"steps":[{"text":"one","status":"done"},{"text":"two","status":"failed"}]}`); strings.Contains(got, "call plan again") {
+		t.Errorf("a plan that is over asks to be updated: %q", got)
+	}
+	var steps []string
+	for i := 0; i < maxPlanSteps+3; i++ {
+		steps = append(steps, fmt.Sprintf(`{"text":"step %d"}`, i))
+	}
+	got := planned(t, p, `{"steps":[`+strings.Join(steps, ",")+`]}`)
+	if !strings.Contains(got, "the 3 after those were left out") || !strings.Contains(got, "call plan again") {
+		t.Errorf("fifteen steps answered %q", got)
+	}
+	if len(p.Steps()) != maxPlanSteps {
+		t.Errorf("the plan holds %d steps", len(p.Steps()))
 	}
 }

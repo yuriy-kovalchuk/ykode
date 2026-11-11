@@ -78,10 +78,12 @@ func Run(args []string, version string) error {
 	front := NewFrontEnd(cfg)
 	a := agent.New(client, tools.BuiltIn(root, cfg.Root, toolOpts), model.ID, agentOpts, front.View)
 	if cfg.Continue != "" {
-		messages, err := session.Load(cfg.SessionFile, cfg.Root)
+		saved, err := session.LoadAll(cfg.SessionFile, cfg.Root)
 		if err != nil {
 			return err
 		}
+		messages := saved.Messages
+		a.Learned(saved.BytesPerToken) // before the conversation is measured, so it is measured as it was
 		a.Resume(messages)
 		fmt.Fprintf(os.Stderr, "ykode: resumed %s (%d messages)\n", cfg.Session, len(messages))
 	}

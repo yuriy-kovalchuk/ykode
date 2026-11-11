@@ -16,9 +16,9 @@ const (
 	shrinkMark   = "[ykode shortened this"
 )
 
-// underPressure says the conversation passed 3/4 of the server window, where context starts being worth money.
+// underPressure says the conversation passed the mark where context starts being worth money.
 func (a *Agent) underPressure() bool {
-	return a.opts.CtxSize > 0 && a.estimateTokens() > a.opts.CtxSize*3/4
+	return a.opts.CtxSize > 0 && a.estimateTokens() > a.pressureMark()
 }
 
 // shrinkWhatAged shortens old results and the arguments of old file writes together: both are
@@ -48,6 +48,7 @@ func (a *Agent) shrinkOldResults(keep int) int {
 		a.forget(*m)
 		freed += len(m.Content) - len(summary)
 		m.Content = summary
+		a.revised(i)
 	}
 	return freed
 }
@@ -105,8 +106,8 @@ func (a *Agent) shrinkOldEdits(keep int) int {
 			if j < len(replies) {
 				reply = replies[j]
 			}
-			if reply < 0 || strings.HasPrefix(a.history[reply].Content, "error:") {
-				continue // a call that failed keeps its text: a retry may need it
+			if reply < 0 || !ranToTheEnd(a.history[reply].Content) {
+				continue
 			}
 			sites = append(sites, site{i, j, reply})
 		}
@@ -125,8 +126,16 @@ func (a *Agent) shrinkOldEdits(keep int) int {
 		}
 		freed += len(args) - len(summary)
 		c.Function.Arguments = summary
+		a.revised(s.msg)
 	}
 	return freed
+}
+
+// ranToTheEnd says a write's reply is that of a write that happened. One that failed, or was
+// interrupted before it ran, keeps its arguments: a retry needs them, and "the file on disk has it"
+// said of a write that never happened is a lie the model would build on.
+func ranToTheEnd(reply string) bool {
+	return !strings.HasPrefix(reply, "error:") && reply != neverRan
 }
 
 // editSummary says what a file write did without carrying the text it wrote.
@@ -182,5 +191,3 @@ func (a *Agent) repliesFor(assistant int) []int {
 	}
 	return replies
 }
-
-// byteSize reads like a file listing: 640 B, 2.1 KB.

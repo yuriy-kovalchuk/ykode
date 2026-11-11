@@ -40,7 +40,7 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 	}
 	if a.opts.CtxSize > 0 {
 		used := a.estimateTokens()
-		room := a.opts.CtxSize - used - cmp.Or(a.opts.SafetyMargin, ctxSafetyTok)
+		room := a.usable() - used
 		if room < minResponseTok {
 			return llm.ChatRequest{}, fmt.Errorf(
 				"conversation is about %d tokens but the server context is %d; use /reset or raise --ctx", used, a.opts.CtxSize)
@@ -61,6 +61,32 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 	return req, nil
 }
 
+// reserve is the part of the window held back for the reply and the chat template. It is what the
+// user asked for, but never more than a quarter of the window: a reserve of four thousand tokens
+// is sensible against a window of sixty thousand and is the whole of a window of four thousand, which
+// is what a llama-server started with no flags has.
+func (a *Agent) reserve() int {
+	return min(cmp.Or(a.opts.SafetyMargin, ctxSafetyTok), max(a.opts.CtxSize/4, ctxSafetyTok))
+}
+
+// usable is the window less the reserve: what a request may fill, reply included.
+func (a *Agent) usable() int { return a.opts.CtxSize - a.reserve() }
+
+// The conversation is kept under three marks, each a share of the one before. The ceiling is where
+// whole calls start being dropped: nine tenths of the window, or less when the reserve asks for
+// more than that tenth - so what trimming leaves always passes the check a request makes, and a run
+// never shortens, folds, trims and then refuses to send. Pressure, where old results are shortened
+// and turns folded, is five sixths of the ceiling (three quarters of the window when the reserve is
+// small), and a trim aims for five ninths of it (half the window).
+func (a *Agent) ceiling() int {
+	return min(a.opts.CtxSize*9/10, a.usable()-minResponseTok)
+}
+func (a *Agent) pressureMark() int { return a.ceiling() * 5 / 6 }
+func (a *Agent) trimGoal() int     { return a.ceiling() * 5 / 9 }
+
+// neverRan is the reply written for a call that was interrupted before it answered.
+const neverRan = "this call never ran: the request was interrupted before it finished"
+
 // sanitizeHistory keeps history something a server accepts: a cut-off call holds invalid JSON, and a
 // call whose reply was never written (the user pressed Ctrl-C mid-tool) makes the whole request fail.
 func (a *Agent) sanitizeHistory() {
@@ -72,6 +98,7 @@ func (a *Agent) sanitizeHistory() {
 		}
 	}
 
+	added := false
 	repaired := make([]llm.Message, 0, len(a.history))
 	for i := 0; i < len(a.history); i++ {
 		m := a.history[i]
@@ -87,15 +114,20 @@ func (a *Agent) sanitizeHistory() {
 		}
 		for _, call := range m.ToolCalls {
 			if !answered[call.ID] {
+				added = true
 				repaired = append(repaired, llm.Message{
 					Role:       "tool",
 					ToolCallID: call.ID,
 					Name:       call.Function.Name,
-					Content:    "this call never ran: the request was interrupted before it finished",
+					Content:    neverRan,
 				})
 			}
 		}
 		i = j - 1 // the replies that were already there have been copied
 	}
 	a.history = repaired
+	if added {
+		// messages moved: the saved conversation is written again whole, so its positions still match
+		a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
+	}
 }
