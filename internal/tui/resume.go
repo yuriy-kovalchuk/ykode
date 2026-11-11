@@ -37,6 +37,10 @@ func (t *transcript) replay(messages []llm.Message) []string {
 				t.summary(strings.TrimSpace(recap))
 				continue
 			}
+			if note, ours := strings.CutPrefix(m.Content, agent.NoteMark); ours {
+				t.notice(note) // what ykode told the model in the user's place is not something the user asked
+				continue
+			}
 			// the hour was never saved, so a carried-over ask shows no clock; the note ykode added to the
 			// end of it is not what was typed
 			ask := session.WithoutEnvironment(m.Content)

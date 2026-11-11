@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -12,7 +14,6 @@ import (
 // a call returned stays where it belongs — the file it changed, the log a command wrote, the context
 // the model is reading. Nothing is held for a screen that is not going to draw it.
 const (
-	changeKept   = 60   // lines of a change kept, which is more than the rows ever show
 	tailKept     = 1200 // bytes of a failure's last lines
 	tailShown    = 8    // rows of a failure the screen takes
 	execNoteRun  = 100  // how much of a command fits in its row
@@ -23,8 +24,7 @@ const (
 // call is what the screen remembers of one call.
 type call struct {
 	note   string // one line: what the call touched, and what came back
-	change string // a change's hunks, capped; empty when the call changed nothing
-	left   int    // lines of the change this text left out
+	change string // a change's hunks, as the tool handed them over; empty when the call changed nothing
 	tail   string // a failure's last lines, capped; empty when nothing failed
 }
 
@@ -34,11 +34,17 @@ func readCall(tool, args, result string, failed bool, root string) call {
 	c := call{note: noteFor(tool, args, result, failed, root)}
 	if holdsDiff(result) {
 		_, body, _ := strings.Cut(result, "\n")
-		c.change, c.left = capChange(body)
+		c.holds(body)
 	} else if failed || exitSaid(result) != "" {
 		c.tail = lastLines(withoutItsNote(result), tailKept)
 	}
 	return c
+}
+
+// holds gives a call the change it made, and counts it on the call's row.
+func (c *call) holds(change string) {
+	c.change = strings.TrimRight(change, "\n")
+	c.note = strings.TrimPrefix(c.note+" · "+changeSize(change), " · ")
 }
 
 // noteFor says a call in one line. While it runs, that is what it was asked for. Once it answers, the
@@ -160,16 +166,6 @@ func withoutItsNote(result string) string {
 	return strings.Join(lines, "\n")
 }
 
-// capChange keeps the head of a change and counts what fell off, so a hundred line write costs the
-// run a hundred lines rather than a hundred lines times every redraw.
-func capChange(body string) (string, int) {
-	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
-	if len(lines) <= changeKept {
-		return strings.Join(lines, "\n"), 0
-	}
-	return strings.Join(lines[:changeKept], "\n"), len(lines) - changeKept
-}
-
 // lastLines is the end of what a call answered: where an error is, and the part worth keeping. The
 // cut starts at a line so no row begins in the middle of a word.
 func lastLines(result string, budget int) string {
@@ -207,11 +203,12 @@ func tailRows(tail, note string, width int) []string {
 		lines = lines[len(lines)-tailShown:]
 	}
 	rows := make([]string, 0, len(lines)+1)
+	room := width - lipgloss.Width(tailLead) // the gutter's bar is three bytes and one column
 	if left > 0 {
-		rows = append(rows, styleDim.Render(tailLead+cutToWidth(fmt.Sprintf("… %d earlier lines", left), width-len(tailLead))))
+		rows = append(rows, styleDim.Render(tailLead+cutToWidth(fmt.Sprintf("… %d earlier lines", left), room)))
 	}
 	for _, line := range lines {
-		rows = append(rows, styleDim.Render(tailLead+cutToWidth(diffText(line), width-len(tailLead)-1)))
+		rows = append(rows, styleDim.Render(tailLead+cutToWidth(diffText(line), room-1)))
 	}
 	return rows
 }

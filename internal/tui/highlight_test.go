@@ -62,31 +62,65 @@ func TestThinkingIsNeverColoured(t *testing.T) {
 	}
 }
 
-// a fence that has not been shut yet is on its way: colouring it again on every token would cost more
-// than the rest of the frame, and it is not finished to be read as
-func TestAFenceStillArrivingIsNotColoured(t *testing.T) {
+// a fence that has not been shut yet is coloured as it arrives: code that turns up plain and gains
+// its colours when the block ends reads as the screen falling behind
+func TestAFenceStillArrivingIsColoured(t *testing.T) {
 	withColour(t)
 	var log transcript
 	log.answer("```go\nfunc main() {")
-	if strings.Contains(log.render(70), codeOf(styleCodeKeyword)) {
-		t.Errorf("a fence still being written was coloured:\n%s", stripCodes(log.render(70)))
+	if !strings.Contains(log.render(70), codeOf(styleCodeKeyword)+"func") {
+		t.Errorf("a fence still being written was left plain:\n%s", stripCodes(log.render(70)))
 	}
-	// the same block, once its closing line has arrived, is coloured
-	log.answer("\n```")
-	if !strings.Contains(log.render(70), codeOf(styleCodeKeyword)) {
+	// the closing fence arrives a backtick at a time, and is never drawn as a line of the code
+	for _, piece := range []string{"\n", "`", "`", "`"} {
+		log.answer(piece)
+		if got := stripCodes(log.render(70)); strings.Contains(got, "`") {
+			t.Errorf("the closing fence was drawn as code while it arrived:\n%s", got)
+		}
+	}
+	if !strings.Contains(log.render(70), codeOf(styleCodeKeyword)+"func") {
 		t.Errorf("a closed fence was left plain:\n%s", stripCodes(log.render(70)))
 	}
 }
 
-// a block longer than a screen full is drawn as it came: a grammar has no such limit and would pay
-// for the whole thing on every frame the answer is redrawn
-func TestABlockTooLongToColour(t *testing.T) {
+// a block still arriving is read a chunk at a time: the lines already written are settled, and a
+// frame reads only what follows them, however long the block has grown
+func TestALongBlockArrivingIsReadInChunks(t *testing.T) {
 	withColour(t)
-	block := "```go\n" + strings.Repeat("func pad() int { return 1 }\n", highlightMaxBytes/26+2) + "```\n"
+	line := "func pad() int { return 1 } // a line of the block\n"
+	var cache codeCache
+	code := ""
+	for len(code) < 4*codeChunkBytes {
+		code += line
+		rows := cache.rows(strings.TrimRight(code, "\n"), "go", false)
+		if want := strings.Count(code, "\n"); len(rows) != want {
+			t.Fatalf("%d lines of code drew %d rows", want, len(rows))
+		}
+		if unread := len(code) - cache.live.settled; unread > codeChunkBytes+len(line) {
+			t.Fatalf("%d bytes are read again on every frame, more than a chunk", unread)
+		}
+	}
+	for i, row := range cache.rows(strings.TrimRight(code, "\n"), "go", false) {
+		if !strings.HasPrefix(row, codeOf(styleCodeKeyword)+"func") {
+			t.Fatalf("row %d lost its colour where two chunks meet: %q", i, row)
+		}
+	}
+}
+
+// a block longer than one reading is still coloured once it has closed, and is read once
+func TestABlockOfAnyLengthIsColoured(t *testing.T) {
+	withColour(t)
+	block := "```go\n" + strings.Repeat("func pad() int { return 1 }\n", 2*codeExactBytes/28) + "```\n"
 	var log transcript
 	log.answer(block)
-	if strings.Contains(log.render(70), codeOf(styleCodeKeyword)) {
-		t.Error("a block over the limit was coloured")
+	rows := strings.Split(log.render(70), "\n")
+	if len(rows) < 2*codeExactBytes/28 {
+		t.Fatalf("the block drew %d rows", len(rows))
+	}
+	for _, row := range rows[1:] {
+		if !strings.Contains(row, codeOf(styleCodeKeyword)+"func") {
+			t.Fatalf("a row of a long block was left plain: %q", row)
+		}
 	}
 }
 
@@ -117,37 +151,36 @@ func TestAColouredRowStaysInsideTheScreen(t *testing.T) {
 	}
 }
 
-// an answer is drawn again on every token that arrives, so its blocks are coloured once and asked
-// for by name after that
+// a closed block is read once and asked for by what it says after that: a screen that changes width
+// draws every answer again, and must not read every block again to do it
 func TestEachBlockOfAnAnswerIsColouredOnce(t *testing.T) {
-	var blocks highlightCache
+	withColour(t)
+	var blocks codeCache
 	block := "func main() {}"
-	blocks.keep(block, "go", []string{"first"})
-	if got := blocks.rowsFor(block, "go"); len(got) != 1 {
-		t.Fatalf("the block was not kept: %v", got)
+	first := blocks.rows(block, "go", true)
+	if len(blocks.closed) != 1 {
+		t.Fatalf("the block was not kept: %v", blocks.closed)
+	}
+	if again := blocks.rows(block, "go", true); &again[0] != &first[0] {
+		t.Error("the same block was read a second time")
 	}
 	// the same words asked for as another language are another question
-	if got := blocks.rowsFor(block, "python"); got != nil {
-		t.Errorf("another language was handed the go answer: %v", got)
+	if got := blocks.rows(block, "python", true); got[0] == first[0] {
+		t.Errorf("another language was handed the go answer: %q", got)
 	}
 	// more blocks than an answer holds start the cache over rather than growing it
-	for i := 0; i < cacheMaxBlocks+2; i++ {
-		blocks.keep(strings.Repeat("x", i), "go", []string{"row"})
+	for i := 0; i < codeKeptBlocks+2; i++ {
+		blocks.rows(strings.Repeat("x", i+1), "go", true)
 	}
-	if len(blocks.blocks) > cacheMaxBlocks {
-		t.Errorf("the cache holds %d blocks, want it to have started over", len(blocks.blocks))
+	if len(blocks.closed) > codeKeptBlocks {
+		t.Errorf("the cache holds %d blocks, want it to have started over", len(blocks.closed))
 	}
-	if blocks.rowsFor(block, "go") != nil {
-		t.Error("the first block was kept past the cache's limit")
+	// nothing is kept for a block nobody has a grammar for: it is the plain path
+	var plain codeCache
+	if plain.rows("x", "", true) != nil || plain.rows("x", "not_a_real_language", true) != nil {
+		t.Error("a block with no grammar was coloured")
 	}
-	// nothing is asked of an answer that has no blocks, and nothing is kept for a block that was not
-	// coloured: both are the plain path
-	var empty highlightCache
-	if empty.rowsFor("x", "go") != nil {
-		t.Error("an empty cache answered")
-	}
-	empty.keep("x", "go", nil)
-	if len(empty.blocks) != 0 {
+	if len(plain.closed) != 0 {
 		t.Error("a block left plain was kept anyway")
 	}
 }
@@ -163,7 +196,7 @@ func TestAColouredAnswerKeepsItsBlocksAcrossRedraws(t *testing.T) {
 		t.Errorf("the same answer drew differently:\n%s\n---\n%s", stripCodes(first), stripCodes(second))
 	}
 	entry := &log.entries[len(log.entries)-1]
-	if len(entry.blocks.blocks) == 0 {
+	if len(entry.laid.code.closed) == 0 {
 		t.Error("the answer kept no coloured block, so every frame colours again")
 	}
 }

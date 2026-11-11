@@ -56,37 +56,42 @@ func TestAChangeIsRowsUnderTheRow(t *testing.T) {
 	log.toolEnd("edit_file", args, result)
 
 	view := strings.Join(log.rows(80), "\n")
-	if !strings.Contains(stripCodes(view), "+two") {
+	if !strings.Contains(stripCodes(view), "+ two") {
 		t.Errorf("the change is not drawn under the row:\n%s", view)
 	}
-	if !strings.Contains(view, "@@ -1,3 +1,3 @@") {
+	if !strings.Contains(stripCodes(view), "2 - one") || !strings.Contains(stripCodes(view), "3   var x int") {
 		t.Errorf("the change does not say where in the file it happened:\n%s", view)
+	}
+	if !strings.Contains(stripCodes(view), "· +1 -1") {
+		t.Errorf("the row does not count the change:\n%s", view)
 	}
 	if held := heldBytes(log.entries[0]); held > 8<<10 {
 		t.Errorf("a finished call holds %d bytes", held)
 	}
 }
 
-// a change longer than the screen keeps only the rows it can show and says how much more there was
-func TestALongChangeCountsWhatItLeftOut(t *testing.T) {
+// the screen draws the whole change a call handed over, not the short copy the model was sent
+func TestTheWholeChangeIsDrawnWhenTheToolHandsItOver(t *testing.T) {
 	var log transcript
 	log.root = "/work"
 	args := `{"path":"/work/big.go","content":"a whole file"}`
-	var b strings.Builder
-	b.WriteString("wrote big.go (400 lines)\n@@ -1,1 +1,400 @@\n")
+	var whole strings.Builder
+	whole.WriteString("@@ -0,0 +1,400 @@\n")
 	for i := 0; i < 400; i++ {
-		b.WriteString("+line of the new file " + itoa(i) + "\n")
+		whole.WriteString("+line of the new file " + itoa(i) + "\n")
 	}
 	log.toolStart("write_file", args)
-	log.toolEnd("write_file", args, b.String())
+	log.changed("write_file", args, "created big.go (9000 bytes, 400 lines)", whole.String())
 
 	rows := log.rows(120)
-	last := stripCodes(rows[len(rows)-1])
-	if !strings.Contains(last, "more lines") || !strings.Contains(last, "387") {
-		t.Errorf("the note does not count what the screen left out: %q\n%s", last, strings.Join(rows, "\n"))
+	if len(rows) != 401 {
+		t.Fatalf("a change of 400 lines took %d rows, want its row and 400", len(rows))
 	}
-	if len(rows) > diffShown+2 {
-		t.Errorf("a change took %d rows, want the budget and nothing more", len(rows))
+	if head := stripCodes(rows[0]); !strings.Contains(head, "created big.go") || !strings.Contains(head, "+400") {
+		t.Errorf("the row does not say what was made and how much: %q", head)
+	}
+	if last := stripCodes(rows[400]); !strings.Contains(last, "400 + line of the new file 399") {
+		t.Errorf("the last line of the change is not the last row: %q", last)
 	}
 }
 

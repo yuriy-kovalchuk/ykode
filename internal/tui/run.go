@@ -21,10 +21,11 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	m.histIdx, m.unsent = len(m.history), ""
 
 	if strings.HasPrefix(text, "/") {
-		if strings.HasPrefix(text, "/compact") && !m.running {
+		name, _, _ := strings.Cut(text, " ")
+		if name == "/compact" && !m.running {
 			return m, m.compact()
 		}
-		if name, _, _ := strings.Cut(text, " "); name == "/settings" {
+		if name == "/settings" {
 			// the screen answers this one: it writes the settings file, and a bare /settings opens
 			// the server and model screen, the one a first run starts with
 			if strings.TrimSpace(text) == "/settings" {
@@ -40,7 +41,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			m.refresh()
 			return m, nil
 		}
-		if m.running && strings.HasPrefix(text, "/ex") {
+		if m.running && (name == "/exit" || name == "/quit") {
 			m.cancelRun() // leaving cancels the turn rather than racing it
 		}
 		out, quit, err := m.agent.Command(m.ctx, text)
@@ -113,23 +114,21 @@ func (m *model) handle(ev agent.Event) {
 
 	switch ev.Kind {
 	case agent.Thinking, agent.Answer:
-		// a streamed block is drawn once per spin, not once per token: the answer is re-laid out
-		// as a whole, and the stream that feeds the footer's speeds waits for every draw
+		// what streams joins the session now and is drawn with the next frame: a frame per token is
+		// more frames than a reader sees
 		if ev.Kind == agent.Thinking {
 			m.log.thinking(ev.Text)
 		} else {
 			m.log.answer(ev.Text)
 		}
-		m.redrawQueued = true
+		m.undrawn = true
 		return
 	case agent.TurnEnd:
 		m.decode, m.prefill, m.estimated = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec, ev.Stats.Estimated
 		m.log.dropDrafts()
 	case agent.ToolDraft:
 		m.log.draft(ev.Call, ev.Tool, ev.Text)
-		// the rows of a call being written wait for the spinner's next tick: drawing them at the
-		// rate of the tokens would hold up the stream that carries the speeds the footer shows
-		m.redrawQueued = true
+		m.undrawn = true // the rows of a call being written wait for the next frame, as text does
 		return
 	case agent.Progress:
 		// the first token reports no decode speed yet; keep the last one rather than show 0
@@ -145,7 +144,7 @@ func (m *model) handle(ev agent.Event) {
 	case agent.ToolStart:
 		m.log.toolStart(ev.Tool, ev.Args)
 	case agent.ToolEnd:
-		m.log.toolEnd(ev.Tool, ev.Args, ev.Text)
+		m.log.changed(ev.Tool, ev.Args, ev.Text, ev.Change)
 	case agent.ToolFail:
 		m.log.failed(ev.Tool, ev.Args, ev.Text)
 	case agent.Summary:

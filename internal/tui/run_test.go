@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
@@ -193,9 +192,9 @@ func TestANewRunClearsTheErrorRow(t *testing.T) {
 	}
 }
 
-// a call being written is drawn once per spin, not once per token: the stream that feeds it would
-// otherwise wait for the screen every time a fragment arrives
-func TestACallBeingWrittenWaitsForTheTickToBeDrawn(t *testing.T) {
+// a call being written is drawn once per frame, not once per token: a file of a hundred kilobytes
+// is tens of thousands of fragments
+func TestACallBeingWrittenWaitsForTheFrameToBeDrawn(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m.running = true
@@ -203,9 +202,9 @@ func TestACallBeingWrittenWaitsForTheTickToBeDrawn(t *testing.T) {
 	if strings.Contains(stripCodes(m.view.view()), "the first line") {
 		t.Error("the call being written was drawn at the token's own rate")
 	}
-	m.Update(spinner.TickMsg{})
+	m.Update(frameMsg{})
 	if !strings.Contains(stripCodes(m.view.view()), "the first line") {
-		t.Error("the next tick never drew the call being written")
+		t.Error("the next frame never drew the call being written")
 	}
 }
 
@@ -222,17 +221,16 @@ func TestTheSpeedsStayLiveWhileACallIsBeingWritten(t *testing.T) {
 	}
 }
 
-// one token of a long write: a fragment joins the record, the screen follows on the tick
+// one token of a long write: a fragment joins the record, the screen follows on the frame
 func BenchmarkWriteAFileToken(b *testing.B) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.running = true
 	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"src/big.go","content":"`})
-	tick := spinner.TickMsg{}
 	for i := 0; i < b.N; i++ {
 		m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: "a line of source, byte after byte\\n"})
 		if i%10 == 0 {
-			m.Update(tick)
+			m.Update(frameMsg{})
 		}
 	}
 }

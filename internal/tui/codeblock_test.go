@@ -8,7 +8,7 @@ import (
 // a block of code is read and copied as the code itself: nothing ykode drew may come along with a
 // selection, so the block is set in from the margin rather than ruled down its side
 func TestACodeBlockCarriesNothingTheReaderDidNotWrite(t *testing.T) {
-	got := stripCodes(markdown("```go\nfunc main() {\n\tcount := 3\n}\n```", 60, nil))
+	got := stripCodes(markdown("```go\nfunc main() {\n\tcount := 3\n}\n```", 60))
 	for _, rule := range []string{"│", "┊", "┃", "▏", "▎"} {
 		if strings.Contains(got, rule) {
 			t.Errorf("a code block drew %q, which a copy would carry:\n%s", rule, got)
@@ -26,9 +26,9 @@ func TestACodeBlockCarriesNothingTheReaderDidNotWrite(t *testing.T) {
 func TestAColouredBlockKeepsTheIndentTheWriterUsed(t *testing.T) {
 	withColour(t)
 	code := "func main() {\n\tcount := 3\n}\n```\n"
-	coloured := stripCodes(markdown("```go\n"+code, 60, nil))
-	plain := stripCodes(markdown("```no_grammar_here\n"+code, 60, nil))
-	if !strings.Contains(markdown("```go\n"+code, 60, nil), codeOf(styleCodeKeyword)) {
+	coloured := stripCodes(markdown("```go\n"+code, 60))
+	plain := stripCodes(markdown("```no_grammar_here\n"+code, 60))
+	if !strings.Contains(markdown("```go\n"+code, 60), codeOf(styleCodeKeyword)) {
 		t.Fatalf("the block under test was not coloured at all:\n%s", coloured)
 	}
 	if !strings.Contains(coloured, "\tcount := 3") {

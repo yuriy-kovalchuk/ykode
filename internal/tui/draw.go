@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -9,7 +10,7 @@ import (
 // refresh keeps a reader who scrolled up in place and marks the output arriving below. The mark is
 // decided before the rows under the session are built, because it is one of the things they say.
 func (m *model) refresh() {
-	m.redrawQueued = false
+	m.undrawn, m.drawn = false, time.Now()
 	atBottom := m.view.atBottom()
 	if arriving := m.log.hasPending(); arriving && !atBottom {
 		m.unseen = true

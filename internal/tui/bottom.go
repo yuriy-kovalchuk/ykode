@@ -67,7 +67,8 @@ func (m *model) waitingRows() []string {
 // askBar runs down the left of a question, so it reads as one thing apart from the prompt under it.
 const (
 	askBar     = "▎ "
-	askPreview = 6 // lines of what a call would write or run that the question shows
+	askPreview = 6  // lines of what a call would write or run that the question shows
+	askChange  = 16 // rows of an edit the question shows: it sits above the prompt, which has to stay on the screen
 )
 
 // question is the confirmation a run waits on, above the input: what is asked in a bar of its own,
@@ -82,6 +83,9 @@ func (m *model) question() string {
 		lines = append(lines, styleWarn.Render("⚠ ")+styleBold.Render(q.tool)+styleDim.Render("  allow this call?"))
 		if what := described(q.tool, q.args, m.root); what != "" {
 			lines = append(lines, cutToWidth(what, room))
+		}
+		if change := askedChange(q.tool, q.args); change != "" {
+			lines = append(lines, changeRows(change, askChange, room)...) // an edit is asked about as the change it is
 		}
 		for _, line := range askBody(q.tool, q.args, room) {
 			lines = append(lines, styleDim.Render("┊ ")+styleDim.Render(line))
@@ -134,6 +138,53 @@ func askBody(tool, args string, width int) []string {
 		rows = append(rows, fmt.Sprintf("… %d more lines", len(all)-askPreview))
 	}
 	return rows
+}
+
+// askedChange is what an edit would take out and put in, read from the call's own arguments: the
+// file has not been touched yet, so the lines have no numbers, only their sides.
+func askedChange(tool, args string) string {
+	if tool != "edit_file" {
+		return ""
+	}
+	type edit struct {
+		OldText   string  `json:"old_text"`
+		NewText   *string `json:"new_text"`
+		OldString string  `json:"old_string"`
+		NewString *string `json:"new_string"`
+	}
+	var in struct {
+		edit
+		Edits []edit `json:"edits"`
+	}
+	if json.Unmarshal([]byte(args), &in) != nil {
+		return ""
+	}
+	var change strings.Builder
+	for _, e := range append([]edit{in.edit}, in.Edits...) {
+		went, came := e.OldText+e.OldString, ""
+		for _, text := range []*string{e.NewText, e.NewString} {
+			if text != nil {
+				came += *text
+			}
+		}
+		if went == "" && came == "" {
+			continue
+		}
+		change.WriteString("@@\n") // each edit is its own place in the file
+		writeSide(&change, "-", went)
+		writeSide(&change, "+", came)
+	}
+	return change.String()
+}
+
+// writeSide writes one side of an edit as the lines of a change.
+func writeSide(change *strings.Builder, sign, text string) {
+	if text == "" {
+		return
+	}
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		change.WriteString(sign + line + "\n")
+	}
 }
 
 // promptLines is the input with the prompt mark on its first line.
