@@ -169,3 +169,39 @@ func TestOverwritingACRLFFileShowsOneChangeNotEveryLine(t *testing.T) {
 		t.Errorf("%d lines in the diff for a one-line change (the line endings were not normalised):\n%s", changed, out)
 	}
 }
+
+// the screen is handed the whole change, however much of it the model's own copy leaves out
+func TestTheWholeChangeIsNotCapped(t *testing.T) {
+	var before, after strings.Builder
+	for i := 0; i < 400; i++ {
+		fmt.Fprintf(&before, "line %d of the file, long enough to count\n", i)
+		fmt.Fprintf(&after, "line %d of the file, long enough to count\n", i)
+		if i%5 == 0 {
+			fmt.Fprintf(&after, "a line added after line %d\n", i)
+		}
+	}
+	short, whole := diffText(before.String(), after.String()), wholeChange(before.String(), after.String())
+	if got := strings.Count(whole, "\n+a line added"); got != 80 {
+		t.Errorf("the whole change holds %d of the 80 added lines", got)
+	}
+	if len(short) >= len(whole) {
+		t.Errorf("the model's copy (%d bytes) is not shorter than the screen's (%d)", len(short), len(whole))
+	}
+}
+
+// a file rewritten whole is given as what went and what came, without lining the two up, and a
+// change past what a screen is handed says how much it left out
+func TestAFileRewrittenWholeIsStillAChange(t *testing.T) {
+	var before, after strings.Builder
+	for i := 0; i < changeMaxLines; i++ {
+		fmt.Fprintf(&before, "old %d\n", i)
+		fmt.Fprintf(&after, "new %d\n", i)
+	}
+	whole := wholeChange("package x\n"+before.String(), "package x\n"+after.String())
+	if !strings.HasPrefix(whole, fmt.Sprintf("@@ -2,%d +2,%d @@\n-old 0\n", changeMaxLines, changeMaxLines)) {
+		t.Errorf("the change does not start where the files part: %.80q", whole)
+	}
+	if !strings.Contains(whole, "more lines of the change") || strings.Count(whole, "\n") != changeMaxLines {
+		t.Errorf("a change past the limit is %d lines and does not say what it left out", strings.Count(whole, "\n"))
+	}
+}

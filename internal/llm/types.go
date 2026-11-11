@@ -64,7 +64,15 @@ type ChatRequest struct {
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	TimingsPerToken    bool           `json:"timings_per_token,omitempty"` // llama.cpp: speeds in every chunk, not only the last
 	Stream             bool           `json:"stream"`
+	StreamOptions      *StreamOptions `json:"stream_options,omitempty"`
 	Sampling
+}
+
+// StreamOptions asks an OpenAI-style server to count the request in the stream's last chunk. llama.cpp
+// says as much in its timings; the others say it only when asked, and without it the screen has no
+// prompt size, no cache figure and nothing to learn the byte ratio from.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // Sampling is what a model card recommends; a nil field leaves the server's default.
@@ -171,7 +179,17 @@ type chatChunk struct {
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Timings *Timings  `json:"timings"`
+	Usage   *usage    `json:"usage"`
 	Error   *apiError `json:"error"`
+}
+
+// usage is the OpenAI-style count of a request, sent in the last chunk of a stream.
+type usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	Details          struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
 // toolCallFragment is a piece of a call: only the first carries id and name, keyed by index.

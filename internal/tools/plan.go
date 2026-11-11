@@ -84,7 +84,16 @@ func (p *Plan) Run(_ context.Context, args json.RawMessage) (string, error) {
 		return "", errors.New("plan: no step to keep; send the list again with its steps written out")
 	}
 	p.set(steps)
-	return p.Report(), nil
+	report := p.Report()
+	if written := len(cleanSteps(in.Steps[:min(len(in.Steps), maxPlanSteps)])); len(in.Steps) > maxPlanSteps && written == maxPlanSteps {
+		// said, not done quietly: a model that believes it has fifteen steps marks ones the plan never held
+		report += fmt.Sprintf("\n(a plan holds %d steps: the %d after those were left out. Fold steps together if the rest matter.)",
+			maxPlanSteps, len(in.Steps)-maxPlanSteps)
+	}
+	if !Settled(steps) {
+		report += "\n(call plan again when the active step is finished, before starting the next)"
+	}
+	return report, nil
 }
 
 // cleanSteps is a list as the plan keeps it: each step on one line, a step with nothing in it dropped
@@ -131,6 +140,32 @@ func StepsFromReport(text string) []PlanStep {
 func (p *Plan) Restore(steps []PlanStep) {
 	if p != nil && len(steps) > 0 {
 		p.set(steps)
+	}
+}
+
+// Settled says every step has an outcome, so the plan describes work that is over. A failed step is an
+// outcome too: a plan that ended badly is settled, and should stop holding rows on the screen.
+func (p *Plan) Settled() bool { return Settled(p.Steps()) }
+
+// Settled is the same question asked of steps a reader already holds.
+func Settled(steps []PlanStep) bool {
+	if len(steps) == 0 {
+		return false
+	}
+	for _, s := range steps {
+		if s.Status == PlanPending || s.Status == PlanActive {
+			return false
+		}
+	}
+	return true
+}
+
+// DropIfSettled forgets a plan whose every step has an outcome, and keeps one with work left: the
+// steps belonged to the prompt that finished them, while a plan still being worked on belongs to the
+// next prompt as much as to the last.
+func (p *Plan) DropIfSettled() {
+	if p.Settled() {
+		p.Clear()
 	}
 }
 

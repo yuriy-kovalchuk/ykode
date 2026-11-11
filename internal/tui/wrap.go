@@ -36,6 +36,83 @@ func wrap(text string, width int) []string {
 		}
 		rows = append(rows, line) // an empty paragraph keeps its blank row
 	}
+	if strings.Contains(text, "\x1b[") {
+		carryStyles(rows)
+	}
+	return rows
+}
+
+const styleReset = "\x1b[0m"
+
+// carryStyles keeps a style that runs over a break on both sides of it: the row it began on closes
+// it, and the row it continues on opens it again. The screen draws rows on their own - the ones in
+// view, the ones that changed - so a row that leaned on the one above for its colour would lose it,
+// and a row that left one open would hand it to whatever is drawn next.
+func carryStyles(rows []string) {
+	open := ""
+	for i, row := range rows {
+		still := stylesLeftOpen(open, row)
+		if row != "" {
+			if open != "" {
+				row = open + row
+			}
+			if still != "" {
+				row += styleReset
+			}
+			rows[i] = row
+		}
+		open = still
+	}
+}
+
+// stylesLeftOpen reads a row's escapes and answers which styles are still on at its end, given the
+// ones that were on at its start.
+func stylesLeftOpen(open, row string) string {
+	for {
+		at := strings.Index(row, "\x1b[")
+		if at < 0 {
+			return open
+		}
+		row = row[at+2:]
+		end := strings.IndexFunc(row, func(r rune) bool { return r >= 0x40 && r <= 0x7e })
+		if end < 0 {
+			return open
+		}
+		if row[end] == 'm' {
+			if params := row[:end]; params == "" || params == "0" {
+				open = ""
+			} else {
+				open += "\x1b[" + row[:end+1]
+			}
+		}
+		row = row[end+1:]
+	}
+}
+
+// flow is prose that is still arriving, wrapped. Text added at the end only changes its last
+// paragraph, so the paragraphs that ended are wrapped once and their rows kept: a long run of thinking
+// costs a frame its last paragraph, not all of it.
+type flow struct {
+	width int
+	upto  int      // how much of the text the rows below cover
+	rows  []string // the paragraphs that ended, as the screen draws them
+}
+
+// wrap breaks text to width and passes every row through dress, which gives a row its mark and style.
+func (f *flow) wrap(text string, width int, dress func(string) string) []string {
+	if width != f.width || len(text) < f.upto {
+		*f = flow{width: width}
+	}
+	if end := strings.LastIndexByte(text, '\n'); end >= f.upto {
+		for _, row := range wrap(text[f.upto:end], width) {
+			f.rows = append(f.rows, dress(row))
+		}
+		f.upto = end + 1
+	}
+	rows := f.rows[:len(f.rows):len(f.rows)]
+	for _, row := range wrap(text[f.upto:], width) {
+		rows = append(rows, dress(row))
+	}
 	return rows
 }
 

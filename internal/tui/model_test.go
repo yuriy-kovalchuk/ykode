@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
@@ -21,8 +20,7 @@ func newTestModel() *model {
 
 func TestAScreenThatWasNeverResizedStillDraws(t *testing.T) {
 	m := newTestModel()
-	m.handle(agent.Event{Kind: agent.Answer, Text: "the answer"})
-	m.Update(spinner.TickMsg{}) // what streamed is drawn on the tick
+	m.Update(eventMsg{ev: agent.Event{Kind: agent.Answer, Text: "the answer"}})
 	out := stripCodes(m.View())
 	if !strings.Contains(out, "the answer") || !strings.Contains(out, "test-model") {
 		t.Errorf("an unsized terminal drew nothing useful:\n%s", out)

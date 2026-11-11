@@ -67,6 +67,7 @@ type Detail struct {
 	ExitCode *int   // for a command: what it exited with
 	TimedOut bool   // for a command: it was killed for taking too long
 	Diff     string // for a change: what it did to the file
+	Change   string // for a change: all of it, for a screen. The model is sent the short one above
 	LogPath  string // where the full output went when the result was cut
 }
 

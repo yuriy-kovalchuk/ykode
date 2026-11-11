@@ -34,8 +34,6 @@ type Options struct {
 	Plan             *tools.Plan       // the steps of a long task: the model writes them, a front end shows them
 }
 
-// tell reports something the run did that is not a tool call.
-// add extends the conversation and, when one is configured, the on-disk copy of it.
 // SetEndpoint points the next request at another server and model, with that model's window. It is called
 // between turns, never during one, so nothing holds the old client.
 func (a *Agent) SetEndpoint(client *llm.Client, model string, ctxSize int) {

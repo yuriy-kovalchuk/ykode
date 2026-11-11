@@ -70,3 +70,21 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
 - Trimming a path description to "relative to the project root" made the model write the root's own path
   without its leading slash (3 of 5 task-11 runs, 0 in 397 runs before). The description now gives an
   example (`src/main.go`), and the path tools read such a path as the root anyway.
+
+  chek the turns
+
+the code highlight
+
+ask user tool should be avaialble
+
+settings per project?
+
+a feature to enable/disable tools so if the user wants he can disable plan tool or other ones in this project
+
+plan checkbox to break down the long task and keep track of it and use bubbletea features to visualize it in a cool way
+
+compare all the budgets to pi
+
+theme support
+
+tab name

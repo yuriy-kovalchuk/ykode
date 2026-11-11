@@ -33,20 +33,30 @@ var (
 	styleAddMark = lipgloss.NewStyle().Foreground(colorOK)
 	styleDelMark = lipgloss.NewStyle().Foreground(colorBad)
 	styleCode    = lipgloss.NewStyle().Foreground(colorAccent)
-	styleItalic  = lipgloss.NewStyle().Italic(true)
 	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
+	// A block of code marks only what a reader is looking for and leaves the rest the terminal's own
+	// colour: a block whose every word is coloured is noise, and the punctuation of it reads as nothing.
+	// Each keeps the source's own tabs: a style that expanded them would rewrite the code a reader copies.
+	styleCodeDefault = lipgloss.NewStyle().TabWidth(-1)
+	styleCodeKeyword = lipgloss.NewStyle().TabWidth(-1).Foreground(colorTool).Bold(true)
+	styleCodeString  = lipgloss.NewStyle().TabWidth(-1).Foreground(colorOK)
+	styleCodeComment = lipgloss.NewStyle().TabWidth(-1).Foreground(colorMuted).Italic(true)
+	styleCodeName    = lipgloss.NewStyle().TabWidth(-1).Foreground(colorAccent)
 )
 
-// diffSurfaces are the grounds a change sits on: one low shade for the side that came in and one for
-// the side that went, picked for the terminal the screen runs in (dark tints on a dark one, pale on a
-// light one). Nothing stronger is laid over the words inside a line.
-type diffSurfaces struct{ add, del lipgloss.Style }
+// diffSurfaces are the grounds a change sits on: a shade for the side that came in and one for the
+// side that went, and a stronger shade of each for the words that differ inside a line. They are
+// picked for the terminal the screen runs in: deep on a dark one, pale on a light one, so the words
+// on them keep the terminal's own colour and stay readable.
+type diffSurfaces struct{ add, del, addWord, delWord lipgloss.Style }
 
 var diffSides = sync.OnceValue(func() diffSurfaces {
 	dark := lipgloss.HasDarkBackground()
 	return diffSurfaces{
-		add: ground(dark, "#1d2b21", "#eef6ef"),
-		del: ground(dark, "#2b1e1f", "#f7e8e4"),
+		add:     ground(dark, "#1f4d2a", "#d9f2dd"),
+		del:     ground(dark, "#5c2630", "#fbdfe2"),
+		addWord: ground(dark, "#2f7d45", "#a4e0af"),
+		delWord: ground(dark, "#93404d", "#f3adb5"),
 	}
 })
 

@@ -8,10 +8,14 @@ import (
 
 // outOfTurns turns the reading already done into an answer instead of an error and an empty reply.
 func (a *Agent) outOfTurns(ctx context.Context) error {
-	a.tell(fmt.Sprintf("used all %d tool rounds: asking for an answer with no tools left to call", a.opts.MaxTurns))
-	err := a.forceAnswer(ctx, "No tools now. Answer in text from what you have already read, and say what you could not confirm.")
+	a.tell(fmt.Sprintf("used all %d tool rounds this request gets: asking where the work stands, with no tools left to call", a.opts.MaxTurns))
+	err := a.forceAnswer(ctx, fmt.Sprintf("This request has used all %d of its tool rounds, so tools are off for this reply: do not write a tool call, it will not run. "+
+		"Say where the work stands: what is done, what is left, and what you could not confirm. The user can then tell you to carry on.", a.opts.MaxTurns))
 	if err == errNoForcedAnswer {
 		return fmt.Errorf("reached --max-turns (%d) before the model answered", a.opts.MaxTurns)
+	}
+	if err == nil {
+		a.tell(fmt.Sprintf("the work may not be finished: send any message, \"continue\" will do, for another %d rounds (max_turns sets how many)", a.opts.MaxTurns))
 	}
 	return err
 }
@@ -40,6 +44,12 @@ func (a *Agent) forceAnswer(ctx context.Context, instruction string) error {
 	if len(msg.ToolCalls) > 0 {
 		msg.ToolCalls = nil
 		a.tell("the model asked for a tool after being told there were none; only its text is kept")
+	}
+	if hasTextCall(msg.Content) {
+		// told there are no tools, it wrote the calls out as text: they did not run, and what did not
+		// run is not part of the answer
+		msg.Content = withoutTextCalls(msg.Content)
+		a.tell("the model wrote tool calls after being told there were none; only its text is kept")
 	}
 	a.add(msg)
 	if finish == finishLength {

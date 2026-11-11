@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/size"
@@ -224,6 +226,12 @@ func closingQuote(s string) int {
 	return -1
 }
 
+// hexRune reads the four hex digits of a \u escape.
+func hexRune(digits string) (rune, bool) {
+	n, err := strconv.ParseUint(digits, 16, 16)
+	return rune(n), err == nil
+}
+
 // unescape decodes JSON string escapes, dropping one cut off at the end of the text.
 func unescape(s string) string {
 	var b strings.Builder
@@ -247,11 +255,19 @@ func unescape(s string) string {
 			if i+4 >= len(s) {
 				return b.String()
 			}
-			var r rune
-			if _, err := fmt.Sscanf(s[i+1:i+5], "%04x", &r); err == nil && utf8.ValidRune(r) {
+			r, ok := hexRune(s[i+1 : i+5])
+			i += 4
+			if utf16.IsSurrogate(r) {
+				// a character outside the basic plane is written as two escapes: an emoji is \ud83d\ude00
+				if i+6 >= len(s) || s[i+1] != '\\' || s[i+2] != 'u' {
+					continue // its second half has not arrived, or never will
+				}
+				low, _ := hexRune(s[i+3 : i+7])
+				r, i = utf16.DecodeRune(r, low), i+6
+			}
+			if ok && utf8.ValidRune(r) {
 				b.WriteRune(r)
 			}
-			i += 4
 		default:
 			b.WriteByte(s[i]) // \" \\ \/
 		}

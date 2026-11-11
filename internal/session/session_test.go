@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,5 +289,62 @@ func TestTheNoteAtTheEndOfAnAskIsSplitOffAgain(t *testing.T) {
 		if text, note := SplitEnvironment(plain); text != plain || note != "" {
 			t.Errorf("%q was split into %q and %q", plain, text, note)
 		}
+	}
+}
+
+// what a run did to its conversation after saying it is read back with it: a message put in another's
+// place, messages taken out, and the whole of it written again
+func TestChangesToTheConversationAreReadBack(t *testing.T) {
+	dir := t.TempDir()
+	log := New(dir, "s1", "/work")
+	said := func(i int) llm.Message { return llm.Message{Role: "user", Content: fmt.Sprintf("message %d", i)} }
+	for i := 0; i < 5; i++ {
+		if err := log.Append(said(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() string {
+		t.Helper()
+		messages, err := Load(filepath.Join(dir, "s1.jsonl"), "/work")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var texts []string
+		for _, m := range messages {
+			texts = append(texts, m.Content)
+		}
+		return strings.Join(texts, " | ")
+	}
+	if err := log.Revise(1, llm.Message{Role: "user", Content: "shortened"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Remove(2, 4); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := read(), "message 0 | shortened | message 4"; got != want {
+		t.Fatalf("read back %q, want %q", got, want)
+	}
+	// a change that points outside the conversation is left out, by the reader and by the listing alike
+	if err := log.Remove(2, 9); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Revise(7, said(7)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := read(), "message 0 | shortened | message 4"; got != want {
+		t.Fatalf("a change that fits nothing moved the conversation: %q", got)
+	}
+	list, err := Describe(dir, 5)
+	if err != nil || len(list) != 1 || list[0].Messages != 3 {
+		t.Fatalf("the listing counts %+v, want the 3 messages a resume reads (%v)", list, err)
+	}
+	if err := log.Rewritten([]llm.Message{said(8), said(9)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Append(said(10)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := read(), "message 8 | message 9 | message 10"; got != want {
+		t.Fatalf("read back %q, want %q", got, want)
 	}
 }

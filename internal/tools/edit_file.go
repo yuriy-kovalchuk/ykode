@@ -164,6 +164,7 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	}
 	result := fmt.Sprintf("edited %s (%d -> %d bytes, %d replacement%s%s)",
 		h.shown(), len(current), len(updated), len(planned), plural(len(planned)), note)
+	t.last.Change = wholeChange(current, updated)
 	if diff := diffText(current, updated); diff != "" {
 		t.last.Diff = diff
 		result += "\n" + diff

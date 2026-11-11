@@ -78,7 +78,8 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
-	t.pushUndo(h, before, []byte(in.Content), existed) // only a change that happened is undone
+	t.pushUndo(h, before, []byte(in.Content), existed)      // only a change that happened is undone
+	t.last.Change = wholeChange(string(before), in.Content) // a new file is a change from nothing
 	if !existed {
 		return fmt.Sprintf("created %s (%d bytes, %d lines)",
 			h.shown(), len(in.Content), len(diffSplit(in.Content))), nil

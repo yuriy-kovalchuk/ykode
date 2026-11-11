@@ -55,9 +55,12 @@ type model struct {
 	unseen     bool   // output arrived below while the reader was scrolled up
 	bottom     string // what sits under the session this message; "" until someone asks for it
 
-	// redrawQueued is a call being written waiting for the spinner's next tick to be drawn: every
-	// token of it would otherwise redraw the screen, and the stream waits for that draw.
-	redrawQueued bool
+	// What streams is drawn at the pace of frames, not of tokens. undrawn says the session holds
+	// text the screen has not drawn, drawn is when it last drew, and frameDue says a frame is already
+	// on its way to draw what is waiting.
+	undrawn  bool
+	drawn    time.Time
+	frameDue bool
 
 	probe     probeFunc       // how the modal asks a server for its models; tests put a fake here
 	screen    *settingsScreen // the list of every setting /settings opens over the session; nil when closed
@@ -108,8 +111,42 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 
 func (m *model) Init() tea.Cmd { return textarea.Blink }
 
+// frameInterval is the least time between two draws of text that is streaming: thirty frames a
+// second reads as text being written, and more than that is laid out to be thrown away.
+const frameInterval = time.Second / 30
+
+// frameMsg is a frame that was put off arriving.
+type frameMsg struct{}
+
+// paint draws what streamed since the last frame, or puts it off until the next one is due. The
+// first piece of a reply is drawn as it arrives: nothing was drawn for a while, so nothing waits.
+func (m *model) paint() tea.Cmd {
+	if !m.undrawn {
+		return nil
+	}
+	wait := frameInterval - time.Since(m.drawn)
+	if wait <= 0 {
+		m.refresh()
+		return nil
+	}
+	if m.frameDue {
+		return nil
+	}
+	m.frameDue = true
+	return tea.Tick(wait, func(time.Time) tea.Msg { return frameMsg{} })
+}
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.bottom = "" // the screen under the session is rebuilt for this message, whoever asks first
+	if _, woken := msg.(wakeMsg); woken {
+		// what the run reported since the last look, each message handled as if it had come alone
+		var cmds []tea.Cmd
+		for _, queued := range m.hub.take() {
+			_, cmd := m.Update(queued)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+	}
 	if m.modal != nil {
 		if cmd, taken := m.modalMsg(msg); taken {
 			return m, cmd
@@ -130,6 +167,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case eventMsg:
 		m.handle(msg.ev)
+		return m, m.paint()
+	case frameMsg:
+		m.frameDue = false
+		if m.undrawn {
+			m.refresh()
+		}
 		return m, nil
 	case confirmMsg:
 		// parallel calls can ask at once: the first asks, the rest wait their turn
@@ -137,10 +180,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case spinner.TickMsg:
-		if m.redrawQueued {
-			m.redrawQueued = false
-			m.refresh() // what streamed since the last tick is drawn here, once
-		}
 		if !m.running {
 			return m, nil // the spinner stops with the run, and so does the timer it redraws
 		}

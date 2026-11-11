@@ -4,22 +4,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/size"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
+	a.opts.Plan.DropIfSettled() // the steps belonged to the prompt that finished them
 	asked := a.withEnvironment(prompt)
 	a.add(llm.Message{Role: "user", Content: asked})
 	a.task = asked      // what the history holds, which is what compaction looks for
 	a.repeats.changed() // between prompts the user may have changed the files: nothing is a repeat yet
 
-	usedTools, nudged, forceTool, emptyNudged, textNudged, loops := false, false, false, false, false, 0
+	usedTools, nudged, forceTool, textNudged, loops := false, false, false, false, 0
+	// a reply that ends the turn without finishing the work is asked to go on, a bounded number of
+	// times: the user should not have to type "continue" for a run that only lost its footing
+	emptyNudges, cutNudges, pausedNudged, overflowed := 0, 0, false, false
 	for turn := 1; ; turn++ {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
@@ -48,10 +54,27 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 				a.note("(the user cancelled this request)")
 				return nil
 			}
+			if llm.IsOverflow(err) && !overflowed {
+				// the server counted more tokens than the estimate did. The estimate is corrected, which
+				// puts the conversation under pressure, and the turn is tried once more with room made
+				overflowed = true
+				a.tell("the server says the conversation does not fit its window: making room and asking again")
+				a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
+				a.shrinkWhatAged(keepResults)
+				continue
+			}
 			return fmt.Errorf("chat turn %d: %w", turn, err)
 		}
 		wroteCall := len(msg.ToolCalls) == 0 && hasTextCall(msg.Content)
 		if wroteCall {
+			if calls := a.textCalls(msg.Content, turn); len(calls) > 0 && finish != finishLength {
+				// the call is whole and names a tool we have: it runs, as the call the model meant
+				msg.ToolCalls, wroteCall = calls, false
+				if !textNudged {
+					textNudged = true // said once per ask, however many calls arrive this way
+					a.tell("the model wrote a tool call as text: running it as the call it meant")
+				}
+			}
 			msg.Content = withoutTextCalls(msg.Content) // the answer never carries the markup
 		}
 		a.add(msg)
@@ -74,14 +97,35 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			continue
 		}
 		if len(msg.ToolCalls) == 0 {
-			if strings.TrimSpace(msg.Content) == "" {
+			said := strings.TrimSpace(msg.Content)
+			switch {
+			case finish == finishLength && cutNudges < maxResumeNudges && turn < a.opts.MaxTurns:
+				// the reply ran into max_tokens: all of it thinking, or an answer stopped mid-sentence.
+				// Either way the turn is not over, and ending it here leaves the user to type "continue"
+				cutNudges++
+				if said == "" {
+					a.tell("the reply ran out of tokens while the model was still thinking: asking it to go on with less")
+					a.modelNote("(your reply ran out of tokens while you were still thinking, before any answer or tool call. Think briefly this time: make the next tool call, or answer.)")
+				} else {
+					a.tell("the reply was cut off: asking the model to carry on from where it stopped")
+					a.modelNote("(your reply was cut off by the token limit. Carry on from exactly where it stopped, without repeating what you already wrote.)")
+				}
+				continue
+			case said == "":
 				a.tell("the model returned no text")
-				// an empty reply is not an answer: the task is left half done, so ask once to go on
-				if !emptyNudged && turn < a.opts.MaxTurns {
-					emptyNudged = true
+				// an empty reply is not an answer: the task is left half done, so ask to go on
+				if emptyNudges < maxResumeNudges && turn < a.opts.MaxTurns {
+					emptyNudges++
 					a.modelNote("(your reply was empty. Continue the task with the next tool call, or answer if it is done.)")
 					continue
 				}
+			case usedTools && !pausedNudged && turn < a.opts.MaxTurns && a.stoppedHalfway(said):
+				// it said what it would do next and then did not do it, or left steps of its own plan
+				// open: a model that loses the thread mid-task stops like this, and one line brings it back
+				pausedNudged = true
+				a.tell("the model stopped with work still open: asking it once to carry on")
+				a.modelNote("(you stopped before the work was finished. If you are waiting for the user, say what you need in one line. Otherwise carry on with the next tool call" + a.planReminderForPause() + ".)")
+				continue
 			}
 			if !nudged && !usedTools && !a.opts.NoVerify && turn < a.opts.MaxTurns && looksLikeProjectWork(prompt) && !forbidsTools(prompt) {
 				nudged, forceTool = true, true
@@ -102,6 +146,37 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 			return a.outOfTurns(ctx)
 		}
 	}
+}
+
+// maxResumeNudges is how many times one kind of unfinished reply is asked to go on within one ask.
+const maxResumeNudges = 2
+
+// announcesRe is a last line that says what comes next rather than what was found: "Let me update the
+// tests now", "Next, I'll run the build". A reply that ends on one has not ended the work.
+var announcesRe = regexp.MustCompile(`(?i)^(?:(?:now|next|then|ok|okay|alright|first|great|good)[,.!]?\s+)*(?:let me|let's|i'll|i will|i'm going to|i am going to|i need to|i'm now going to|now i|next i|i now)\b`)
+
+// stoppedHalfway says a reply with no tool call reads as a pause rather than an answer: its last line
+// announces the next step or ends in a colon, or the plan the model wrote still has steps open. A
+// reply that ends by asking the user something is a real stop, whatever the plan says.
+func (a *Agent) stoppedHalfway(said string) bool {
+	last := said[strings.LastIndexByte(said, '\n')+1:]
+	last = strings.TrimSpace(strings.Trim(strings.TrimSpace(last), "*_`"))
+	if strings.HasSuffix(last, "?") || strings.HasPrefix(strings.ToLower(last), "let me know") {
+		return false // it is waiting for the user, and says so
+	}
+	if strings.HasSuffix(last, ":") || announcesRe.MatchString(last) {
+		return true
+	}
+	steps := a.opts.Plan.Steps()
+	return len(steps) > 0 && !tools.Settled(steps)
+}
+
+// planReminderForPause adds the plan to the line that asks a paused model to go on, when it has one.
+func (a *Agent) planReminderForPause() string {
+	if steps := a.opts.Plan.Steps(); len(steps) == 0 || tools.Settled(steps) {
+		return ""
+	}
+	return ", and update the plan as each step is finished"
 }
 
 // prepareTurn gets the conversation ready for the next round-trip: asks typed meanwhile join it, and
@@ -137,12 +212,15 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	thinking, answer := newLineRepeats(), newLineRepeats()
 	looping := false
 	stopwatch := newPace(time.Now, a.meter.bytesPerTok)
+	var shown callHider // a call written as text is not drawn as part of the answer
 	turn, err := a.client.ChatStream(ctx, req, func(d llm.Delta) {
 		if d.Reasoning != "" {
 			a.emit(Event{Kind: Thinking, Text: d.Reasoning})
 		}
 		if d.Content != "" {
-			a.emit(Event{Kind: Answer, Text: d.Content})
+			if text := shown.feed(d.Content); text != "" {
+				a.emit(Event{Kind: Answer, Text: text})
+			}
 		}
 		if d.Call != nil {
 			a.emit(Event{Kind: ToolDraft, Tool: d.Call.Name, Text: d.Call.Args, Call: d.Call.Index})
@@ -161,6 +239,9 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 			cancel() // the rest of this reply would be more of the same, for as long as the window lasts
 		}
 	})
+	if text := shown.rest(); text != "" {
+		a.emit(Event{Kind: Answer, Text: text})
+	}
 	if looping {
 		return llm.Message{}, "", errRepeating
 	}
@@ -182,6 +263,10 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		stats.Estimated = stats.DecodeTokSec > 0
 	}
 	a.meter.observe(stats, a.sendingBytes())
+	if r := a.meter.bytesPerTok; r != defaultBytesPerTok && (r < a.savedRatio*0.98 || r > a.savedRatio*1.02) {
+		a.savedRatio = r
+		a.reportSave(a.opts.Session.Learned(r)) // a run that comes back measures as this one does
+	}
 	a.publishUsage()
 	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
 	if turn.Unfinished {

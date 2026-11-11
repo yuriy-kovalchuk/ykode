@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"time"
 )
 
@@ -27,12 +28,31 @@ type entry struct {
 	tool   string
 	args   string // a call still being written, or one waiting for its answer
 	call   call   // what a finished call leaves on the screen: see call.go
+	asked  bool   // a call that has started and has not answered yet
 	failed bool
 	callID int // a draft: which call of the reply it is
 	at     time.Time
 	took   time.Duration
 
 	state draftState // what has been read of a call the model is still writing; see draft.go
+
+	// What a block that is still arriving keeps between two draws of it. It grows a token at a time
+	// and is drawn many times a second, so neither the text nor its rows are built again from nothing.
+	arriving *strings.Builder // the text or the arguments, while more is on its way
+	laid     layout           // an answer's blocks, laid out once each
+	thought  flow             // thinking's paragraphs, wrapped once each
+}
+
+// write adds a piece to text that is still arriving and returns the whole of it. Joining two strings
+// copies both, and an answer of a hundred kilobytes arrives in tens of thousands of pieces: the pieces
+// are gathered in one buffer instead, and the text is read out of it without a copy.
+func (e *entry) write(sofar, piece string) string {
+	if e.arriving == nil {
+		e.arriving = &strings.Builder{}
+		e.arriving.WriteString(sofar)
+	}
+	e.arriving.WriteString(piece)
+	return e.arriving.String()
 }
 
 // transcript is what has been said so far. Rendering is separate so the rules can be tested without
@@ -79,11 +99,11 @@ func (t *transcript) failed(name, args, why string) {
 	c := call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}
 	for i := len(t.entries) - 1; i >= 0; i-- {
 		e := &t.entries[i]
-		if e.who == whoTool && e.args != "" && e.tool == name && (args == "" || e.args == args) {
+		if e.who == whoTool && e.asked && e.tool == name && (args == "" || e.args == args) {
 			if shown := noteFor(name, e.args, why, true, t.root); shown != "" {
 				c.note = shown
 			}
-			e.call, e.failed, e.args = c, true, ""
+			e.call, e.failed, e.asked, e.args = c, true, false, ""
 			t.mark(i)
 			return
 		}
@@ -97,7 +117,8 @@ func (t *transcript) answer(text string)   { t.open(whoAnswer, text) }
 
 func (t *transcript) open(who kind, text string) {
 	if n := len(t.entries); n > 0 && t.entries[n-1].who == who {
-		t.entries[n-1].text += text
+		e := &t.entries[n-1]
+		e.text = e.write(e.text, text)
 		t.mark(n - 1)
 		return
 	}
@@ -115,8 +136,11 @@ func (t *transcript) mark(at int) {
 // draft adds a fragment of a call being written to that call's row.
 func (t *transcript) draft(call int, tool, fragment string) {
 	for i := len(t.entries) - 1; i >= 0 && t.entries[i].who == whoDraft; i-- {
-		if t.entries[i].callID == call {
-			t.entries[i].args += fragment
+		if e := &t.entries[i]; e.callID == call {
+			e.args = e.write(e.args, fragment)
+			if tool != "" {
+				e.tool = tool // the name is whole by now, if its first piece was not
+			}
 			t.mark(i)
 			return
 		}
@@ -130,38 +154,57 @@ func newDraft(call int, tool, args string) *entry {
 }
 
 // dropDrafts removes the calls being written once the reply is done: the tool rows take their
-// place, and every row after the first one removed moves up, so nothing keeps its drawing.
+// place. Every row after the first one removed moves up, so the drawing starts again from there -
+// and only from there: a reply ends once per round-trip, and the session above it has not changed.
 func (t *transcript) dropDrafts() {
+	first := -1
 	kept := t.entries[:0]
-	for _, e := range t.entries {
+	for i, e := range t.entries {
 		if e.who != whoDraft {
 			kept = append(kept, e)
+		} else if first < 0 {
+			first = i
 		}
 	}
-	t.entries, t.stale = kept, 0
-	t.rowsCache, t.rowStart = nil, nil
+	if first < 0 {
+		return
+	}
+	clear(t.entries[len(kept):]) // what moved up is not also held where it was
+	t.entries = kept
+	t.mark(first)
 }
 
 func (t *transcript) toolStart(name, args string) {
 	// the row is worded once, when the call begins, and again when it answers: a call being drawn a
 	// hundred times a second is not parsed a hundred times a second
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args,
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args, asked: true,
 		call: call{note: noteFor(name, args, "", false, t.root)}})
 }
 
 // toolEnd fills the call it belongs to. Parallel reads mean the reply may not be the last
 // row added, so it finds the newest unfinished call with the same tool and arguments.
-func (t *transcript) toolEnd(name, args, result string) {
+func (t *transcript) toolEnd(name, args, result string) { t.changed(name, args, result, "") }
+
+// changed is toolEnd for a call that also handed over the whole of the change it made: the result
+// holds the short copy the model was sent, and the screen draws the whole one in its place.
+func (t *transcript) changed(name, args, result, change string) {
+	read := func() call {
+		if change == "" {
+			return readCall(name, args, result, false, t.root)
+		}
+		c := readCall(name, args, summaryLine(result), false, t.root)
+		c.holds(change)
+		return c
+	}
 	for i := len(t.entries) - 1; i >= 0; i-- {
 		e := &t.entries[i]
-		if e.who == whoTool && e.args != "" && e.args == args {
-			e.call = readCall(name, args, result, false, t.root)
+		if e.who == whoTool && e.asked && e.tool == name && e.args == args {
+			e.call = read()
 			e.failed = exitSaid(result) != "" // a command that left non-zero failed, call or no call
-			e.args = ""                       // what the call read is not what the screen keeps
+			e.asked, e.args = false, ""       // what the call read is not what the screen keeps
 			t.mark(i)
 			return
 		}
 	}
-	c := readCall(name, args, result, false, t.root)
-	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: exitSaid(result) != "", call: c})
+	t.entries = append(t.entries, entry{who: whoTool, tool: name, failed: exitSaid(result) != "", call: read()})
 }

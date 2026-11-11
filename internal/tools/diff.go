@@ -26,6 +26,52 @@ func diffText(oldText, newText string) string {
 	return capDiff(dropFileHeaders(diff))
 }
 
+// changeMaxLines is the most of one change a screen is handed. It is far past what anyone reads on a
+// row-by-row screen, and it is what keeps a rewritten file of a hundred thousand lines from being
+// held twice over; the model's own copy of the change is capped much lower, and separately.
+const changeMaxLines = 3000
+
+// wholeChange is a change as a person reads it, not as the model is charged for it: every hunk, with
+// no cap on bytes. It is "" when nothing changed.
+func wholeChange(oldText, newText string) string {
+	if oldText == newText {
+		return ""
+	}
+	a, b := diffSplit(oldText), diffSplit(newText)
+	var lines []string
+	if went, came := changedSpan(a, b); went+came > changeMaxLines {
+		// a file rewritten from top to bottom: lining its halves up costs seconds and says nothing a
+		// reader can use, so the part that differs is given as what went, then what came
+		lines = blockChange(a, b, went, came)
+	} else {
+		diff := dropFileHeaders(udiff.Unified("before", "after", joinLines(a), joinLines(b)))
+		lines = strings.Split(strings.TrimRight(diff, "\n"), "\n")
+	}
+	if len(lines) <= changeMaxLines {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[:changeMaxLines], "\n") +
+		fmt.Sprintf("\n[… %d more lines of the change; the file on disk has all of it]", len(lines)-changeMaxLines)
+}
+
+// blockChange is the differing middle of two files as one hunk: the lines that went, then the lines
+// that came.
+func blockChange(a, b []string, went, came int) []string {
+	start := 0
+	for start < len(a) && start < len(b) && a[start] == b[start] {
+		start++
+	}
+	lines := make([]string, 0, went+came+1)
+	lines = append(lines, fmt.Sprintf("@@ -%d,%d +%d,%d @@", start+1, went, start+1, came))
+	for _, line := range a[start : start+went] {
+		lines = append(lines, "-"+line)
+	}
+	for _, line := range b[start : start+came] {
+		lines = append(lines, "+"+line)
+	}
+	return lines
+}
+
 // changedSpan measures the middle that differs on each side, ignoring the identical band
 // on both ends. That middle, not the whole file, is what makes a diff worth printing.
 func changedSpan(a, b []string) (old, new int) {

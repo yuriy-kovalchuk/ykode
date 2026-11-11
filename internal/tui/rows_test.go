@@ -198,7 +198,7 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 		switch {
 		case strings.Contains(row, "edit_file"):
 			summary = row
-		case strings.Contains(row, "@@"):
+		case strings.Contains(row, "strings.TrimSpace"):
 			change = row
 		}
 	}

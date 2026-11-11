@@ -92,6 +92,7 @@ type wired struct {
 }
 
 func (w *wired) feed() {
+	w.m.Update(wakeMsg{}) // what the run queued is taken now, whether or not the wake has landed yet
 	for {
 		select {
 		case msg := <-w.msgs:
@@ -135,20 +136,27 @@ func TestTheHubRefusesWhileNothingIsOnScreen(t *testing.T) {
 
 func TestTheHubWaitsForWhatTheScreenAnswers(t *testing.T) {
 	hub := NewHub()
-	var got []agent.Event
+	got := make(chan agent.Event, 4)
 	var answer agent.Decision = agent.AllowAlways
-	hub.send = func(msg tea.Msg) {
-		switch m := msg.(type) {
-		case eventMsg:
-			got = append(got, m.ev)
-		case confirmMsg:
-			m.reply <- answer
+	hub.send = func(tea.Msg) { // the screen, woken: it takes what waits and answers what is asked
+		for _, msg := range hub.take() {
+			switch m := msg.(type) {
+			case eventMsg:
+				got <- m.ev
+			case confirmMsg:
+				m.reply <- answer
+			}
 		}
 	}
 
 	hub.Emit(agent.Event{Kind: agent.ToolEnd, Tool: "read_file", Text: "3 lines"})
-	if len(got) != 1 || got[0].Tool != "read_file" {
-		t.Errorf("the run never reached the screen: %v", got)
+	select {
+	case ev := <-got:
+		if ev.Tool != "read_file" {
+			t.Errorf("the screen was handed another event: %v", ev)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never reached the screen")
 	}
 	if verdict := hub.Emit(agent.Event{Kind: agent.Confirm, Text: "write src/a.go?"}); verdict != answer {
 		t.Errorf("the run got %v back, not what the screen said (%v)", verdict, answer)
@@ -272,6 +280,7 @@ func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	writeKeys(t, keys, "and the tests too\r")
+	waitFor(t, screen, "waits for the next round-trip") // the ask is in, and the turn is still open
 	close(stub.release)
 
 	waitFor(t, screen, "answered while you waited")

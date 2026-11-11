@@ -22,9 +22,8 @@ const (
 )
 
 // rows is the session as the screen reads it: one element per row. Only the blocks that changed are
-// drawn again
-// again, and the rows are only rebuilt from there; a different screen, or rows that moved, starts
-// the whole session again.
+// drawn again, and the rows are only rebuilt from there; a different screen starts the whole session
+// again.
 func (t *transcript) rows(width int) []string {
 	if width != t.width {
 		t.width, t.stale = width, 0
@@ -52,44 +51,40 @@ func (t *transcript) render(width int) string {
 	return strings.TrimRight(strings.Join(t.rows(width), "\n"), "\n")
 }
 
-// draw is one entry as the screen sees it, ending with the blank row a block leaves behind.
+// draw is one entry as the rows the screen sees, ending with the blank row a block leaves behind.
+// Everything but the ask sits inside the session's margin, and a blank row stays blank: padding it
+// would leave spaces on a row that says nothing.
 func (t *transcript) draw(e *entry, width int) []string {
-	if e.who == whoUser {
-		return blockRows(promptBlock(*e, width) + "\n\n") // the band: edge to edge
-	}
 	inner := max(width-lipgloss.Width(messageLead)-messageRight, 1)
-	var block string
 	switch e.who {
+	case whoUser:
+		return append(promptRows(*e, width), "") // the band: edge to edge
+	case whoAnswer:
+		return append(e.laid.draw(e.text, inner, messageLead), "")
 	case whoSummary:
-		block = styleDim.Render("  the older turns, folded into this") + "\n" + markdown(e.text, inner) + "\n\n"
-	case whoOutput:
-		block = strings.Join(indent(wrapKept(e.text, max(inner-2, 1)), "  "), "\n") + "\n\n"
-	case whoDone:
-		block = fmt.Sprintf("%s\n\n", styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))))
+		rows := []string{messageLead + styleDim.Render("  the older turns, folded into this")}
+		return append(append(rows, e.laid.draw(e.text, inner, messageLead)...), "")
 	case whoThink:
 		// the gutter is laid on after the wrap, so the wrap keeps room for it on any screen
-		block = fmt.Sprintf("%s\n\n", gutter(strings.Join(wrap(e.text, max(inner-4, 1)), "\n"), styleThink))
-	case whoAnswer:
-		block = markdown(e.text, inner) + "\n\n"
-	case whoNotice:
-		block = styleDim.Render(strings.Join(indent(wrap(oneLine(e.text, noticeChars), max(inner-2, 1)), "· "), "\n")) + "\n"
-	case whoTool:
-		block = toolRow(*e, inner) + "\n"
-		if rows := changeRows(e.call.change, e.call.left, inner); rows != nil {
-			block += strings.Join(rows, "\n") + "\n"
-		}
-		if rows := tailRows(e.call.tail, e.call.note, inner); rows != nil {
-			block += strings.Join(rows, "\n") + "\n"
-		}
-	case whoDraft:
-		block = draftRows(drafted(e), t.root, inner) + "\n"
+		return append(e.thought.wrap(e.text, max(inner-4, 1), thinkingRow), "")
 	}
-	return margined(blockRows(block))
-}
-
-// margined puts a block inside the session's margin. A blank row stays blank: padding it would leave
-// spaces on a row that says nothing.
-func margined(rows []string) []string {
+	var rows []string
+	switch e.who {
+	case whoOutput:
+		rows = append(indent(wrapKept(e.text, max(inner-2, 1)), "  "), "")
+	case whoDone:
+		rows = []string{styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))), ""}
+	case whoNotice:
+		for _, row := range wrap(oneLine(e.text, noticeChars), max(inner-2, 1)) {
+			rows = append(rows, styleDim.Render("· "+row))
+		}
+	case whoTool:
+		rows = append(rows, toolRow(*e, inner))
+		rows = append(rows, changeRows(e.call.change, 0, inner)...)
+		rows = append(rows, tailRows(e.call.tail, e.call.note, inner)...)
+	case whoDraft:
+		rows = draftRows(drafted(e), t.root, inner)
+	}
 	for i, row := range rows {
 		if row != "" {
 			rows[i] = messageLead + row
@@ -98,31 +93,23 @@ func margined(rows []string) []string {
 	return rows
 }
 
-// blockRows turns what a block drew into the rows it takes. A block's own ending newline is not a row
-// of its own, so the rows read exactly as the blocks joined with "" did.
-func blockRows(block string) []string {
-	rows := strings.Split(block, "\n")
-	if last := len(rows) - 1; last >= 0 && rows[last] == "" {
-		rows = rows[:last]
-	}
-	return rows
+// thinkingRow is one row of what the model thought: behind a gutter, in the hand thinking is written in.
+func thinkingRow(row string) string {
+	return messageLead + gutterMark() + styleThink.Render(row)
 }
 
-// promptBlock is what was asked, as a band across the whole screen: the ask then reads apart
+// promptRows is what was asked, as a band across the whole screen: the ask then reads apart
 // from the answer even when it runs over several lines.
-func promptBlock(e entry, width int) string {
+func promptRows(e entry, width int) []string {
 	when := clock(e.at) // an ask carried over from an earlier run has no hour to show
 	lines := wrap(strings.TrimSpace(e.text), width-promptEdge)
-	for i := range lines {
-		lines[i] = strings.TrimRight(lines[i], " ")
-	}
 	if when != "" {
 		lines[len(lines)-1] = rightAligned(lines[len(lines)-1], when, width-promptEdge)
 	}
 	for i, line := range lines {
 		lines[i] = styleUserLine.Render(padTo(userMark+" "+line, width))
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // promptEdge and userMark are the band's left edge: the mark and the space after it.
@@ -140,7 +127,7 @@ func toolRow(e entry, width int) string {
 	switch {
 	case e.failed:
 		mark, ink = "✗", styleBad
-	case e.args == "":
+	case !e.asked:
 		mark, ink = "✓", styleOK
 	}
 	return callHead(mark, ink, e.tool, e.call.note, width)
@@ -154,23 +141,14 @@ func callHead(mark string, ink lipgloss.Style, tool, note string, width int) str
 }
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
-func draftRows(d draft, root string, width int) string {
+func draftRows(d draft, root string, width int) []string {
 	shown, written, bytes := d.preview()
-	row := callHead("✎", styleAccent, d.tool, draftHead(shorten(d.target(), root), written, bytes), width)
-	for i, line := range shown {
-		shown[i] = cutToWidth(line, width-4)
+	rows := []string{callHead("✎", styleAccent, d.tool, draftHead(shorten(d.target(), root), written, bytes), width)}
+	for _, line := range shown {
+		rows = append(rows, gutterMark()+styleDim.Render(cutToWidth(line, width-4)))
 	}
-	if len(shown) == 0 {
-		return row
-	}
-	return row + "\n" + gutter(strings.Join(shown, "\n"), styleDim)
+	return rows
 }
 
-// gutter marks a block that is not the answer, such as thinking or a call's preview.
-func gutter(text string, style lipgloss.Style) string {
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		lines[i] = styleDim.Render("  ┊ ") + style.Render(line)
-	}
-	return strings.Join(lines, "\n")
-}
+// gutterMark leads a row that is not the answer, such as thinking or a call's preview.
+func gutterMark() string { return styleDim.Render("  ┊ ") }

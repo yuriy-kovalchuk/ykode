@@ -99,6 +99,19 @@ func TestAFinishedPlanFoldsToATickedHeading(t *testing.T) {
 	}
 }
 
+// a step that failed has an outcome, so a plan that ended badly folds too and says it failed rather
+// than claiming it finished
+func TestAPlanThatEndedBadlyFoldsAndSaysSo(t *testing.T) {
+	m := planModel(t, 100, 40, steps(done, failed, done)...)
+	rows := m.planRows()
+	if len(rows) != 1 {
+		t.Fatalf("a plan with a failed step holds %d rows: %q", len(rows), rows)
+	}
+	if plain := stripCodes(rows[0]); !strings.Contains(plain, "plan ✗") || strings.Contains(plain, "done") {
+		t.Errorf("the heading reads %q, want plan ✗ and no claim of done", plain)
+	}
+}
+
 // a short terminal has no room for steps, so the panel keeps to its heading
 func TestAShortTerminalGetsOnlyTheHeading(t *testing.T) {
 	m := planModel(t, 100, 14, steps(done, active, pending)...)

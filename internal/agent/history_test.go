@@ -40,7 +40,7 @@ func windowBelow(t *testing.T, history func() []llm.Message) int {
 	trimmed := newForHistory(Options{})
 	trimmed.history = history()
 	trimmed.history[3].Content = trimMarker
-	ctx := 2*trimmed.estimateTokens() + 200
+	ctx := 2*trimmed.estimateTokens() + 400 // twice what is left after the trim, and the reserve a window always keeps
 
 	full := newForHistory(Options{})
 	full.history = history()

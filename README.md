@@ -2,7 +2,7 @@
 
 A small terminal coding agent that talks to an OpenAI-compatible chat server —
 normally a local [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`.
-Go standard library only: no SDK, one streaming path, and the model's thinking is
+No provider SDK: the wire protocol is the standard library's, one streaming path, and the model's thinking is
 shown separately from its answer.
 
 It keeps a conversation, calls tools (find, search, read, write, edit, run), and
@@ -33,7 +33,7 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--root` | — | current directory | project root the file tools live inside |
 | `--ctx` | — | read from the server | context window in tokens |
 | `--max-tokens` | — | no cap | tokens per reply; with no cap it gets the room the window has left |
-| `--max-turns` | — | `25` | tool rounds per request |
+| `--max-turns` | — | `100` | tool rounds per request |
 | `--thinking LEVEL` | — | `medium` | how deeply the model thinks: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--no-think` | — | thinking on | shorthand for `--thinking off` |
 | `--yes` | — | off | skip in-project confirmations |
@@ -137,19 +137,47 @@ figures, `↑` included, replace it when the reply ends. The cache percentage is
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
 The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
 
-An answer is drawn as the model shaped it: headings, lists, tables, block quotes and fenced code
-(language named once above the block), and the marks it wrote turned into the terminal's own bold,
-italic and colour. goldmark parses the CommonMark; ykode draws it, so the palette and the width stay
-the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
+An answer is drawn as the model shaped it: headings, lists, checklists, block quotes and fenced code
+(language named once above the block), tables as a ruled grid whose cells wrap inside their columns
+when the screen is narrower than the table, and the marks it wrote turned into the terminal's own
+bold, italic, struck-out and colour. A line the model broke stays broken, so data written a value a
+line reads as it was written. goldmark parses the
+CommonMark; ykode draws it, so the palette and the width stay the screen's. Nothing about that changes what the model is sent — an answer is kept exactly as it
 arrived, and only the drawing interprets it.
+
+A fence that names a language is coloured by that language's grammar: chroma's hundreds of grammars,
+the colours ykode's own four (the words that define, the values, the comments, what is called), so the
+terminal's theme still decides what each of them looks like. A fence that names nothing, or a language
+no grammar covers, is left exactly as written — guessing at a language colours prose, and a sentence
+about a `case` or a `type` would read as code. A block is coloured while it is still arriving: the
+lines already written are read once, and a frame reads only the line being written, so the colour
+keeps up with the tokens. A closed block is read once and kept.
+
+What streams is drawn at thirty frames a second, however fast the tokens come, and the run never waits
+for a frame: what it reports is queued and reaches the screen joined. An answer is laid out a block at
+a time, so a frame costs the block being written rather than the answer so far.
+
+A turn carries on until the work is answered, not until a reply happens to end. A reply cut off at
+`max_tokens` - an answer stopped mid-sentence, or thinking that used the whole budget - is asked to go
+on; so is an empty one, and, once, a reply that says what it will do next and then does not do it or
+leaves steps of its plan open. A tool call the model wrote out as text (`<tool_call>…`), which some
+servers do not read back into a call, is run as the call it is when it names a tool ykode has, and its
+markup is never drawn. When a request uses all its tool rounds (`max_turns`, 100 unless set) the
+model is asked where the work stands and the screen says a message will carry it on. What ykode tells
+the model in the user's place is marked as ykode's, so the model does not answer it as the user's.
 
 For a long task the model keeps a checklist with the `plan` tool: it sends every step each time, each
 pending, active (the one it is on), done or failed, so the list is never half an edit. The screen pins it
 between the transcript and the prompt, where it cannot scroll away: a heading with one cell per step
 (`plan ▰▰▰▱▱ 3/5`, green for done, the accent for the active one, red for failed, hollow for pending), then a row
 per step, the active one turning with the spinner while the turn runs. A plan too long for the room shows the
-steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan with every step
-done fold it to its heading. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
+steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan whose every step
+has an outcome fold it to its heading — `plan ✓ 3/3 done`, or `plan ✗ 2/3` when a step failed, since a plan that
+ended badly is over but did not finish. A model that works on for several calls without touching a plan
+with open steps is reminded of it on the next result it reads, so the list moves with the work
+instead of being ticked off all at once at the end. A plan that is over is dropped when the next prompt starts, so it does
+not sit there for the rest of the session; one with steps still pending or active carries over, which is what a
+stopped turn and a "carry on" leave behind. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
 in the newest plan call, and a fold carries it in its recap so the model never loses the list it is working
 through. Twelve steps at most, a line each; the tool costs about 500 bytes of every request.
 
@@ -165,13 +193,17 @@ The row has no ground behind it: the glyph at its left carries the state — dim
 runs, green `✓` once it answered, red `✗` when it failed, `✎` while the model is still writing it —
 and the tool's name is bold. The row is as wide as its words, not the screen.
 
-A call that changed a file puts the change on the rows under its row instead of flattening it into
-one. Each changed row sits on a **low ground of one shade** — green for what came in, red for what
-went, picked for the terminal the screen runs in and running to its edge — led by a glyph (`+`, `-`)
-in the same colour, while the words stay the terminal's own colour. There is no second, stronger
-shade inside a line. The unchanged context is quiet. Fourteen rows of a change are shown and the row
-says how many the screen left out; the file on disk holds all of it, and the next `read_file` reads
-as much as you want.
+A call that changed a file puts the change on the rows under its row, drawn the way a review tool
+draws one: every line with its number in the file, a line that went on a red ground and one that came
+on a green one, each running to the edge of the screen, and the words that differ between a line and
+the one that replaced it on a stronger shade of the same ground. The grounds are picked for the
+terminal the screen runs in, and the words on them stay the terminal's own colour. Unchanged lines
+around a change are left as they are, a `⋯` stands between two places in the file, and the call's row
+counts the change (`+12 -3`). A change is shown whole, a new file included: its rows are drawn once and
+kept, so a long one costs rows to scroll past and no time per frame (three to four milliseconds per
+thousand lines, once). The model is still sent the short copy; the screen is handed the whole change
+beside it, up to three thousand lines. A question about an `edit_file` shows the first rows of the
+change, from the call's own arguments, before the file is touched.
 
 A command that came back non-zero, was killed at its timeout or was cancelled reads as a failure —
 its red `✗` and the last lines it printed under the row, behind a quiet gutter, where the error is.
@@ -380,7 +412,7 @@ what it held back, asks once when someone is at the keyboard, and records the an
 base_url: http://127.0.0.1:8080/v1
 api_key_env: LOCAL_LLM_API_KEY
 model: Qwen3.6-35B-A3B-GSQ-hybrid
-max_turns: 25
+max_turns: 100
 verify: true
 assume_yes: false
 mouse: false

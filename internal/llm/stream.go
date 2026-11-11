@@ -68,6 +68,15 @@ func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 		a.timings = *chunk.Timings
 		onDelta(Delta{Timings: chunk.Timings})
 	}
+	if u := chunk.Usage; u != nil && a.timings.PromptTokens() == 0 && u.PromptTokens > 0 {
+		// a server with no timings of its own: its count fills the same figures, so the prompt size, the
+		// share the cache served and the byte ratio are known on any server that counts at all
+		cached := min(u.Details.CachedTokens, u.PromptTokens)
+		a.timings.CacheN, a.timings.PromptN = cached, u.PromptTokens-cached
+		if a.timings.PredictedN == 0 {
+			a.timings.PredictedN = u.CompletionTokens
+		}
+	}
 	for _, choice := range chunk.Choices {
 		if choice.FinishReason != "" {
 			a.finish = choice.FinishReason

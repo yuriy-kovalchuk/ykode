@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
@@ -83,7 +85,7 @@ func (m *model) suggestRows() []string {
 	var rows []string
 	for i, c := range m.suggest[:shown] {
 		lead := "  " + styleKey.Render(fmt.Sprintf("%-*s", column, names[i])) + " "
-		room := m.width - len(lead) - 2
+		room := m.width - lipgloss.Width(lead) - 2 // the columns it takes, not the bytes its colour does
 		rows = append(rows, lead+styleDim.Render(cutToWidth(c.Note, max(room, 1))))
 	}
 	if len(m.suggest) > shown {
