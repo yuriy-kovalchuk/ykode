@@ -15,9 +15,9 @@ type Usage struct {
 	CachedTotal int // of those, what the cache served over the whole conversation
 	EstTok      int // estimate for the request that would go out next
 	BytesPerTok float64
-	Draft       int // tokens a draft model proposed, where the server runs one
-	DraftOK     int // of those, what the model kept
-	Acceptance  float64
+	Draft       int     // tokens a draft model proposed in the last reply, where the server runs one
+	DraftOK     int     // of those, what the model kept
+	Acceptance  float64 // DraftOK over Draft, of the last reply: like the cache share, it says how the round just ran
 }
 
 const (
@@ -120,7 +120,7 @@ func (a *Agent) ContextLine() string {
 		fmt.Fprintf(&b, "one tool result is capped at %d bytes\n", a.opts.MaxResult)
 	}
 	if u.Acceptance > 0 {
-		fmt.Fprintf(&b, "speculative decoding: %d%% of the draft's tokens were kept (%d of %d)",
+		fmt.Fprintf(&b, "speculative decoding: %d%% of the draft's tokens in the last reply were kept (%d of %d)",
 			int(u.Acceptance*100+0.5), u.DraftOK, u.Draft)
 	}
 	return b.String()

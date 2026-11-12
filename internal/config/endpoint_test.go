@@ -26,7 +26,7 @@ func TestSavingTheEndpointToAFreshHome(t *testing.T) {
 	if cfg.BaseURL != "http://gpu.local:8080/v1" || cfg.APIKey != "sk-1" || cfg.Model != "qwen" || !cfg.EndpointSet {
 		t.Errorf("the saved server did not come back: %q %q %q set=%v", cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.EndpointSet)
 	}
-	if cfg.ReadLines != 150 || cfg.ThinkingLevel != "medium" {
+	if cfg.ReadLines != 2000 || cfg.ThinkingLevel != "medium" {
 		t.Error("the rest of the seeded defaults did not come with it")
 	}
 }

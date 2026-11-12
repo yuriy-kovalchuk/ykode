@@ -13,15 +13,18 @@ const (
 	noOutput    = "(no output)"
 	// markerOverhead leaves room for the "bytes omitted" line itself, which fits a 10 digit count
 	markerOverhead = 64
+	// maxResultTokens is the most one result may take: 51,200 bytes at four bytes a token, pi's cap
+	maxResultTokens = 12800
 )
 
 // ResultBytesFor scales one tool result with the window it shares: about a tenth of it in tokens,
-// clamped so a small window still gets a usable result and a huge one does not drown the model.
+// clamped so a small window still gets a usable result. The ceiling is pi's 50 KB, reached at a 128k
+// window: a whole source file fits in one result, and old results are shortened when room runs short.
 func ResultBytesFor(ctxTokens int) int {
 	if ctxTokens <= 0 {
 		return defaultResultBytes
 	}
-	return clamp(ctxTokens/10, 1200, 6000) * 4 // four bytes per token is a generous estimate
+	return clamp(ctxTokens/10, 1200, maxResultTokens) * 4 // four bytes per token is a generous estimate
 }
 
 // FormatResult keeps a result non-empty and inside maxBytes, keeping the head and tail of anything longer.

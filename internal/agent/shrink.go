@@ -24,7 +24,29 @@ func (a *Agent) underPressure() bool {
 // shrinkWhatAged shortens old results and the arguments of old file writes together: both are
 // text the model has already been paid for.
 func (a *Agent) shrinkWhatAged(keep int) int {
-	return a.shrinkOldResults(keep) + a.shrinkOldEdits(keep)
+	freed := a.shrinkOldReasoning(keep) + a.shrinkOldResults(keep) + a.shrinkOldEdits(keep)
+	if freed > 0 {
+		a.work.made(roomShortened)
+	}
+	return freed
+}
+
+// shrinkOldReasoning stops sending the thinking of all but the newest replies. Sent back, the thinking
+// keeps the model's own line of reasoning in front of it across a tool loop; the oldest of it is also
+// the bulk of a long run, and the first thing that can go when room runs short.
+func (a *Agent) shrinkOldReasoning(keep int) int {
+	freed, seen := 0, 0
+	for i := len(a.history) - 1; i >= 0; i-- {
+		m := &a.history[i]
+		if m.Role != "assistant" || m.WireReasoning == "" {
+			continue
+		}
+		if seen++; seen > keep {
+			freed += len(m.WireReasoning)
+			m.WireReasoning = ""
+		}
+	}
+	return freed
 }
 
 // shrinkOldResults replaces older large tool results with a summary the code writes, and returns the bytes freed.

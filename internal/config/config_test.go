@@ -164,7 +164,7 @@ func TestLoadRejectsBadSettings(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"no turns", []string{"--max-turns", "0"}, "--max-turns must be at least 1"},
+		{"negative turns", []string{"--max-turns", "-1"}, "--max-turns must be 0 (no limit)"},
 		{"negative cap", []string{"--max-tokens", "-1"}, "--max-tokens must be 0 (no cap)"},
 		{"negative ctx", []string{"--ctx", "-5"}, "--ctx must be 0 (auto) or a positive token count"},
 		{"invented thinking level", []string{"--thinking", "enormous"}, "want one of off, minimal, low, medium, high, xhigh, max"},
@@ -242,13 +242,14 @@ func TestTheOneShotFlags(t *testing.T) {
 	}
 }
 
-func TestTheDefaultReadWindowKeepsSearchingFirst(t *testing.T) {
+// a small window cost a round-trip per page; the byte budget, not the line count, bounds a read
+func TestTheDefaultReadWindowIsPis(t *testing.T) {
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReadLines > 200 {
-		t.Errorf("ReadLines = %d: a window this big lets the model dump files instead of searching", cfg.ReadLines)
+	if cfg.ReadLines != 2000 {
+		t.Errorf("ReadLines = %d, want pi's 2000", cfg.ReadLines)
 	}
 }
 

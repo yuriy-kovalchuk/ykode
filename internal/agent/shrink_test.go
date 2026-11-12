@@ -432,3 +432,21 @@ func TestAnEditSummaryCountsTheTextItWrote(t *testing.T) {
 		}
 	}
 }
+
+// under pressure the thinking of older replies stops being sent; the newest replies keep theirs
+func TestOldThinkingIsDroppedFirst(t *testing.T) {
+	a := New(nil, nil, "test-model", Options{}, nil)
+	for _, thought := range []string{"first", "second", "third"} {
+		a.history = append(a.history, llm.Message{Role: "assistant", WireReasoning: thought})
+	}
+	if freed := a.shrinkOldReasoning(2); freed != len("first") {
+		t.Errorf("freed %d bytes, want %d", freed, len("first"))
+	}
+	var kept []string
+	for _, m := range a.history[1:] {
+		kept = append(kept, m.WireReasoning)
+	}
+	if want := []string{"", "second", "third"}; !reflect.DeepEqual(kept, want) {
+		t.Errorf("thinking sent = %q, want %q", kept, want)
+	}
+}

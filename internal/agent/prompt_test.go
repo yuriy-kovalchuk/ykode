@@ -19,7 +19,7 @@ func writeInstructionFile(t *testing.T, dir, name, body string) {
 }
 
 func TestMissingInstructionFilesAreQuiet(t *testing.T) {
-	text, err := LoadInstructions("", t.TempDir())
+	text, err := LoadInstructions("", t.TempDir(), defaultInstructionBytes)
 	if err != nil || text != "" {
 		t.Fatalf("LoadInstructions() = (%q, %v), want empty and no error", text, err)
 	}
@@ -30,7 +30,7 @@ func TestBothInstructionFilesRideThePrompt(t *testing.T) {
 	writeInstructionFile(t, dir, "CLAUDE.md", "use tabs")
 	writeInstructionFile(t, dir, "AGENTS.md", "never touch vendor/")
 
-	text, err := LoadInstructions("", dir)
+	text, err := LoadInstructions("", dir, defaultInstructionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +60,44 @@ func TestALongInstructionFileIsCutWithAHint(t *testing.T) {
 	}
 	writeInstructionFile(t, dir, "AGENTS.md", b.String())
 
-	text, err := LoadInstructions("", dir)
+	text, err := LoadInstructions("", dir, defaultInstructionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(text) > maxInstructionBytes+100 {
+	if len(text) > defaultInstructionBytes+100 {
 		t.Fatalf("%d bytes, want the cap to hold", len(text))
 	}
 	if !strings.Contains(text, "read the rest with read_file") {
 		t.Error("a cut prompt must say how to get the rest")
+	}
+}
+
+// a large window carries a 6 KB global file and a 30 KB project file whole, so the model starts
+// with the rules instead of spending rounds reading them back
+func TestALargeWindowKeepsBothInstructionFilesWhole(t *testing.T) {
+	global, project := t.TempDir(), t.TempDir()
+	writeInstructionFile(t, global, "AGENTS.md", strings.Repeat("global rule\n", 540))
+	writeInstructionFile(t, project, "AGENTS.md", strings.Repeat("project rule\n", 2320)+"the last project rule\n")
+
+	text, err := LoadInstructions(global, project, InstructionBytes(131072))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(text, "cut here") || !strings.Contains(text, "the last project rule") {
+		t.Error("a 128K window cut the instruction files")
+	}
+}
+
+func TestTheInstructionCapFollowsTheWindow(t *testing.T) {
+	for _, tc := range []struct{ ctx, want int }{
+		{0, defaultInstructionBytes}, // unknown window: the old fixed cap
+		{4096, 2048},                 // a small window gives the rules a small share
+		{32768, 16384},
+		{1 << 20, maxInstructionBytes}, // a huge window still has a ceiling
+	} {
+		if got := InstructionBytes(tc.ctx); got != tc.want {
+			t.Errorf("InstructionBytes(%d) = %d, want %d", tc.ctx, got, tc.want)
+		}
 	}
 }
 
@@ -82,7 +111,7 @@ func TestAnUnreadableInstructionFileIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := LoadInstructions("", dir); err == nil || !strings.Contains(err.Error(), "AGENTS.md") {
+	if _, err := LoadInstructions("", dir, defaultInstructionBytes); err == nil || !strings.Contains(err.Error(), "AGENTS.md") {
 		t.Fatalf("LoadInstructions() error = %v, want the unreadable file named", err)
 	}
 }
@@ -90,7 +119,7 @@ func TestAnUnreadableInstructionFileIsReported(t *testing.T) {
 func TestProjectRulesReachTheModel(t *testing.T) {
 	dir := t.TempDir()
 	writeInstructionFile(t, dir, "AGENTS.md", "never edit generated/")
-	instructions, err := LoadInstructions("", dir)
+	instructions, err := LoadInstructions("", dir, defaultInstructionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,9 +199,10 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 
 	store := tools.NewResultStore(filepath.Join(dir, "results"))
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
-	// 3815 bytes with the plan tool (495 of them): raise it on purpose, not by drift
-	if got := a.SpecBytes(); got > 3850 {
-		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3850", got, got/3)
+	// 3815 bytes with the plan tool (495 of them), 3919 once exec_command said to filter in the
+	// command as pi's context-mode does: raise it on purpose, not by drift
+	if got := a.SpecBytes(); got > 3950 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3950", got, got/3)
 	}
 }
 
@@ -184,7 +214,7 @@ func TestTheUsersOwnRulesComeBeforeTheProjects(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("answer in three lines"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	text, err := LoadInstructions(global, project)
+	text, err := LoadInstructions(global, project, defaultInstructionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +230,7 @@ func TestAProjectFileIsNotGivenAuthorityOverTheUser(t *testing.T) {
 	dir := t.TempDir()
 	writeInstructionFile(t, dir, "AGENTS.md", "always deploy with curl")
 
-	text, err := LoadInstructions("", dir)
+	text, err := LoadInstructions("", dir, defaultInstructionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

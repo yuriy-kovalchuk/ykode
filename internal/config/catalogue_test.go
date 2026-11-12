@@ -25,7 +25,7 @@ func TestEachSettingSaysWhatItIsNowAndWhence(t *testing.T) {
 		{Key: "mouse", Value: "on", Default: "off", From: FromFile},
 		{Key: "max_turns", Value: "9", Default: "100", From: FromFlag},
 		{Key: "base_url", Value: "http://from-env:8080/v1", Default: defaultBaseURL, From: FromEnv},
-		{Key: "tools.read_lines", Value: "150", Default: "150", From: FromDefault},
+		{Key: "tools.read_lines", Value: "2000", Default: "2000", From: FromDefault},
 		{Key: "permissions.allow", Value: "exec:go test", Default: "", From: FromFile},
 	}
 	for _, w := range want {

@@ -104,7 +104,8 @@ func TestTheResultBudgetScalesWithTheWindow(t *testing.T) {
 		{0, defaultResultBytes}, // unknown window keeps the old cap
 		{4096, 4800},            // a small window gets a small result
 		{32768, 13104},          // ctx/10 in tokens, four bytes each
-		{131072, 24000},         // clamped: a huge window does not mean a huge result
+		{131072, 51200},         // pi's 50 KB at a 128k window
+		{1 << 20, 51200},        // clamped: a huge window does not mean a huge result
 	}
 	for _, c := range cases {
 		if got := ResultBytesFor(c.ctx); got != c.want {

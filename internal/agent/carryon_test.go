@@ -122,6 +122,13 @@ func TestAReplyThatStopsHalfwayIsAskedToCarryOn(t *testing.T) {
 	if a.stoppedHalfway("Should I overwrite the file?") {
 		t.Error("a question to the user was read as a pause")
 	}
+	report := "## Verdict: not ready\n\nTwo UI bugs.\n\nWant me to fix #1 and #2 (both ~2 lines)? I'd leave the toolchain bump as a separate commit."
+	if a.stoppedHalfway(report) {
+		t.Error("a report that ends by asking the user something was read as a pause")
+	}
+	if !a.stoppedHalfway("Is the build green? Yes.\n\nNow let me update the tests.") {
+		t.Error("a question answered in an earlier paragraph made the pause read as a question")
+	}
 }
 
 func TestStoppingHalfwayCostsOneNudge(t *testing.T) {

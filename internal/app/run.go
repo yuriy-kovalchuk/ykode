@@ -67,7 +67,7 @@ func Run(args []string, version string) error {
 	}
 	defer root.Close()
 
-	instructions, err := agent.LoadInstructions(home.Dir(), cfg.Root)
+	instructions, err := agent.LoadInstructions(home.Dir(), cfg.Root, agent.InstructionBytes(ctxSize))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err, "- continuing without them")
 	}

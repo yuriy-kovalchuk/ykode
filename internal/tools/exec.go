@@ -70,7 +70,8 @@ func (t Exec) logDir() string {
 func (Exec) Name() string { return "exec_command" }
 
 func (Exec) Description() string {
-	return "Run a shell command (sh -c on " + runtime.GOOS + ") in the project root; returns the output and exit code. A cut output names the file with the full log."
+	return "Run a shell command (sh -c on " + runtime.GOOS + ") in the project root; returns the output and exit code. A cut output names the file with the full log. " +
+		"Filter in the command itself (grep, awk, a short script) so only what answers the question comes back."
 }
 
 func (Exec) NeedsConfirm() bool { return true }

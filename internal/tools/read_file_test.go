@@ -104,7 +104,7 @@ func TestReadStillReadsAFileAtTheSizeCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "continue with offset=31]") { // a peek: the file is long
+	if !strings.Contains(out, "continue with offset=2001]") { // one full window of a long file
 		t.Fatalf("marker wrong:\n%s", cutUTF8(out, 200))
 	}
 }
@@ -308,15 +308,16 @@ func TestASmallFileComesBackWhole(t *testing.T) {
 	}
 }
 
-func TestABigFileGetsAPeekAndAPointerAtSearch(t *testing.T) {
+// a file that fits the byte budget comes back in one call, as pi's read does; a longer one is
+// cut at the budget and says how to get further
+func TestABigFileIsReadUpToTheBudget(t *testing.T) {
+	tool := readToolFixture(t, numbered(900, "line"))
+	tool.budget = 51200 // what a 128k window gives one result
+	if out := runTool(t, tool, `{"path":"f.txt"}`); !strings.HasPrefix(out, "f.txt: lines 1-900 of 900\n") || strings.Contains(out, "continue with") {
+		t.Errorf("a 900-line file took more than one read:\n%s", cutUTF8(out, 120))
+	}
 	out := runTool(t, readToolFixture(t, numbered(3000, "line")), `{"path":"f.txt"}`)
-	if shown := strings.Count(out, "line "); shown > 30 {
-		t.Errorf("an unasked read of a 3000-line file showed %d lines", shown)
-	}
-	if !strings.Contains(out, "search_text") || !strings.Contains(out, "offset") {
-		t.Errorf("the peek does not say how to get further:\n%s", out)
-	}
-	if out := runTool(t, readToolFixture(t, numbered(3000, "line")), `{"path":"f.txt","offset":100}`); !strings.HasPrefix(out, "f.txt: lines 100-249 of 3000\n") {
-		t.Errorf("an explicit offset no longer gets the normal window:\n%s", cutUTF8(out, 120))
+	if !strings.Contains(out, "search_text") || !strings.Contains(out, "continue with offset=") {
+		t.Errorf("a cut read does not say how to get further:\n%s", out[max(0, len(out)-300):])
 	}
 }

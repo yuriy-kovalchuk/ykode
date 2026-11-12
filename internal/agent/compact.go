@@ -108,6 +108,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	a.history = append(a.history[:1], append(kept, a.history[start:]...)...)
 	a.compactedAt = callBlocks(a.history)
 	a.fold = foldNote{summary: summary, dropped: len(dropped) + 1, before: before}
+	a.work.made(roomFolded(len(dropped) + 1))
 	a.emit(Event{Kind: Summary, Text: summary})
 	return a.foldFreed(before)
 }

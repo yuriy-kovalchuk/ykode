@@ -16,8 +16,8 @@ import (
 
 // normalize rejects nonsense settings and pins the root to an existing absolute directory.
 func (c *Config) normalize() error {
-	if c.MaxTurns < 1 {
-		return fmt.Errorf("--max-turns must be at least 1, got %d", c.MaxTurns)
+	if c.MaxTurns < 0 {
+		return fmt.Errorf("--max-turns must be 0 (no limit) or a positive count, got %d", c.MaxTurns)
 	}
 	if c.MaxTokens < 0 {
 		return fmt.Errorf("--max-tokens must be 0 (no cap) or a positive token count, got %d", c.MaxTokens)

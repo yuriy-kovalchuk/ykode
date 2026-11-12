@@ -21,30 +21,45 @@ func (a *Agent) trimHistory() {
 	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.pressureMark() {
 		return
 	}
-	a.trimResults(1, a.firstUnseen(), a.trimGoal())
+	trimmed := a.trimResults(1, a.firstUnseen(), a.trimGoal())
 	// dropping whole calls is the emergency brake: it costs the model its recent work, so it waits
 	// until the window is nearly full, after shortening and compaction have had their turn.
+	dropped := 0
 	for a.estimateTokens() > a.ceiling() && a.dropOldestToolCall() {
+		dropped++
 		a.tell("dropped an older tool call and its result to fit the context")
 	}
 	// a resumed conversation can be all prose, and prose has to go some day
 	for a.estimateTokens() > a.ceiling() && a.dropOldestExchange() {
+		dropped++
 		a.tell("dropped an older turn to fit the context")
 	}
 	// last resort: a reply too big for what is left is cut rather than failing the request
-	a.trimResults(a.firstUnseen(), len(a.history), a.ceiling())
+	trimmed += a.trimResults(a.firstUnseen(), len(a.history), a.ceiling())
+	// the short form a front end shows names the harshest thing that happened: losing a whole call is
+	// worth knowing about more than losing the middle of a result
+	switch {
+	case dropped > 0:
+		a.work.made(roomDropped(dropped))
+	case trimmed > 0:
+		a.work.made(roomTrimmed(trimmed))
+	}
 }
 
-// trimResults blanks large results in history[from:to], oldest first, until the estimate is under goal.
-func (a *Agent) trimResults(from, to, goal int) {
+// trimResults blanks large results in history[from:to], oldest first, until the estimate is under goal,
+// and says how many it blanked.
+func (a *Agent) trimResults(from, to, goal int) int {
+	trimmed := 0
 	for i := from; i < to && a.estimateTokens() > goal; i++ {
 		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > summaryFloor && !strings.HasPrefix(m.Content, shrinkMark) {
 			a.forget(*m)
 			m.Content = a.trimmed(m)
 			a.revised(i)
+			trimmed++
 			a.tell("trimmed a tool result to fit the context")
 		}
 	}
+	return trimmed
 }
 
 // firstUnseen is where the replies the model has not read yet begin: every result is seen once in full.

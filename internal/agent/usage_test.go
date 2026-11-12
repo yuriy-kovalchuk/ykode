@@ -14,6 +14,15 @@ func answerWithTimings(answer string, promptN, cacheN, predictedN int) string {
 			promptN, cacheN, predictedN)
 }
 
+// answerWithUsage is one streamed answer plus the counts a server sends when it counts tokens but
+// has no timings of its own; it says nothing about how fast the reply was.
+func answerWithUsage(answer string, promptN, cachedN, completionN int) string {
+	return fmt.Sprintf(`data: {"choices":[{"index":0,"delta":{"content":%q},"finish_reason":"stop"}]}`, answer) +
+		fmt.Sprintf("\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":%d,"+
+			"\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\n", promptN, completionN, cachedN) +
+		"data: [DONE]\n\n"
+}
+
 func TestUsageAddsUpTheServersOwnNumbers(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("done", 900, 100, 40)}}
 	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
@@ -139,6 +148,9 @@ func TestTheContextLineMentionsSpeculationOnlyWhenThereWasAny(t *testing.T) {
 	if !strings.Contains(line, "speculative decoding: 60%") || !strings.Contains(line, "60 of 100") {
 		t.Errorf("acceptance missing: %s", line)
 	}
+	if !strings.Contains(line, "in the last reply") {
+		t.Errorf("acceptance does not say which reply it describes: %s", line)
+	}
 	if !strings.Contains(line, "cached (80%)") {
 		t.Errorf("the cache hit rate is missing: %s", line)
 	}
@@ -181,5 +193,38 @@ func TestTheCacheTotalAddsUpOverTheWholeConversation(t *testing.T) {
 	}
 	if u.CachedTok != 1000 {
 		t.Errorf("the last request cached %d, want 1000: the total must not replace it", u.CachedTok)
+	}
+}
+
+// a server that counts tokens but never a speed keeps its own count: only the speed comes from here
+func TestAServersOwnCountsStandWhenItReportsNoSpeed(t *testing.T) {
+	stub := &stubServer{scripts: []string{answerWithUsage("done", 900, 800, 40)}}
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
+	defer cleanup()
+
+	if err := a.Ask(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	u := a.Usage()
+	if u.GenTok != 40 {
+		t.Errorf("GenTok = %d, want the 40 the server counted, not a count measured here", u.GenTok)
+	}
+	if u.TotalPrompt != 900 || u.CachedTotal != 800 {
+		t.Errorf("the prompt came over as %d in all, %d cached; want 900 and 800", u.TotalPrompt, u.CachedTotal)
+	}
+}
+
+// where the server counts nothing at all, the count still comes from this side
+func TestAGeneratedCountIsEstimatedWhereTheServerCountsNothing(t *testing.T) {
+	long := strings.Repeat("a", 32) // the default ratio reads this as about ten tokens
+	stub := &stubServer{scripts: []string{sse("", long, "", nil, "stop")}}
+	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
+	defer cleanup()
+
+	if err := a.Ask(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Usage().GenTok; got <= 0 {
+		t.Errorf("GenTok = %d, want an estimate where the server reports nothing", got)
 	}
 }

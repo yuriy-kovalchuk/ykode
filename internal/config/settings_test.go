@@ -248,7 +248,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 150 || !cfg.LogAudit {
+	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 2000 || !cfg.LogAudit {
 		t.Errorf("the file written is not what the code would have done: %+v", cfg)
 	}
 	if cfg.EndpointSet {

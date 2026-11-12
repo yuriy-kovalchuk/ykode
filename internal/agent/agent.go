@@ -36,12 +36,13 @@ type Agent struct {
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	meter         meter
-	savedRatio    float64    // the byte ratio the session log last heard of
-	sincePlan     int        // tool calls since the model last touched its plan
-	usageMu       sync.Mutex // the numbers a front end reads while a turn runs elsewhere
-	report        Usage      // what the conversation cost as of the last finished turn
-	waitingMu     sync.Mutex // asks typed while a turn ran, taken between round-trips
-	waiting       []string   // what the user typed into a run that is still going
+	savedRatio    float64     // the byte ratio the session log last heard of
+	sincePlan     int         // tool calls since the model last touched its plan
+	usageMu       sync.Mutex  // the numbers a front end reads while a turn runs elsewhere
+	report        Usage       // what the conversation cost as of the last finished turn
+	work          contextWork // what this ask had to do to fit the conversation in, for a front end to say so
+	waitingMu     sync.Mutex  // asks typed while a turn ran, taken between round-trips
+	waiting       []string    // what the user typed into a run that is still going
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {
@@ -70,6 +71,7 @@ func (a *Agent) Reset() {
 	a.readFiles, a.modifiedFiles = nil, nil
 	a.environment = ""
 	a.opts.Plan.Clear() // the steps belong to the conversation that went
+	a.work.started()    // nothing has had to make room in the conversation that starts now
 	a.repeats.changed() // nothing the model saw before is in front of it any more
 	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
