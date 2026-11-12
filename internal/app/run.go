@@ -97,12 +97,20 @@ func Run(args []string, version string) error {
 }
 
 // resumeNote tells a leaving session where the conversation went, so it can be picked up again:
-// the file is written as you work, but nothing else says it is there.
+// the file is written as you work, but nothing else says it is there. The command is spelled out to be
+// pasted as it stands.
 func resumeNote(cfg config.Config, saved int) string {
 	if saved == 0 {
 		return ""
 	}
-	return fmt.Sprintf("ykode: %d messages saved in %s\nykode: resume with --continue %s\n", saved, cfg.SessionFile, cfg.Session)
+	// --root belongs in the line: a saved conversation is read back only by the project it was written
+	// in, so without it the command works just from the one directory it was typed in
+	root := cfg.Root
+	if strings.ContainsAny(root, ` "'`) {
+		root = strconv.Quote(root) // a pasted command breaks on a path with a space
+	}
+	return fmt.Sprintf("ykode: %d messages saved in %s\nykode: come back with: ykode --continue %s --root %s\n",
+		saved, cfg.SessionFile, cfg.Session, root)
 }
 
 // startupConfig resolves the settings and asks about an untrusted project's file; done means nothing is left to run.
