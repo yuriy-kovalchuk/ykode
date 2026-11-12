@@ -75,6 +75,10 @@ the answer arrive as one block each, a tool call shows while the model is still 
 two rows at the bottom report where the session runs and what it costs. `--no-tui` keeps the line prompt; so does
 a run that is not on a terminal, and `-p`/`--json`, which write to stdout.
 
+The terminal's own tab is named for the project — `ykode: ykode` when it was opened in
+`~/Developer/ykode` — so several sessions in one window say which is which. The name goes to the
+terminal as an escape sequence, so it costs the session no rows.
+
 ```
 ykode                            # or ykode --continue last
 ```
@@ -92,7 +96,9 @@ screen opens when the configured server does not answer, with the error on it.
 | key | what it does |
 |---|---|
 | `enter` | sends the prompt |
-| `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines |
+| `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines. `shift+enter` only where the terminal reports the modifier at all, and most terminals cannot tell `ctrl+enter` from `enter`, so it is not offered |
+| `ctrl+a`, `ctrl+e` | go to the start or the end of the line the caret stands on; `home` does the same |
+| `ctrl+k`, `ctrl+w` | delete from the caret to the end of the line, or the word before the caret |
 | `up`, `down` | scroll the transcript; with more than one line in the box they move the caret. A trackpad or wheel in a terminal that is not holding the mouse arrives as these keys, so they never write into the box |
 | `ctrl+p`, `ctrl+n` | walk the prompts you sent this session; a line you were writing waits at the end of the walk |
 | mouse wheel | scrolls the transcript, once the screen has the mouse (`ctrl+t`, or `mouse: true`); scrolled up, the rule above the status says where you are and when new output arrived below |
@@ -126,16 +132,22 @@ branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` �
 model and how deeply it thinks (`· high`, or `· thinking off`). The second has what the conversation
 has cost on the left: `↑` prompt tokens, `↓` generated, and `R` of them served from the server's cache,
 all three summed over the whole session; then `cache %` for what the last request found already cached,
-`draft %` where the server ran a draft model (how much of its work the real model kept), and last how
-full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
+`draft %` where the server ran a draft model (how much of the last reply's speculation the real model
+kept), and last how full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
 keeps the window. What is happening now sits on the right of that row: the running prompt's clock
-(`✓ done in 51s` once it finishes), then the server's speed, `↑` reading the prompt and `↓` writing, both in
-tokens per second. A server that reports its speeds with every chunk (llama.cpp's own `llama-server`) updates both live. One that
+(`✓ done in 51s` once it finishes) and, beside it, what that ask had to do to fit the conversation in —
+`shortened old output`, `summarising older turns`, `folded 12 older turns`, `trimmed 3 tool results`,
+`dropped 1 older turn` — said while it happens, because that is what a slow round-trip makes a reader
+wonder about. It starts over with the next ask. Then the server's speed, `↑` reading the prompt and `↓`
+writing, both in tokens per second. A server that reports its speeds with every chunk (llama.cpp's own
+`llama-server`) updates both live. One that
 reports them only at the end of the reply, as Strata does, still gets a live `↓`: ykode counts the streamed text
 (bytes over the bytes-per-token ratio it has learned), reads a one-second sliding window, and shows the result with a `~`; the server's exact
-figures, `↑` included, replace it when the reply ends. The cache percentage is llama.cpp's: how much of the request it already
+speed, `↑` included, replaces it when the reply ends, and a generated count the server counted is never replaced
+by the one measured here. The cache percentage is llama.cpp's: how much of the request it already
 had. Each prompt shows the time it was sent, and each finished one when it ended and how long it took.
-The branch is read when a prompt starts, so a `git checkout` the model ran shows up with the next one.
+The branch is read when a prompt starts, and the screen looks at HEAD every five seconds besides, so a
+`git checkout` made in another window shows up without waiting for the next prompt.
 
 An answer is drawn as the model shaped it: headings, lists, checklists, block quotes and fenced code
 (language named once above the block), tables as a ruled grid whose cells wrap inside their columns
@@ -292,7 +304,7 @@ already used. In order, cheapest first:
 3. Past 9/10 of the window the emergency brake applies: whole tool calls and their
    replies are removed, oldest first.
 
-Result sizes scale with the window: 4.8 KB on a 4k context, 24 KB on a 128k one. A gateway failure or a model still loading on a router
+Result sizes scale with the window: 4.8 KB on a 4k context, 50 KB (as pi) on a 128k one. A gateway failure or a model still loading on a router
 gets one retry; a request the server rejected on its merits is never replayed.
 
 ## Sessions and the audit log
@@ -425,7 +437,7 @@ stream_idle_sec: 120
 context:
   safety_margin: 4096
 tools:
-  read_lines: 150
+  read_lines: 2000
   search_limit: 50
   exec_timeout_sec: 60
   command_log_dir: ""
