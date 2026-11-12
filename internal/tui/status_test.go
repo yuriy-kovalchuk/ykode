@@ -177,3 +177,20 @@ func TestAMeasuredSpeedCarriesATilde(t *testing.T) {
 		t.Errorf("reported: %q", got)
 	}
 }
+
+// what the ask had to do to fit the conversation in shows beside the working prompt, where the long
+// clock is: a reader wonders why the round-trip is taking so long, not what it cost
+func TestWhatMadeRoomShowsBesideTheWorkingPrompt(t *testing.T) {
+	work := strings.Join(statusActivity(status{running: true, spinner: "⠋", elapsed: 42 * time.Second,
+		room: "summarising older turns"}), " ")
+	if !strings.Contains(work, "summarising older turns") {
+		t.Errorf("the fold is not mentioned next to the clock: %s", work)
+	}
+	if done := strings.Join(statusActivity(status{took: 51 * time.Second, room: "dropped 2 older turns"}), " "); !strings.Contains(done, "dropped 2 older turns") {
+		t.Errorf("a finished prompt no longer says why it took: %s", done)
+	}
+	// a prompt waiting on the user is not the ask's doing: the label would read as a reason to wait
+	if held := strings.Join(statusActivity(status{waiting: 1, room: "trimmed 1 tool result"}), " "); strings.Contains(held, "trimmed") {
+		t.Errorf("the label intrudes on a prompt waiting for an answer: %s", held)
+	}
+}

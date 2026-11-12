@@ -32,6 +32,7 @@ type status struct {
 	estimated bool    // both were measured on this side while the reply streamed, so they carry a ~
 	running   bool
 	waiting   int
+	room      string        // what this ask had to do to fit the conversation in; "" when nothing did
 	elapsed   time.Duration // how long the running prompt has been working
 	took      time.Duration // how long the last prompt took, once it finished
 	spinner   string
@@ -124,10 +125,16 @@ func statusActivity(s status) []string {
 			work += fmt.Sprintf(", %d waiting", s.waiting)
 		}
 		now = append(now, styleWorking.Render(work))
+		if s.room != "" {
+			now = append(now, styleDim.Render(s.room)) // the clock is long because of this, not because of the model
+		}
 	case s.waiting > 0:
 		now = append(now, fmt.Sprintf("%d waiting", s.waiting))
 	case s.took > 0:
 		now = append(now, styleOK.Render("✓ done in "+duration(s.took)))
+		if s.room != "" {
+			now = append(now, styleDim.Render(s.room))
+		}
 	}
 	if s.prefill > 0 {
 		now = append(now, styleDim.Render("↑ ")+rate(s.prefill, false))
@@ -187,6 +194,7 @@ func tokCount(n int) string {
 func (m *model) status() status {
 	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
 		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
+		room:   m.agent.RoomMade(),
 		decode: m.decode, estimated: m.estimated, running: m.running, waiting: len(m.agent.Waiting()), took: m.took, spinner: m.spin.View(),
 		keysHint: !m.showKeys, width: m.width}
 	if m.running {
