@@ -17,7 +17,8 @@ const (
 
 // keys is what ? shows, as key and what it does.
 var keys = [][2]string{
-	{"enter", "send"}, {"ctrl+j", "newline"}, {"ctrl+p ctrl+n", "earlier prompts"},
+	{"enter", "send"}, {"ctrl+j alt+enter", "newline"}, {"ctrl+p ctrl+n", "earlier prompts"},
+	{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"}, {"ctrl+w", "kill a word"},
 	{"tab", "complete a /command"},
 	{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
 	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"}, {"ctrl+o", "fold the plan"},

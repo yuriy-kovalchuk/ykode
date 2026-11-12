@@ -263,3 +263,57 @@ func TestCtrlSlashShowsTheKeysOverATypedPrompt(t *testing.T) {
 		t.Fatal("ctrl+? again did not hide the list")
 	}
 }
+
+// the box is a readline box: ctrl+a and ctrl+e go to the ends of the line the caret stands on, not
+// of the whole prompt
+func TestCtrlAAndCtrlEMoveTheCaretWithinTheirLine(t *testing.T) {
+	m := inputModel(40)
+	typeText(m, "one")
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	typeText(m, "two three")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	typeText(m, "X")
+	if got := m.input.Value(); got != "one\nXtwo three" {
+		t.Fatalf("ctrl+a put the caret somewhere else: %q", got)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	typeText(m, "Y")
+	if got := m.input.Value(); got != "one\nXtwo threeY" {
+		t.Errorf("ctrl+e put the caret somewhere else: %q", got)
+	}
+}
+
+// ctrl+k kills the line ahead of the caret, ctrl+w the word before it
+func TestCtrlKAndCtrlWKillWhatTheyPointAt(t *testing.T) {
+	m := inputModel(40)
+	typeText(m, "one two three")
+
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	typeText(m, "!")
+	if got := m.input.Value(); got != "one two !" {
+		t.Errorf("ctrl+w left %q, want the word before the caret gone", got)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	if got := m.input.Value(); got != "" {
+		t.Errorf("ctrl+k left %q, want the line ahead of the caret killed", got)
+	}
+}
+
+// ctrl+u stays the transcript's, text in the box or not: killing a line is ctrl+k's work, and one
+// key does not do two jobs
+func TestCtrlUScrollsWithTextInTheBox(t *testing.T) {
+	m := longSession(t)
+	typeText(m, "beta gamma")
+	before := m.view.at
+
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if m.view.at != before-m.pageRows(true) {
+		t.Errorf("ctrl+u moved the transcript from row %d to %d, want half a page up", before, m.view.at)
+	}
+	if got := m.input.Value(); got != "beta gamma" {
+		t.Errorf("ctrl+u edited the prompt, leaving %q", got)
+	}
+}
