@@ -16,6 +16,9 @@ type runDoneMsg struct{ err error }
 
 type compactDoneMsg struct{ freed int } // the summary the model wrote for /compact
 
+// branchTickMsg is the screen asking again whether the project changed branch.
+type branchTickMsg struct{}
+
 // question is a confirmation waiting for an answer; the run is blocked until it gets one.
 type question struct {
 	text   string // the call in words, for a front end that cannot draw it

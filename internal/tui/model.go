@@ -24,8 +24,9 @@ type model struct {
 	ctx       context.Context
 	hub       *Hub // what a run reports to, including that it finished
 	agent     *agent.Agent
-	root      string // the project the footer names
-	branch    string // what HEAD points at there, read again with each prompt
+	root      string    // the project the footer names
+	branch    string    // what HEAD points at there, read again with each prompt
+	head      headWatch // where that project's HEAD file is, and how it looked when last seen
 	input     textarea.Model
 	view      window
 	log       transcript
@@ -91,6 +92,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		mouseOn: cfg.Mouse,
 		root:    a.Root(),
 		branch:  a.Branch(), // the branch the prompt was built on; the next ask refreshes it
+		head:    watchHead(a.Root()),
 		input:   input,
 		probe:   probeServer,
 		view:    window{height: defaultHeight},
@@ -109,7 +111,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return textarea.Blink }
+func (m *model) Init() tea.Cmd { return tea.Batch(textarea.Blink, m.watchBranch()) }
 
 // frameInterval is the least time between two draws of text that is streaming: thirty frames a
 // second reads as text being written, and more than that is laid out to be thrown away.
@@ -174,6 +176,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, nil
+	case branchTickMsg:
+		m.checkBranch()
+		return m, m.watchBranch()
 	case confirmMsg:
 		// parallel calls can ask at once: the first asks, the rest wait their turn
 		m.pending = append(m.pending, &question{text: msg.ev.Text, tool: msg.ev.Tool, args: msg.ev.Args, target: msg.ev.Target, reply: msg.reply})
