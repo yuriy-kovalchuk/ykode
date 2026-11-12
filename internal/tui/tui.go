@@ -4,6 +4,8 @@ package tui
 
 import (
 	"context"
+	"io"
+	"os"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -174,11 +176,13 @@ func Run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) error
 	if cfg.Mouse {
 		opts = append(opts, tea.WithMouseCellMotion())
 	}
-	return run(ctx, a, hub, cfg, opts...)
+	return run(ctx, a, hub, cfg, os.Stdout, opts...)
 }
 
-// run is Run with the program options a test needs: a fake terminal instead of a real one.
-func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, opts ...tea.ProgramOption) error {
+// run is Run with the program options a test needs: a fake terminal instead of a real one. The
+// terminal is named on the same writer the program draws to, so a test sees the tab being named too.
+func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, opts ...tea.ProgramOption) error {
+	io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame
 	m := newModel(ctx, a, hub, cfg)
 	program := tea.NewProgram(m, opts...)
 	// everything a run reports reaches the screen through the hub: one wire, set before the

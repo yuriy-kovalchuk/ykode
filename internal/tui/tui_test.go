@@ -184,7 +184,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
 	}()
 
 	writeKeys(t, keys, "first\r")
@@ -272,7 +272,7 @@ func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
 	}()
 
 	writeKeys(t, keys, "count the files\r")
