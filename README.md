@@ -50,7 +50,7 @@ conversation has cost, `/compact` folds the older turns into a summary the model
 writes, `/history [what]` shows what this run has done (a tool name, `failed`,
 `outside`, one call by id like `r12`, or `--all` for every run of this root),
 `/undo` puts the most recent file change back, `/reset` clears the history,
-`/sessions` lists the conversations that can be resumed, `/exit` leaves.
+`/sessions` lists the conversations that can be resumed, `/exit` (or `/quit`) leaves.
 
 Four commands change the run rather than the conversation:
 
@@ -228,10 +228,11 @@ screen's: the result tells it `read it with exec_command, e.g. sed -n '1,80p' FI
 
 ## Tools
 
-`find_files`, `search_text`, `read_file`, `write_file`, `edit_file` and
-`exec_command`. The list is fixed for the whole session: Qwen renders it inside the system
-message, so a tool that appears later throws away everything the server had cached. The six
-descriptions cost about 3.3 KB on every request, and a test keeps them under 3.6 KB.
+`find_files`, `search_text`, `read_file`, `write_file`, `edit_file`, `exec_command` and `plan`,
+plus `ask_user` where someone is there to answer it. The list is fixed for the whole session: Qwen
+renders it inside the system message, so a tool that appears later throws away everything the server
+had cached. The descriptions cost about 3.9 KB on every request, and `ask_user` adds about 0.7 KB
+where it is offered; tests keep both under their budgets.
 `find_files` lists one directory with `depth: 1`;
 `read_file` answers with `outline: true` when a big file only needs its shape.
 Every truncated result says how to continue — a `read_file`
@@ -250,6 +251,16 @@ cost a fraction of the tokens when the question is *where*, not *what*. Matching
 lines read `path:line:text`; a file with several matches gets its path once with the
 lines indented under it, including the lines of context, because the path is the part
 that repeats.
+
+`ask_user` stops the run and puts one question to the person, with the choices the model would
+act on. On the screen it appears above the box with the choices numbered, and the answer is typed:
+a number picks the choice it names (the model reads the choice in words, not the number), anything
+else is the answer as typed, and an empty line or `esc` says there is none, which tells the model to
+make the choice itself and say what it assumed. A question offers up to six choices; on a short
+terminal the ones that do not fit are counted in one line, and their numbers still answer. The line
+front end asks the same way on stdin. A run writing JSON lines, or reading a pipe with nobody at the
+keyboard, is not offered the tool at all:
+a call nobody can answer would only stall the run.
 
 When a turn asks for several reads at once, `find_files`, `search_text` and `read_file`
 run at the same time and their replies still come back in the order the

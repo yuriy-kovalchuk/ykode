@@ -241,4 +241,32 @@ exposes LSP to agents through MCP. ykode has no MCP client, so phase 2 talks LSP
 - Is phase 1 enough? Measure with the evals (tasks passed, turns spent on build errors)
   before building phase 2.
 - `workspace/symbol` quality varies by server (gopls is good; some servers return little
-  before indexing finishes). Fall back to `search_text` when it comes back empty.
+  before indexing finishes). Fall back to `search_text` when it comes back empty.'
+
+---
+
+## 7. Per-project settings, and a switch for each tool
+
+**Status:** proposed · **Effort:** S
+
+A repository may want ykode to behave differently: no `exec_command` in a deployment repo, no
+`plan` in a small one, a smaller `--ctx` against a model with a small window. The trust rules
+already decide which projects are trusted, so reading one more file there is a small step.
+
+Design: a `.ykode/settings.json` in the project root, read after the trust check, holding the
+keys the user settings already have. A `/tools` command (or `--tool off plan`) drops a tool from
+the registry the model is shown, so the model never sees it rather than being told no. Open
+questions: which keys belong per project - a window or a safety margin would disagree with what
+the server reports - and whether a switch is per session or remembered.
+
+---
+
+## 8. Themes
+
+**Status:** proposed · **Effort:** S
+
+The screen's colours are built once in `internal/tui/palette.go` (`styleDim`, `styleThink`,
+`styleBad`, …), so a theme is a map of those names onto colours in the settings file, with the
+terminal's own capabilities deciding whether to use 16, 256 or true colour. A light-terminal
+theme is the reason to want it: faint-on-white is unreadable today. Open question: whether
+syntax colours for code blocks (`markdown.go`) follow the same map or stay a separate choice.

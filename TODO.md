@@ -3,7 +3,7 @@
 Open work only. When an item is done, delete it from this file in the same change. Undecided
 ideas live in `ideas.md`.
 
-Last full scan: 2026-11-08. `go build`, `go vet` and `go test ./...` pass.
+Last full scan: 2026-11-13, and the review file that scan was written into has been retired: what it found is fixed (`§2`, `§3.1-3.4`, `§3.6`), did not hold (`§3.5`, `§4b`, `§4e`), or is one of T1, T2, SEC and MEAS below. `go build`, `go vet` and `go test ./...` pass.
 Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Rules for the work
@@ -46,6 +46,34 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
   question, not a decision; measure it on a small model first. *Test:* the error names the margin and
   the options; a `--ctx` just above prompt+margin still sends a request with `minAnswerTok` left for
   the answer.
+- **T1 · S · The two shrink walkers, and a class the compiler insists on.** Done 2026-11-13: five
+  hand-maintained per-tool sets (`readOnlyTools`, `guardedTools`, `writesTheFile`, `quietTools` and
+  the `changesProject` rule) are now one table, `classes` in `internal/agent/class.go`, after
+  `ask_user` landed in none of them and was taken for a change to the project - which dropped the
+  reads the model already had. `detailOf` (`audit.go`) ignores a last result kept by a tool that
+  overlaps others, so the `Detailed` rule is code rather than only `registry_test.go`. Left:
+  `trimResults` (`history.go`) and `shrinkOldResults` (`shrink.go`) walk the same tool messages for
+  the same reason, and a name missing from `classes` falls back to `classRuns` in silence - putting
+  the class on the `Tool` interface makes it a compile error, at the cost of a method on every tool
+  and every test stub. `TestEveryToolIsClassified` pins the table to the registry meanwhile.
+  `askAgain` (`shrink.go`) stays a map of name to sentence: the sentences differ per tool on purpose.
+- **SEC · S · `--yes` runs commands with no cage.** `--yes` plus `exec_command` is a shell as your
+  user: `README.md` says so plainly, which is right, but it could be narrower - do not let `--yes`
+  skip `exec_command` unless `sandbox: true`, or default the sandbox on where `sandbox-exec` exists.
+  Two edges of the cage itself: the writable list includes `os.UserCacheDir()`
+  (`internal/tools/sandbox.go:14-17`, on macOS `~/Library/Caches`, where tools keep session state),
+  and the profile is `(allow default)` then `(deny file-write*) (deny network*)` (`sandbox.go:33-42`),
+  so reads and process spawning stay open. That matches what the README claims; do not let the
+  wording drift into "isolation". Nothing yet mitigates a file the model reads steering it into
+  `sh -c`.
+- **MEAS · S · Things believed but not measured.** What chroma's full lexer set costs the binary
+  (`lexers.Exclude` behind a build tag; `make release` cross-builds three targets); what the reply
+  nudges cost in pass rate and wall clock (`~/Developer/testing-ykode/bench.py --agents ykode
+  --repeat 5 --cache asis`); and whether `runAtOnce` and the interrupted-call path
+  (`sanitizeHistory` with `shrinkOldEdits`) are reached by any test rather than assumed.
+- **T2 · S · Compare all the budgets to pi**, turn by turn and result by result: the window marks
+  (`budget.go:75-82`), the per-result caps (`budgetSlack`, `budgetSlackDiv`, `maxResultTokens`) and
+  what a turn spends (rounds, nudges, the folding marks). The pi side is in `~/Developer/pi/packages/coding-agent/src/` and `~/Developer/pi/packages/ai/src/`.
 - **Later:** explore sub-agent, MCP, goreleaser/Homebrew, hash-chained audit log. Image input
   and the rest are in `ideas.md`.
 
@@ -70,21 +98,3 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
 - Trimming a path description to "relative to the project root" made the model write the root's own path
   without its leading slash (3 of 5 task-11 runs, 0 in 397 runs before). The description now gives an
   example (`src/main.go`), and the path tools read such a path as the root anyway.
-
-  chek the turns
-
-the code highlight
-
-ask user tool should be avaialble
-
-settings per project?
-
-a feature to enable/disable tools so if the user wants he can disable plan tool or other ones in this project
-
-plan checkbox to break down the long task and keep track of it and use bubbletea features to visualize it in a cool way
-
-compare all the budgets to pi
-
-theme support
-
-tab name
