@@ -54,6 +54,22 @@ func TestTabTypesWhatTheCandidatesShare(t *testing.T) {
 	}
 }
 
+// a command reached by its other name is offered and completed under that name, not under the one
+// the list leads with
+func TestTypingTheOtherNameOfACommandCompletesThatName(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 90, 24
+	typeInto(t, m, "/q")
+
+	if shown := stripCodes(m.View()); !strings.Contains(shown, "/quit") {
+		t.Fatalf("typing /q does not offer the name it is being typed as:\n%s", shown)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.input.Value(); got != "/quit" {
+		t.Errorf("tab completed to %q, want /quit", got)
+	}
+}
+
 // esc clears the list and keeps the line; typing brings the list back
 func TestEscClearsTheListAndKeepsTheLine(t *testing.T) {
 	m := newTestModel()
@@ -74,18 +90,49 @@ func TestEscClearsTheListAndKeepsTheLine(t *testing.T) {
 	}
 }
 
-// a short screen still sees that more could match
-func TestALongListSaysHowManyMoreThereAre(t *testing.T) {
+// a screen with room lists every command it could still be; a short one lists what fits and says
+// what is left
+func TestTheCommandListTakesTheRoomTheScreenHas(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 90, 40
 	typeInto(t, m, "/")
 
 	out := stripCodes(m.View())
-	if !strings.Contains(out, "more, keep typing") {
-		t.Errorf("the list did not say it was cut short:\n%s", out)
+	if strings.Contains(out, "more, keep typing") {
+		t.Errorf("a screen this tall still hides commands:\n%s", out)
 	}
-	if rows := strings.Count(out, "  /"); rows > 7 {
-		t.Errorf("%d command rows shown, want the list capped:\n%s", rows, out)
+	for _, want := range []string{"/help", "/sessions", "/undo [force]", "/reset"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%s is not on the list:\n%s", want, out)
+		}
+	}
+
+	short := newTestModel()
+	short.width, short.height = 90, 14
+	typeInto(t, short, "/")
+	cut := stripCodes(short.View())
+	if !strings.Contains(cut, "more, keep typing") {
+		t.Errorf("a 14 row screen did not say it cut the list short:\n%s", cut)
+	}
+	if rows := len(strings.Split(cut, "\n")); rows != short.height {
+		t.Errorf("a 14 row screen drew %d rows:\n%s", rows, cut)
+	}
+	if !strings.Contains(cut, promptMark) {
+		t.Errorf("the list pushed the prompt off the screen:\n%s", cut)
+	}
+}
+
+// a command answering to two names still takes one row while browsing a bare /
+func TestACommandWithTwoNamesShowsOnce(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 100, 40
+	typeInto(t, m, "/")
+	line := strings.Join(strings.Split(stripCodes(m.View()), "\n"), " ")
+	if strings.Contains(line, "/quit") {
+		t.Errorf("browsing / listed the alias as well as the command:\n%s", line)
+	}
+	if !strings.Contains(line, "/exit") {
+		t.Errorf("browsing / lost the command behind the alias:\n%s", line)
 	}
 }
 

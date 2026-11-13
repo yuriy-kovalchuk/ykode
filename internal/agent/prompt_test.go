@@ -204,6 +204,12 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 	if got := a.SpecBytes(); got > 3950 {
 		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3950", got, got/3)
 	}
+
+	// a front end that can answer is offered the question as well: 4609 bytes with it
+	answered := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, &asksBack{})
+	if got := answered.SpecBytes(); got > 4650 {
+		t.Fatalf("with ask_user the specs cost %d bytes (about %d tokens) per request; the budget is 4650", got, got/3)
+	}
 }
 
 func TestTheUsersOwnRulesComeBeforeTheProjects(t *testing.T) {
@@ -254,11 +260,14 @@ func TestThePromptNamesEveryToolAndNoOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
+	// what a run offers is what the prompt may name: the built-ins, plus the tools that need a front
+	// end able to answer for the person
 	have := map[string]bool{}
-	for _, tool := range tools.BuiltIn(root, dir, tools.Options{}).All() {
-		have[tool.Name()] = true
-		if !strings.Contains(SystemPrompt, "- "+tool.Name()+":") {
-			t.Errorf("the prompt does not list %s", tool.Name())
+	running := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "test-model", Options{}, &asksBack{})
+	for _, offered := range running.Specs() {
+		have[offered.Name] = true
+		if !strings.Contains(SystemPrompt, "- "+offered.Name+":") {
+			t.Errorf("the prompt does not list %s", offered.Name)
 		}
 	}
 	for _, line := range strings.Split(SystemPrompt, "\n") {

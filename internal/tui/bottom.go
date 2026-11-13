@@ -13,6 +13,10 @@ const (
 	maxInputLines = 10 // the input grows with what is typed, up to this
 	inputGap      = "" // a blank row between the prompt and what the session reports
 	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
+
+	// reportRows is what the bottom always holds under the box: the gap, the two rows the session
+	// reports on, and the gap at the terminal's edge
+	reportRows = 4
 )
 
 // keys is what ? shows, as key and what it does.
@@ -35,9 +39,22 @@ func (m *model) bottomArea() string {
 	}
 	rows = append(rows, m.planRows()...)
 	rows = append(rows, m.waitingRows()...)
-	rows = append(rows, m.suggestRows()...)
+	// the candidates take the rows the screen can spare: its height, less what stands above them,
+	// what follows them, and the least the session insists on
+	under := m.input.Height() + reportRows + blankRowsBelow // the box and the report are spaced apart
+	if m.err != "" {
+		under++
+	}
+	// a question takes the rows left after the session keeps the least it insists on, so its choices
+	// are cut to the screen instead of pushing the prompt off the bottom of it
+	ask := ""
 	if len(m.pending) > 0 {
-		rows = append(rows, m.question())
+		ask = m.question(m.height - topRows - minTranscriptRows - len(rows) - under)
+		under += lipgloss.Height(ask)
+	}
+	rows = append(rows, m.suggestRows(m.height-len(rows)-under-topRows-minTranscriptRows)...)
+	if ask != "" {
+		rows = append(rows, ask)
 	}
 	rows = append(rows, m.promptLines(), inputGap)
 	s := m.status()
@@ -67,14 +84,18 @@ func (m *model) waitingRows() []string {
 
 // askBar runs down the left of a question, so it reads as one thing apart from the prompt under it.
 const (
-	askBar     = "▎ "
-	askPreview = 6  // lines of what a call would write or run that the question shows
-	askChange  = 16 // rows of an edit the question shows: it sits above the prompt, which has to stay on the screen
+	blankRowsBelow = 2 // the gap under the box and the one under the report
+	askBar         = "▎ "
+	askPreview     = 6  // lines of what a call would write or run that the question shows
+	askChange      = 16 // rows of an edit the question shows: it sits above the prompt, which has to stay on the screen
 )
 
-// question is the confirmation a run waits on, above the input: what is asked in a bar of its own,
-// the call in the words a person reads, a few lines of what it would write or run, and the keys.
-func (m *model) question() string {
+// question is what a run waits on above the input: a call to allow or refuse with a few lines of what
+// it would do, or the model's own question with its choices. The run is blocked until it is answered.
+func (m *model) question(screenRows int) string {
+	if m.awaitingWords() {
+		return m.modelQuestion(screenRows)
+	}
 	q := m.pending[0]
 	room := max(m.width-lipgloss.Width(askBar)-2, 10)
 	var lines []string

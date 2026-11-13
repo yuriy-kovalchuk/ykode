@@ -71,7 +71,7 @@ type model struct {
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
 	input := textarea.New()
-	input.Placeholder = "ask for a change, /help lists the commands"
+	input.Placeholder = "one sentence is enough, /help lists the commands"
 	input.Prompt = ""
 	input.ShowLineNumbers = false
 	input.SetHeight(1)
@@ -182,6 +182,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case confirmMsg:
 		// parallel calls can ask at once: the first asks, the rest wait their turn
 		m.pending = append(m.pending, &question{text: msg.ev.Text, tool: msg.ev.Tool, args: msg.ev.Args, target: msg.ev.Target, reply: msg.reply})
+		m.refresh()
+		return m, nil
+	case askMsg:
+		// the model asked in words; the box under the bar is where they come back
+		m.pending = append(m.pending, &question{text: msg.ev.Text, options: msg.ev.Options, words: msg.reply})
 		m.refresh()
 		return m, nil
 	case spinner.TickMsg:

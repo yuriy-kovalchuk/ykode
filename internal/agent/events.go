@@ -1,5 +1,7 @@
 package agent
 
+import "context"
+
 // EventKind says what an event reports.
 type EventKind int
 
@@ -18,6 +20,7 @@ const (
 	Steered                    // an ask typed mid-run joined the conversation, Text holds it
 	Summary                    // the older turns were folded into this text, in its own lines
 	Cleared                    // the conversation was forgotten; a front end drops what it reported
+	Ask                        // the model asks the person a question, and the run waits for the words
 )
 
 func (k EventKind) String() string {
@@ -50,6 +53,8 @@ func (k EventKind) String() string {
 		return "summary"
 	case Cleared:
 		return "cleared"
+	case Ask:
+		return "ask"
 	}
 	return "unknown"
 }
@@ -57,15 +62,16 @@ func (k EventKind) String() string {
 // Event is one step of a run. Tool events may arrive from several goroutines at once, so a
 // consumer must not assume one ordering, and Emit must be safe to call concurrently.
 type Event struct {
-	Kind   EventKind
-	Turn   int
-	Tool   string
-	Args   string
-	Text   string
-	Change string   // on a ToolEnd that changed a file: the whole change, for a screen; Text holds the model's short one
-	Target []string // paths outside the project root, on a Confirm event
-	Stats  Stats
-	Call   int // on a ToolDraft: which call of the reply, as the server numbers them
+	Kind    EventKind
+	Turn    int
+	Tool    string
+	Args    string
+	Text    string
+	Change  string   // on a ToolEnd that changed a file: the whole change, for a screen; Text holds the model's short one
+	Target  []string // paths outside the project root, on a Confirm event
+	Options []string // on an Ask: the choices the model would act on, in the order to show
+	Stats   Stats
+	Call    int // on a ToolDraft: which call of the reply, as the server numbers them
 }
 
 // Decision answers a Confirm event.
@@ -80,6 +86,13 @@ const (
 // Sink receives every event of a run; the agent prints nothing itself. Its reply is used for Confirm only.
 type Sink interface {
 	Emit(Event) Decision
+}
+
+// Asker is a front end that can answer the model's own question in words and wait for the person to
+// give them. A Decision is only a yes or a no, which is no use for a question with choices in it. It
+// answers nothing once ctx is done, so stopping the run lets go of the question as well.
+type Asker interface {
+	Ask(ctx context.Context, ev Event) string
 }
 
 // nullSink discards a run and refuses anything it is asked about.

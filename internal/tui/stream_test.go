@@ -219,7 +219,7 @@ func TestASuggestionKeepsItsNoteWhenColoured(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	m.suggest = suggestions("/us")
-	rows := m.suggestRows()
+	rows := m.suggestRows(m.height) // room to spare: this test is about the columns, not the rows
 	if len(rows) != 1 || lipgloss.Width(rows[0]) < 50 {
 		t.Errorf("the note was cut short of the screen: %q", stripCodes(strings.Join(rows, "\n")))
 	}

@@ -50,6 +50,11 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 		sink = nullSink{}
 	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
+	if _, canAnswer := sink.(Asker); canAnswer {
+		// the question is answered by the same thing that draws the run, so the tool is offered only
+		// when there is somebody at the other end of it to answer
+		registry.Add(tools.NewAskUser(asksTo{a}))
+	}
 	a.meter = newMeter()
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)

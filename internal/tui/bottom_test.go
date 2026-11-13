@@ -57,7 +57,7 @@ func TestAQuestionHasItsOwnBarAboveThePrompt(t *testing.T) {
 	if question < 0 || prompt < 0 || question > prompt {
 		t.Errorf("the question is not above the prompt:\n%s", area)
 	}
-	box := stripCodes(m.question())
+	box := stripCodes(m.question(m.height)) // the terminal is tall here: the room is not what this test checks
 	for _, want := range []string{"write_file", "src/a.go · 2 lines", "func A() {}", "y yes · a always · n no"} {
 		if !strings.Contains(box, want) {
 			t.Errorf("the question lacks %q:\n%s", want, box)
@@ -82,7 +82,7 @@ func TestALongWriteIsAskedAboutInWords(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	args := `{"path":"data/t.txt","content":"` + strings.Repeat("hello world\\n", 100) + `"}`
 	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Tool: "write_file", Args: args}, reply: make(chan agent.Decision, 1)})
-	box := stripCodes(m.question())
+	box := stripCodes(m.question(m.height)) // the terminal is tall here: the room is not what this test checks
 	if !strings.Contains(box, "data/t.txt · 100 lines") || strings.Contains(box, `{"content"`) {
 		t.Errorf("a long write is not described:\n%s", box)
 	}

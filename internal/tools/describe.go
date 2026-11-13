@@ -51,6 +51,8 @@ func Describe(name, args string) string {
 		})
 	case "plan":
 		return describeWith(args, planShape)
+	case "ask_user":
+		return describeWith(args, choiceShape)
 	}
 	return brief(args)
 }

@@ -20,12 +20,13 @@ Tools:
 - write_file: create a file or rewrite one completely
 - exec_command: run a shell command
 - plan: break a long task into steps and keep them current
+- ask_user: stop and ask, with the choices you would act on
 
 Guidelines:
 - Use find_files, search_text and read_file for one lookup or one file. When the work takes several
   commands, plan them first and run them together in one exec_command, each under an "=== name ===" line.
-- Use edit_file for targeted changes; batch changes to one file in a single call.
-  Each old_text must match the file exactly and only once.
+- Use edit_file for targeted changes, one file per call; each old_text must match exactly and
+  occur once.
 - Use write_file only for new files or complete rewrites.
 - Be concise in your responses.
 - Show file paths clearly when working with files.

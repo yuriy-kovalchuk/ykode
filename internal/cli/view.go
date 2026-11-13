@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,19 @@ type View struct {
 
 func NewView(out, log io.Writer, confirm *Confirmer) *View {
 	return &View{out: out, log: log, colored: isTerminal(log), confirm: confirm}
+}
+
+// Ask puts the model's question to whoever is watching this terminal. A stream nobody is watching - a
+// -p run reading a pipe - answers nothing. The wait is on the person: stopping the run does not answer
+// for them, it only means whatever they then type changes nothing.
+func (v *View) Ask(_ context.Context, ev agent.Event) string {
+	if v.confirm == nil {
+		fmt.Fprintf(v.log, "ask_user: %s - nobody here to answer\n", ev.Text)
+		return ""
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.confirm.Answer(ev.Text, ev.Options)
 }
 
 // Emit renders one event; only a Confirm event cares about what comes back.

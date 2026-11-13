@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -112,5 +113,41 @@ func TestNobodyToAskMeansRefusal(t *testing.T) {
 
 	if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "exec_command"}); got != agent.Refuse {
 		t.Fatalf("decision = %v, want refusal when no one can answer", got)
+	}
+}
+
+// The line front end asks in the terminal it prints to: a number picks the choice it names, typed
+// words answer as they were typed, and an empty line says there is none.
+func TestTheQuestionOnTheLineIsAnsweredByWhatIsTyped(t *testing.T) {
+	var out, log bytes.Buffer
+	lines := NewLineSource(strings.NewReader("2\nin three files, not two\n\n"))
+	v := NewView(&out, &log, NewConfirmer(lines, &out))
+
+	asked := agent.Event{Kind: agent.Ask, Text: "which of these?", Options: []string{"the stat poll", "fsnotify"}}
+	if got := v.Ask(context.Background(), asked); got != "fsnotify" {
+		t.Errorf("the model was told %q, not the choice the number pointed at", got)
+	}
+	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "and how?"}); got != "in three files, not two" {
+		t.Errorf("the model was told %q", got)
+	}
+	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "anything else?"}); got != "" {
+		t.Errorf("an empty line answered %q", got)
+	}
+	for _, want := range []string{"which of these?", "1. the stat poll", "2. fsnotify", "your answer"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the terminal never saw %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// a run reading a pipe has nobody at the keyboard: the question is said, and nothing is waited for
+func TestNobodyIsWatchingThePipeToAnswer(t *testing.T) {
+	var out, log bytes.Buffer
+	v := NewView(&out, &log, nil)
+	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "which of these?"}); got != "" {
+		t.Errorf("a run nobody is watching answered %q", got)
+	}
+	if !strings.Contains(log.String(), "nobody here to answer") {
+		t.Errorf("the question went unsaid: %q", log.String())
 	}
 }

@@ -11,12 +11,16 @@ import (
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch {
-	case len(m.pending) > 0:
-		m.answer(key)
+	case len(m.pending) > 0 && !m.awaitingWords():
+		m.answer(key) // a call to allow or refuse answers itself: y, a, n
 		m.refresh()
 		return m, nil
 	case key == "enter":
 		m.suggest = nil
+		if m.awaitingWords() {
+			m.answerWords() // the model asked in words, so the box is what answers
+			return m, nil
+		}
 		return m.submit()
 	}
 	if cmd, ok := m.sessionKey(key); ok {

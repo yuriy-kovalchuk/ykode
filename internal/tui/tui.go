@@ -74,6 +74,23 @@ func (h *Hub) Emit(ev agent.Event) agent.Decision {
 	}
 }
 
+// Ask forwards the model's own question and waits for the answer in words. Nothing typed, a run
+// cancelled while it waited, and a screen that left all answer nothing.
+func (h *Hub) Ask(ctx context.Context, ev agent.Event) string {
+	reply := make(chan string, 1)
+	if !h.post(askMsg{ev: ev, reply: reply}) {
+		return "" // nothing on screen to answer
+	}
+	select {
+	case answer := <-reply:
+		return answer
+	case <-ctx.Done():
+		return ""
+	case <-h.done:
+		return "" // the screen left with the question still on it
+	}
+}
+
 // post queues a message for the screen; false means nothing is drawing yet. It returns at once: the
 // screen is woken from a goroutine of its own, one at a time however much is queued behind it.
 func (h *Hub) post(msg tea.Msg) bool {
