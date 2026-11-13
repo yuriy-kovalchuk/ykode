@@ -8,9 +8,6 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// read_file is left out: it detects repeats by content, which also notices an edited file.
-var guardedTools = map[string]bool{"find_files": true, "search_text": true}
-
 const (
 	repeatWarnAt = 3 // the third identical ask is told plainly that the next one ends the run
 	repeatStopAt = 4 // the fourth means the model is stuck: stop and answer from what it has

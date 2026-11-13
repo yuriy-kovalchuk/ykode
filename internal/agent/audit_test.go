@@ -229,3 +229,23 @@ func TestAConfirmationNamesTheFileNotTheJSON(t *testing.T) {
 		t.Errorf("the warning lost its point: %q", oneLine(warning, 160))
 	}
 }
+
+// lastDetailer is a read tool that keeps a last result anyway: several of them run beside each
+// other, so which one it belongs to is whoever finished last
+type lastDetailer struct{}
+
+func (*lastDetailer) Name() string                                    { return "read_file" }
+func (*lastDetailer) Description() string                             { return "" }
+func (*lastDetailer) Schema() json.RawMessage                         { return nil }
+func (*lastDetailer) NeedsConfirm() bool                              { return false }
+func (*lastDetailer) Targets(json.RawMessage) ([]tools.Target, error) { return nil, nil }
+func (*lastDetailer) Run(context.Context, json.RawMessage) (string, error) {
+	return "", nil
+}
+func (*lastDetailer) LastDetail() tools.Detail { return tools.Detail{Diff: "whose is it?"} }
+
+func TestAnOverlappingToolReportsNoDetail(t *testing.T) {
+	if got := detailOf(&lastDetailer{}); got != (tools.Detail{}) {
+		t.Errorf("a tool that overlaps others reported %+v", got)
+	}
+}

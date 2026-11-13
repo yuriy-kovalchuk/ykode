@@ -9,10 +9,6 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// readOnlyTools change nothing, so several of them in one turn can run at the same time.
-// Anything else (a write, an edit, a command) waits its turn and keeps the order the model asked for.
-var readOnlyTools = map[string]bool{"find_files": true, "search_text": true, "read_file": true}
-
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	ids := a.nextCallIDs(len(calls)) // numbered in call order whether the work overlaps or not
@@ -81,7 +77,7 @@ func (a *Agent) toolMessage(call llm.ToolCall, content, id string) llm.Message {
 // allReadOnly says every call in the batch is a tool that changes nothing.
 func allReadOnly(calls []llm.ToolCall) bool {
 	for _, call := range calls {
-		if !readOnlyTools[call.Function.Name] {
+		if !runsTogether(call.Function.Name) {
 			return false
 		}
 	}

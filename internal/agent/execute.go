@@ -46,7 +46,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 		ctx = tools.WithApprovals(ctx, outside)
 	}
 	// a repeated search is answered from the first result instead of running again
-	if guardedTools[name] {
+	if worthGuarding(tool) {
 		if earlier, times := a.repeats.claim(repeatKey(call), id, a.turn); earlier != nil {
 			a.tell(fmt.Sprintf("the model asked for the same %s again (attempt %d)", name, times))
 			reply := a.repeats.reply(name, *earlier, times)
@@ -58,7 +58,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 
 	out, err := tool.Run(ctx, args)
 	if err != nil {
-		if guardedTools[name] {
+		if worthGuarding(tool) {
 			a.repeats.release(repeatKey(call)) // it answered nothing, so trying again is not a repeat
 		}
 		if changesProject(name) {
@@ -171,7 +171,3 @@ func (a *Agent) normalizedArgs(name string, args json.RawMessage) json.RawMessag
 	}
 	return args
 }
-
-// changesProject says a tool may have changed what is on disk, so what was read before is no longer the
-// answer. A search is not one, and neither is the plan, which only the screen and the model read.
-func changesProject(name string) bool { return !readOnlyTools[name] && name != "plan" }

@@ -72,6 +72,9 @@ func targetPaths(targets []tools.Target) []string {
 
 // detailOf asks a tool what its last result says beyond the text.
 func detailOf(tool tools.Tool) tools.Detail {
+	if runsTogether(tool.Name()) {
+		return tools.Detail{} // calls that overlap have no last result of their own to report
+	}
 	if d, ok := tool.(tools.Detailed); ok {
 		return d.LastDetail()
 	}

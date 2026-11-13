@@ -106,9 +106,6 @@ func (a *Agent) summarize(m *llm.Message, id string) string {
 	return fmt.Sprintf("%s the whole text is in %s: grep it or read part of it with exec_command, e.g. sed -n '1,80p' %s]", text, path, path)
 }
 
-// writesTheFile are the tools whose argument is mostly text the tool has already put on disk.
-var writesTheFile = map[string]bool{"write_file": true, "edit_file": true}
-
 // argMark keys the one-line replacement, so shrinking twice changes nothing.
 const argMark = `"_ykode"`
 
@@ -121,7 +118,7 @@ func (a *Agent) shrinkOldEdits(keep int) int {
 	for i, m := range a.history {
 		replies := a.repliesFor(i)
 		for j, c := range m.ToolCalls {
-			if !writesTheFile[c.Function.Name] {
+			if classOf(c.Function.Name) != classWrites {
 				continue
 			}
 			reply := -1

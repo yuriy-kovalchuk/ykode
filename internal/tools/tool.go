@@ -94,7 +94,7 @@ func resultKey(text string) string {
 // Detailed is a tool that keeps a little structure about the result it just returned, for the
 // audit log. Only tools that never run beside each other may do this: writes, edits and
 // commands go one at a time, while the read-only tools can overlap and so keep nothing of the
-// sort — a pinned invariant in registry_test.go.
+// sort; the run asks no overlapping tool for one, whatever the tool keeps for itself.
 type Detailed interface {
 	LastDetail() Detail
 }
