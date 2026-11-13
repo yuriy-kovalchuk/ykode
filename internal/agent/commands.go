@@ -24,6 +24,15 @@ type CommandSpec struct {
 	Args  string // [what]; empty when the command takes nothing
 	Note  string // how full the window is, and what the server is caching
 	Waits bool   // the turn in flight owns what this changes, so it waits
+	Also  string // another name the same command answers to; empty when there is none
+}
+
+// Spellings are the names this command answers to.
+func (c CommandSpec) Spellings() []string {
+	if c.Also == "" {
+		return []string{c.Name}
+	}
+	return []string{c.Name, c.Also}
 }
 
 // Commands lists the slash commands once, in the order they are worth reading: /help prints this
@@ -43,19 +52,30 @@ func Commands() []CommandSpec {
 		{Name: "/think", Args: "[level]", Note: "how deeply the model thinks: " + strings.Join(llm.ThinkingLevels(), ", "), Waits: true},
 		{Name: "/undo", Args: "[force]", Note: "put the most recent file change back; force also when it was edited since", Waits: true},
 		{Name: "/reset", Note: "forget the conversation", Waits: true},
-		{Name: "/exit", Note: "quit (ctrl+c at the prompt too; mid-request it cancels the request)"},
+		{Name: "/exit", Also: "/quit", Note: "quit (ctrl+c at the prompt too; mid-request it cancels the request)"},
 	}
+}
+
+// commandColumn is the left column of the list: the command, what may follow it, and any other name
+// it answers to. A command that is typed two ways has to be listed both ways, or the second one looks
+// like a mistake the list forgot.
+func commandColumn(c CommandSpec) string {
+	shown := strings.TrimSpace(c.Name + " " + c.Args)
+	if c.Also != "" {
+		shown += " (" + c.Also + ")"
+	}
+	return shown
 }
 
 // helpText is /help: the command list laid out, notes in a column.
 func helpText() string {
 	width := 0
 	for _, c := range Commands() {
-		width = max(width, len(strings.TrimSpace(c.Name+" "+c.Args)))
+		width = max(width, len(commandColumn(c)))
 	}
 	rows := []string{"commands:"}
 	for _, c := range Commands() {
-		rows = append(rows, fmt.Sprintf("  %-*s %s", width, strings.TrimSpace(c.Name+" "+c.Args), c.Note))
+		rows = append(rows, fmt.Sprintf("  %-*s %s", width, commandColumn(c), c.Note))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -77,12 +97,11 @@ func UsageLine(u Usage, ctxSize int) string {
 // answer while a turn works; /reset, /compact and /undo would cut the ground from under it.
 func CommandIsSafeDuringATurn(line string) bool {
 	name := commandName(line)
-	if name == "/exit" || name == "/quit" {
-		return true // quitting cancels the turn rather than fighting it
-	}
 	for _, c := range Commands() {
-		if c.Name == name {
-			return !c.Waits
+		for _, spelled := range c.Spellings() {
+			if spelled == name {
+				return !c.Waits
+			}
 		}
 	}
 	return true // an unknown command changes nothing

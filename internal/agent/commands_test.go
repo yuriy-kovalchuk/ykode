@@ -216,18 +216,21 @@ func TestTheCommandListIsWhatHelpAndSafetyUse(t *testing.T) {
 		t.Fatal("no commands to complete")
 	}
 	for _, c := range list {
-		if !strings.Contains(help, c.Name) {
-			t.Errorf("%s is completable but /help does not list it:\n%s", c.Name, help)
-		}
 		if c.Note == "" {
 			t.Errorf("%s says what it does not do", c.Name)
 		}
-		if c.Waits == CommandIsSafeDuringATurn(c.Name) {
-			t.Errorf("%s waits=%v but its safety says otherwise", c.Name, c.Waits)
+		// every name the command answers to is in the help and answered the same way
+		for _, spelled := range c.Spellings() {
+			if !strings.Contains(help, spelled) {
+				t.Errorf("%s is answered as %s, which /help does not mention:\n%s", c.Name, spelled, help)
+			}
+			if c.Waits == CommandIsSafeDuringATurn(spelled) {
+				t.Errorf("%s waits=%v but %s is answered differently", c.Name, c.Waits, spelled)
+			}
 		}
 	}
 	// nothing the model of the list hides: every command the switch answers is in it
-	for _, name := range []string{"/help", "/usage", "/reset", "/exit", "/undo", "/history", "/compact",
+	for _, name := range []string{"/help", "/usage", "/reset", "/exit", "/quit", "/undo", "/history", "/compact",
 		"/ctx", "/tools", "/model", "/think"} {
 		if !hasCommand(list, name) {
 			t.Errorf("%s is not in the command list", name)
@@ -237,8 +240,10 @@ func TestTheCommandListIsWhatHelpAndSafetyUse(t *testing.T) {
 
 func hasCommand(list []CommandSpec, name string) bool {
 	for _, c := range list {
-		if c.Name == name {
-			return true
+		for _, spelled := range c.Spellings() {
+			if spelled == name {
+				return true
+			}
 		}
 	}
 	return false
