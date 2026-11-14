@@ -95,12 +95,49 @@ func TestAResumeThatOverflowsTheWindowIsTrimmed(t *testing.T) {
 	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 4000}, &captureSink{})
 	defer done()
 	a.Resume(saved)
+	a.prepareTurn(context.Background(), 1) // the first ask is where the conversation is made to fit
 
 	if len(a.history) >= len(saved) {
 		t.Fatalf("a conversation four times the window should shed turns, kept %d of %d", len(a.history), len(saved))
 	}
 	if a.history[len(a.history)-1].Content != saved[len(saved)-1].Content {
 		t.Error("the newest turn must survive a resume that overflows")
+	}
+}
+
+// Resuming is not a turn: nothing has been asked, so nothing has to be made to fit. Trimming on load
+// skipped the shortening and folding a running conversation gets first, and shed work the model had not
+// been shown again yet.
+func TestResumingAloneShedsNothing(t *testing.T) {
+	dir := t.TempDir()
+	log := session.New(dir, "s1", dir)
+	var saved []llm.Message
+	for i := 0; i < 12; i++ {
+		saved = append(saved, llm.Message{Role: "user", Content: strings.Repeat("a", 900)})
+		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("b", 900)})
+	}
+	for _, m := range saved {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.Stat(log.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 4000, Session: log}, &captureSink{}, dir)
+	defer done()
+	a.Resume(saved)
+
+	if got := a.Conversation()[1:]; len(got) != len(saved) { // past the instructions this run adds
+		t.Fatalf("resuming kept %d of %d messages, though nothing was asked of the window", len(got), len(saved))
+	}
+	after, err := os.Stat(log.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() {
+		t.Errorf("resuming rewrote the saved conversation by %d bytes", after.Size()-before.Size())
 	}
 }
 

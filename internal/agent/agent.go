@@ -143,8 +143,9 @@ func (a *Agent) Resume(messages []llm.Message) {
 		// as it would have in the run that folded it, instead of coming at the first sign of pressure
 		a.compactedAt = min(callBlocks(a.history), compactKeep)
 	}
-	a.sanitizeHistory()
-	a.trimHistory()
+	// the conversation is not trimmed here: nothing has been asked of the window yet, and this path skips
+	// the shortening and folding a running conversation gets first. The first prepareTurn does all three,
+	// and chat repairs what a server would not take.
 	a.publishUsage()
 }
 
