@@ -44,6 +44,8 @@ func press(m *setupModel, keys ...tea.KeyMsg) {
 var (
 	enter = tea.KeyMsg{Type: tea.KeyEnter}
 	down  = tea.KeyMsg{Type: tea.KeyDown}
+	right = tea.KeyMsg{Type: tea.KeyRight}
+	last  = tea.KeyMsg{Type: tea.KeyEnd}
 	tab   = tea.KeyMsg{Type: tea.KeyTab}
 	esc   = tea.KeyMsg{Type: tea.KeyEsc}
 )

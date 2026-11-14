@@ -57,6 +57,9 @@ func (m *model) View() string {
 	if m.screen != nil {
 		return m.screen.view(m.width, m.height, m.cfg, m.agent.Model())
 	}
+	if m.picker != nil {
+		return m.picker.view(m.width, m.height)
+	}
 	// stacked by hand: both blocks already stop at the screen's edge, and JoinVertical measures
 	// every row of both again to find that out
 	return strings.Repeat("\n", topRows) + m.view.view() + "\n" + m.screenBottom()

@@ -72,10 +72,11 @@ func TestASlashCommandAnswersWithoutTheModel(t *testing.T) {
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
 		t.Fatal("/usage should not quit")
 	}
-	if !strings.Contains(m.log.render(80), "nothing asked yet") {
-		t.Errorf("/usage answered nothing:\n%s", m.log.render(80))
+	if m.picker == nil || !strings.Contains(stripCodes(m.View()), "this session") {
+		t.Errorf("/usage answered nothing:\n%s", stripCodes(m.View()))
 	}
 
+	m.Update(tea.KeyMsg{Type: tea.KeyEscape}) // the report gives the session its screen back
 	m.input.SetValue("/exit")
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -105,7 +106,7 @@ func TestAReadOnlyCommandAnswersDuringATurn(t *testing.T) {
 	m.running = true
 	m.input.SetValue("/usage")
 	m.submit()
-	if !strings.Contains(m.log.render(80), "nothing asked yet") {
+	if m.picker == nil {
 		t.Errorf("/usage was held up by the turn:\n%s", m.log.render(80))
 	}
 }

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
+	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 )
 
 func (m *model) submit() (tea.Model, tea.Cmd) {
@@ -21,7 +22,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	m.histIdx, m.unsent = len(m.history), ""
 
 	if strings.HasPrefix(text, "/") {
-		name, _, _ := strings.Cut(text, " ")
+		name, arg, _ := strings.Cut(text, " ")
 		if name == "/compact" && !m.running {
 			return m, m.compact()
 		}
@@ -36,6 +37,26 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			m.refresh()
 			return m, nil
 		}
+		if name == "/sessions" {
+			// the screen answers this one too: its list can put a saved conversation in this run's
+			// place, which a front end without a screen leaves to --continue. It would replace the
+			// history a request is in the middle of sending, so a running turn waits.
+			if m.running {
+				m.log.notice("that waits for the turn to finish: press esc to stop this one first")
+				m.refresh()
+				return m, nil
+			}
+			m.openSessions()
+			m.refresh()
+			return m, nil
+		}
+		if name == "/ctx" || name == "/usage" {
+			// the screen reads these itself: figures in a box the terminal cannot scroll away, with the
+			// window's fullness shown as a bar instead of a paragraph of them
+			m.picker = m.sessionReport()
+			m.refresh()
+			return m, nil
+		}
 		if m.running && !agent.CommandIsSafeDuringATurn(text) {
 			m.log.notice("that waits for the turn to finish: press esc to stop the turn first")
 			m.refresh()
@@ -43,6 +64,53 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		}
 		if m.running && (name == "/exit" || name == "/quit") {
 			m.cancelRun() // leaving cancels the turn rather than racing it
+		}
+		if name == "/help" {
+			// the commands, narrowable, with enter writing one of them in the prompt box
+			m.openHelp()
+			m.refresh()
+			return m, nil
+		}
+		if name == "/tools" {
+			// the tools the model may call, as a list that can be narrowed to one
+			m.openTools()
+			m.refresh()
+			return m, nil
+		}
+		if name == "/history" {
+			// the calls this run made, narrowed by the same words the command takes (failed, outside, a tool
+			// name, --all), and a call named by id opens already read in full: what a call is - its arguments,
+			// the files it touched, its diff - belongs to the screen, never to the transcript
+			all, id := strings.Contains(arg, "--all"), audit.CallID(arg)
+			words := strings.TrimSpace(strings.ReplaceAll(arg, "--all", ""))
+			m.openHistory(all, words, id)
+			m.refresh()
+			return m, nil
+		}
+		if name == "/think" && strings.TrimSpace(text) == "/think" {
+			// how deeply the model thinks is a knob on the settings screen, which lists the levels
+			m.openSettingsOn("thinking_level")
+			m.refresh()
+			return m, nil
+		}
+		if name == "/reset" {
+			// one keystroke should not throw the conversation away
+			m.confirmCommand(text, "reset", "forget the conversation? the model starts over with only its instructions")
+			m.refresh()
+			return m, nil
+		}
+		if name == "/undo" && strings.TrimSpace(arg) == "force" && m.agent.HasUndo() {
+			// force writes bytes back over whatever is in the file now, which is worth one question
+			m.confirmCommand(text, "undo", "write that file back over what is there now? force does it even when someone changed it since")
+			m.refresh()
+			return m, nil
+		}
+		if strings.TrimSpace(text) == "/model" {
+			// the screen lists what the server offers and switches to the model you pick; /model ID and
+			// /model NUMBER still answer in the transcript, for a model the server does not list
+			cmd := m.openModels()
+			m.refresh()
+			return m, cmd
 		}
 		out, quit, err := m.agent.Command(m.ctx, text)
 		if out = strings.TrimRight(out, "\n"); out != "" {

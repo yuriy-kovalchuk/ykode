@@ -133,6 +133,13 @@ func (t *transcript) mark(at int) {
 	}
 }
 
+// forget empties the transcript: the run came back to another conversation, and what the screen holds
+// was said in the one it gave up. The rows it had drawn go with it, so nothing is left to redraw.
+func (t *transcript) forget() {
+	t.entries, t.stale = nil, 0
+	t.rowsCache, t.rowStart = nil, nil
+}
+
 // draft adds a fragment of a call being written to that call's row.
 func (t *transcript) draft(call int, tool, fragment string) {
 	for i := len(t.entries) - 1; i >= 0 && t.entries[i].who == whoDraft; i-- {

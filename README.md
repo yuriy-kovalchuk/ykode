@@ -44,22 +44,33 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 
 ## In the session
 
-Type a request. A `/` lists the commands it could still be and `tab` completes one; `/help`
-lists them all with what each does. `/usage` reports what the
-conversation has cost, `/compact` folds the older turns into a summary the model
-writes, `/history [what]` shows what this run has done (a tool name, `failed`,
-`outside`, one call by id like `r12`, or `--all` for every run of this root),
-`/undo` puts the most recent file change back, `/reset` clears the history,
-`/sessions` lists the conversations that can be resumed, `/exit` (or `/quit`) leaves.
+Type a request. A `/` lists the commands it could still be and `tab` completes one;
+`/compact` folds the older turns into a summary the model writes, `/undo` puts the most
+recent file change back, `/exit` (or `/quit`) leaves.
+
+Several commands are answered with a box over the session instead of text in the transcript,
+because a list you can look through beats a paragraph you have to re-read: `/sessions` the
+saved conversations, newest first, `/model` the models the server offers, `/history [what]` the
+calls this run made (a tool name, `failed`, `outside` or `--all` narrow it, and `r12` opens that
+call), `/tools` the tools the model may call, `/help` the commands themselves. In any of
+them: type to narrow, `↑/↓` move, `esc` gives the session back, and enter chooses — continue the
+conversation, switch to the model, read a whole call, write one command in the prompt box.
+A call is read inside the box, never written into the conversation: everything there is of it - the
+arguments in the order the model wrote them, every line of a file it wrote or a patch it applied, the
+files it touched, what it changed, what it came back with. Longer than the box, it scrolls: `↑/↓` and
+`pgup/pgdn` through it, `end` straight to its last row, `←/→` to the call next to it without going back
+through the list. `/ctx` and `/usage` open the same box with the figures in it, the window's fullness drawn
+as a bar rather than a sentence. `/reset`, and `/undo force`, ask once before they do it: neither
+can be undone.
 
 Four commands change the run rather than the conversation:
 
 | command | what it does |
 |---|---|
-| `/ctx` | how full the window is, what the server had cached in the last request and in all of them, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
-| `/tools` | the tools the model may call, and the bytes each description adds to every request |
+| `/ctx` | opens a panel with: how full the window is, what the server had cached in the last request and in all of them, what the tool descriptions cost, and — where a draft model runs — how many of its tokens were kept |
+| `/tools` | opens the list of tools the model may call, and the bytes each description adds to every request |
 | `/plan` | the steps of the task the model is working through, as it last wrote them |
-| `/model [id \| number]` | lists every model the server offers, with its window and the one in use marked; an id or the number from that list switches to it (the window follows the model unless `--ctx` fixed one) |
+| `/model [id \| number]` | on its own, opens the list of models the server offers, with its window and the one in use marked, and enter switches to the one under the cursor; an id or the number from that list switches from where you stand (the window follows the model unless `--ctx` fixed one) |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
 | `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, verify, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
 
@@ -351,9 +362,14 @@ rather than lose that work; `/undo force` puts the old text back anyway.
 
 `--continue last` starts the newest conversation again; `--continue <id>` picks one
 by id. An id is a timestamp to the millisecond, so enough of it to be unique is
-enough (`--continue 2137`), and `ykode sessions` or `/sessions` lists what there is
-with what each was about. The resumed run keeps the same id, so its results and its
-audit entries stay with its conversation.
+enough (`--continue 2137`), and `ykode sessions` lists what there is with what each
+was about. On the screen `/sessions` opens that list as a menu: enter puts the
+conversation under the cursor in this run's place - the screen draws it, the model
+reads it, and what follows is saved to its file, while the conversation the run gave
+up stays saved to be come back to the same way. A conversation written in another
+project is only named there, with the command that continues it in its own root. The
+resumed run keeps the same id, so its results and its audit entries stay with its
+conversation.
 
 The screen opens with the conversation it came back to — the asks, the calls with what they
 answered, and the recap of any fold — and `ctrl+p` still walks the earlier prompts of it.

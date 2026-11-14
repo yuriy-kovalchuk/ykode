@@ -65,6 +65,7 @@ type model struct {
 
 	probe     probeFunc       // how the modal asks a server for its models; tests put a fake here
 	screen    *settingsScreen // the list of every setting /settings opens over the session; nil when closed
+	picker    overlay         // the conversations /sessions opens over the session, to continue one; nil when closed
 	wantMouse bool            // a setting turned the mouse on or off: the terminal is told on the next update
 	modal     *setupModel     // the server and model screen /settings opens over the session; nil when closed
 }
@@ -157,6 +158,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, taken := m.screenMsg(msg); taken {
 			return m, tea.Batch(cmd, m.mouseCmd())
 		}
+	} else if m.picker != nil {
+		if cmd, taken := m.pickerMsg(msg); taken {
+			return m, cmd
+		}
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -188,6 +193,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the model asked in words; the box under the bar is where they come back
 		m.pending = append(m.pending, &question{text: msg.ev.Text, options: msg.ev.Options, words: msg.reply})
 		m.refresh()
+		return m, nil
+	case modelsFoundMsg:
+		// the server answered the list a bare /model opened: the box fills in where it stands
+		if s, ok := m.picker.(*modelScreen); ok {
+			s.found(msg.models, msg.err)
+			m.refresh()
+		}
 		return m, nil
 	case spinner.TickMsg:
 		if !m.running {

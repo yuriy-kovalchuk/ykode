@@ -414,3 +414,18 @@ func groupDigits(n int) string {
 	}
 	return text
 }
+
+// openSettingsOn opens the settings screen with the cursor on one setting, which is what a command about
+// that setting should do rather than print a line saying what its current value is.
+func (m *model) openSettingsOn(key string) {
+	m.openSettings()
+	if m.screen == nil {
+		return
+	}
+	for i, set := range m.screen.rows {
+		if set.Key == key {
+			m.screen.at = i + 1 // the first row is the server and model, above the settings themselves
+			return
+		}
+	}
+}
