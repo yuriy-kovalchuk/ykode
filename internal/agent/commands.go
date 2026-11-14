@@ -109,6 +109,10 @@ func CommandIsSafeDuringATurn(line string) bool {
 
 // CompactReport is what /compact says when it is done.
 func CompactReport(freed int) string {
+	if freed <= 0 {
+		// the fold found nothing worth folding: a saving of zero is not what happened
+		return "compact: nothing was folded\n"
+	}
 	return fmt.Sprintf("compacted: the conversation is about %d tokens smaller\n", freed)
 }
 

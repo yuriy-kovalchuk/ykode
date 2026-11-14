@@ -67,6 +67,9 @@ const FoldMark = "[ykode compacted the earlier turns into this summary]"
 // Compact replaces the older turns with a summary the model writes, keeping the newest calls intact.
 // It returns the tokens freed; if the summary cannot be made, it falls back to shortening tool results.
 func (a *Agent) Compact(ctx context.Context) int {
+	// what the server counted describes the conversation the fold is about to replace: guess again, so
+	// the saving reported is measured on one basis rather than a counted number minus a guessed one
+	a.meter.anchorTokens = 0
 	before := a.estimateTokens()
 	start, task := a.compactCut()
 	if start < 2 {

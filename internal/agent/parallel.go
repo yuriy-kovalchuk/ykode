@@ -40,19 +40,21 @@ const planNag = "\n\n[ykode: the plan has not been updated for a while. If a ste
 func (a *Agent) planReminder(calls []llm.ToolCall) string {
 	for _, call := range calls {
 		if call.Function.Name == "plan" {
-			a.sincePlan = 0
+			a.sincePlan, a.planReminded = 0, false // the model touched the list: the reminder starts over
 			return ""
 		}
 	}
 	steps := a.opts.Plan.Steps()
 	if len(steps) == 0 || tools.Settled(steps) {
-		a.sincePlan = 0
+		a.sincePlan, a.planReminded = 0, false
 		return ""
 	}
-	if a.sincePlan += len(calls); a.sincePlan < planStaleCalls {
+	// once per plan: nagging every six calls repeats a line the model has already ignored, and repeats
+	// the bytes of it in the window for as long as the plan stays open
+	if a.sincePlan += len(calls); a.sincePlan < planStaleCalls || a.planReminded {
 		return ""
 	}
-	a.sincePlan = 0
+	a.sincePlan, a.planReminded = 0, true
 	return planNag
 }
 

@@ -14,7 +14,7 @@ import (
 const (
 	summaryFloor = 400 // tool results smaller than this are left alone
 	keepResults  = 2   // the two newest results stay word for word
-	shrinkMark   = "[ykode shortened this"
+	ShrinkMark   = "[ykode shortened this"
 )
 
 // underPressure says the conversation passed the mark where context starts being worth money.
@@ -28,7 +28,7 @@ func (a *Agent) underPressure() bool {
 func (a *Agent) shrinkWhatAged(keep int) (freed, thinking int) {
 	thinking = a.shrinkOldReasoning(keep)
 	freed = thinking + a.shrinkOldResults(keep) + a.shrinkOldEdits(keep)
-	if freed > 0 {
+	if freed-thinking > 0 { // matches shrinkNotice: thinking alone is not a loss the footer reports
 		a.work.made(roomShortened)
 	}
 	return freed, thinking
@@ -80,7 +80,7 @@ func (a *Agent) shrinkOldResults(keep int) int {
 			continue // this result has not reached a model: shortening it loses text nobody has read
 		}
 		m := &a.history[i]
-		if m.CallID == "" || len(m.Content) <= summaryFloor || strings.HasPrefix(m.Content, shrinkMark) {
+		if m.CallID == "" || len(m.Content) <= summaryFloor || strings.HasPrefix(m.Content, ShrinkMark) {
 			continue
 		}
 		summary := a.summarize(m, m.CallID)
@@ -108,7 +108,7 @@ func (a *Agent) summarize(m *llm.Message, id string) string {
 		name = "tool"
 	}
 	text := fmt.Sprintf("%s %s output (it was %d bytes) to fit the context; it began: %q",
-		shrinkMark, name, len(m.Content), oneLine(m.Content, 120))
+		ShrinkMark, name, len(m.Content), oneLine(m.Content, 120))
 	if how, ok := askAgain[name]; ok {
 		return text + " " + how + "]"
 	}
@@ -193,7 +193,7 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 	if err := json.Unmarshal(args, &payload); err != nil || payload.Path == "" {
 		return nil, false
 	}
-	line := fmt.Sprintf("%s wrote %s to %s to fit the context; the file on disk has it", shrinkMark,
+	line := fmt.Sprintf("%s wrote %s to %s to fit the context; the file on disk has it", ShrinkMark,
 		size.Text(len(payload.Content)), payload.Path)
 	if name == "edit_file" {
 		written, count := len(payload.NewText)+len(payload.NewString), len(payload.Edits)
@@ -204,7 +204,7 @@ func editSummary(name string, call llm.FunctionCall, id string) (json.RawMessage
 			count = 1 // the one-change form: old_text and new_text at the top
 		}
 		line = fmt.Sprintf("%s changed %s: %d replacement(s), %s of new text, to fit the context; the file on disk has it",
-			shrinkMark, payload.Path, count, size.Text(written))
+			ShrinkMark, payload.Path, count, size.Text(written))
 	}
 	if id != "" {
 		line += "; " + id + " was the reply"

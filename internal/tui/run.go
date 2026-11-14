@@ -172,10 +172,12 @@ func (m *model) compact() tea.Cmd {
 
 func (m *model) cancelRun() {
 	m.noAnswer() // a question the run is waiting on is answered by nothing, not left hanging
-	m.log.notice("cancelling: the turn stops after the tool that is running")
-	if m.cancel != nil {
-		m.cancel()
+	if m.cancel == nil {
+		return // nothing is running: a second press has nothing to stop and nothing to say
 	}
+	m.log.notice("cancelling: the turn stops after the tool that is running")
+	m.cancel()
+	m.cancel = nil
 }
 
 func (m *model) handle(ev agent.Event) {

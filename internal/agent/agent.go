@@ -39,6 +39,7 @@ type Agent struct {
 	meter         meter
 	savedRatio    float64     // the byte ratio the session log last heard of
 	sincePlan     int         // tool calls since the model last touched its plan
+	planReminded  bool        // the stale-plan line has been said for this plan already
 	usageMu       sync.Mutex  // the numbers a front end reads while a turn runs elsewhere
 	report        Usage       // what the conversation cost as of the last finished turn
 	work          contextWork // what this ask had to do to fit the conversation in, for a front end to say so

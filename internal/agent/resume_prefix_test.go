@@ -136,7 +136,7 @@ func TestAResumeOfACrowdedSessionSendsWhatTheSessionLastSent(t *testing.T) {
 	}
 	shortened := false
 	for _, m := range a.history {
-		shortened = shortened || strings.HasPrefix(m.Content, shrinkMark)
+		shortened = shortened || strings.HasPrefix(m.Content, ShrinkMark)
 	}
 	if !shortened {
 		t.Fatal("the session never shortened anything, so it tests nothing")

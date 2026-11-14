@@ -146,8 +146,10 @@ func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	if w.m.running {
 		t.Fatal("the summary never reported back")
 	}
-	if !strings.Contains(w.m.log.render(80), "tokens smaller") {
-		t.Errorf("no report of what compaction saved:\n%s", w.m.log.render(80))
+	// this session has nothing old enough to fold, so the honest answer is that nothing was folded: the
+	// report used to say "about 0 tokens smaller", a saving that never happened
+	if !strings.Contains(w.m.log.render(80), "nothing was folded") {
+		t.Errorf("compaction reported a saving it did not make:\n%s", w.m.log.render(80))
 	}
 }
 

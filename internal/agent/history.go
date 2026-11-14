@@ -57,7 +57,7 @@ func (a *Agent) trimHistory() {
 func (a *Agent) trimResults(from, to, goal int) int {
 	trimmed := 0
 	for i := from; i < to && a.estimateTokens() > goal; i++ {
-		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > summaryFloor && !strings.HasPrefix(m.Content, shrinkMark) {
+		if m := &a.history[i]; m.Role == "tool" && len(m.Content) > summaryFloor && !strings.HasPrefix(m.Content, ShrinkMark) {
 			a.forget(*m)
 			m.Content = a.trimmed(m)
 			a.revised(i)

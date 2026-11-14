@@ -357,7 +357,11 @@ func (m *model) writeSetting(key, value string) error {
 
 // applyLive hands the session what the change moved. Only the knobs in liveKnobs are here.
 func (m *model) applyLive(before, now config.Config) {
-	m.agent.SetThinkingLevel(now.ThinkingLevel)
+	if now.ThinkingLevel != before.ThinkingLevel {
+		// only a change to the level itself: writing the saved value back would undo a /think the session
+		// made without saving it
+		m.agent.SetThinkingLevel(now.ThinkingLevel)
+	}
 	m.agent.Tune(func(o *agent.Options) {
 		o.NoVerify, o.AssumeYes = now.NoVerify, now.AssumeYes
 		o.MaxTurns, o.MaxTokens, o.SafetyMargin = now.MaxTurns, now.MaxTokens, now.SafetyMargin

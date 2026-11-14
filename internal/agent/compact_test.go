@@ -54,7 +54,7 @@ func TestAFoldReadsWhatTheResultsSaidRatherThanTheirMarkers(t *testing.T) {
 	if !strings.Contains(asked, deep) {
 		t.Errorf("the fold was asked about a conversation with the middle of a result missing:\n%s", asked)
 	}
-	if strings.Contains(asked, shrinkMark) {
+	if strings.Contains(asked, ShrinkMark) {
 		t.Errorf("the fold was asked to recap shortening markers:\n%s", asked)
 	}
 	if !strings.Contains(asked, "thinking: the reason for that range") {
@@ -168,7 +168,7 @@ func TestCompactStillFreesRoomWhenTheSummariserFails(t *testing.T) {
 	}
 	var shortened bool
 	for _, m := range a.history {
-		if m.Role == "tool" && strings.HasPrefix(m.Content, shrinkMark) {
+		if m.Role == "tool" && strings.HasPrefix(m.Content, ShrinkMark) {
 			shortened = true
 		}
 	}

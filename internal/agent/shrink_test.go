@@ -92,7 +92,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 		t.Fatalf("%d tool results in the last request, want at least three", len(contents))
 	}
 	summary := contents[0]
-	if !strings.HasPrefix(summary, shrinkMark) {
+	if !strings.HasPrefix(summary, ShrinkMark) {
 		t.Fatalf("the oldest result is still whole:\n%s", brief(summary))
 	}
 	if !strings.Contains(summary, "run the same search_text again") {
@@ -102,7 +102,7 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 		t.Fatalf("the summary does not say what the result was:\n%s", summary)
 	}
 	for _, recent := range contents[len(contents)-keepResults:] {
-		if strings.HasPrefix(recent, shrinkMark) {
+		if strings.HasPrefix(recent, ShrinkMark) {
 			t.Errorf("a result the model is still working with was shrunk:\n%s", brief(recent))
 		}
 	}
@@ -382,7 +382,7 @@ func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary := toolContents(t, stub.requests[len(stub.requests)-1])[0]
-	if !strings.HasPrefix(summary, shrinkMark) {
+	if !strings.HasPrefix(summary, ShrinkMark) {
 		t.Fatalf("the oldest read is still whole:\n%s", brief(summary))
 	}
 	if strings.Contains(summary, "recall") {
