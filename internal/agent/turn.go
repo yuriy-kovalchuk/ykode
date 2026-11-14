@@ -228,6 +228,9 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	looping := false
 	stopwatch := newPace(time.Now, a.meter.bytesPerTok)
 	var shown callHider // a call written as text is not drawn as part of the answer
+	// everything in the conversation up to here is about to be read by the model; if this request never
+	// reaches it, what was added for it stays whole so the text is not lost on a call that was never made
+	a.seenThrough = len(a.history)
 	turn, err := a.client.ChatStream(ctx, req, func(d llm.Delta) {
 		if d.Reasoning != "" {
 			a.emit(Event{Kind: Thinking, Text: d.Reasoning})

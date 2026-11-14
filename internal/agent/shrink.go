@@ -76,6 +76,9 @@ func (a *Agent) shrinkOldResults(keep int) int {
 		if n >= len(positions)-keep {
 			break // the model is still working with these
 		}
+		if i >= a.seenThrough {
+			continue // this result has not reached a model: shortening it loses text nobody has read
+		}
 		m := &a.history[i]
 		if m.CallID == "" || len(m.Content) <= summaryFloor || strings.HasPrefix(m.Content, shrinkMark) {
 			continue

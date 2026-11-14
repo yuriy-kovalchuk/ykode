@@ -400,6 +400,30 @@ func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
 // tool remembers what it showed under a hash of the text it returned. A shortening that says "this text
 // is gone" therefore released nothing, and the next read of that window answered with a pointer to text
 // the model could no longer see.
+// A result is shortened because a model has read it and no longer needs all of it in front of it. A
+// request that never reached the server leaves its results in the conversation unread, and shortening
+// those loses text nobody has ever seen, with no tool memory left to bring it back.
+func TestAResultTheModelNeverSawIsNotShortened(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	name := writeLines(t, dir, "big.txt", 40)
+	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 4000}, &captureSink{}, dir)
+	defer done()
+	call := llm.ToolCall{ID: "call1", Type: "function",
+		Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"` + name + `"}`)}}
+	a.add(llm.Message{Role: "user", Content: "read it"})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
+	a.runToolCalls(ctx, []llm.ToolCall{call}) // the request that would have carried the answer never got out
+
+	if freed := a.shrinkOldResults(0); freed != 0 {
+		t.Errorf("a result no model has read was shortened, freeing %d bytes that cannot be got back", freed)
+	}
+	a.seenThrough = len(a.history) // the next request gets through, and the model reads it
+	if freed := a.shrinkOldResults(0); freed == 0 {
+		t.Error("the same result is not shortenable once it has been read, so the guard replaced the rule")
+	}
+}
+
 func TestAReReadAfterShorteningBringsTheTextBack(t *testing.T) {
 	ctx := context.Background()
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
@@ -420,6 +444,7 @@ func TestAReReadAfterShorteningBringsTheTextBack(t *testing.T) {
 	call := llm.ToolCall{ID: "call1", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: args}}
 	a.history = append(a.history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
 	a.runToolCalls(ctx, []llm.ToolCall{call})
+	a.seenThrough = len(a.history) // this result did reach the model
 	if !strings.Contains(a.history[len(a.history)-1].Content, "the plan has not been updated") {
 		t.Fatal("the reminder did not ride the result, so the test would prove nothing")
 	}

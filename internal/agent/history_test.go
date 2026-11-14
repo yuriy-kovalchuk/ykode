@@ -368,3 +368,58 @@ func TestTheConversationIsReadableBack(t *testing.T) {
 		t.Errorf("reading the conversation hands out the conversation itself: %q", got)
 	}
 }
+
+// The server says how many tokens the conversation it just read was. Guessing the whole conversation
+// again from a byte ratio throws that number away every turn, and the error grows with the conversation.
+func TestTheWindowIsMeasuredFromWhatTheServerCounted(t *testing.T) {
+	dir := t.TempDir()
+	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 4000}, &captureSink{}, dir)
+	defer done()
+	a.add(llm.Message{Role: "user", Content: strings.Repeat("a", 500)})
+
+	a.meter.observe(Stats{PromptTokens: 1234}, a.sendingBytes())
+	if got := a.estimateTokens(); got != 1234 {
+		t.Errorf("the server counted 1234 tokens for this conversation and the run estimates %d", got)
+	}
+
+	a.add(llm.Message{Role: "user", Content: strings.Repeat("b", 300)})
+	moved := int(float64(300) / max(a.meter.bytesPerTok, minBytesPerTok))
+	if got := a.estimateTokens(); got != 1234+moved {
+		t.Errorf("after 300 more bytes the estimate is %d, want the counted 1234 plus %d for what moved", got, moved)
+	}
+}
+
+// Trimming walks the conversation oldest first and stops at the goal, so the work the model is doing now
+// is the last thing touched: an emergency trim must not blank the newest result because it happened to be
+// the biggest.
+func TestTrimmingLeavesTheNewestResultStanding(t *testing.T) {
+	dir := t.TempDir()
+	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 3000}, &captureSink{}, dir)
+	defer done()
+	a.add(llm.Message{Role: "user", Content: "read them"})
+	for _, id := range []string{"old1", "old2", "old3", "new"} {
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
+			ID: id, Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}})
+		a.add(llm.Message{Role: "tool", CallID: id, Name: "read_file", Content: strings.Repeat("x", 3000)})
+	}
+	a.seenThrough = len(a.history) - 2 // the newest call has not been read by a model yet
+
+	a.trimHistory()
+	shortened, whole := 0, 0
+	for _, m := range a.history {
+		if m.Role != "tool" {
+			continue
+		}
+		if len(m.Content) < 3000 {
+			shortened++
+			if m.CallID == "new" {
+				t.Errorf("the newest result was trimmed while older ones stood: %q", m.Content)
+			}
+		} else {
+			whole++
+		}
+	}
+	if shortened == 0 {
+		t.Fatal("nothing was trimmed, so the test proved nothing")
+	}
+}

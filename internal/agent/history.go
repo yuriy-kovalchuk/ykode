@@ -12,7 +12,13 @@ const trimMarker = "(older tool output trimmed to fit the server context)"
 // estimateTokens guesses what the server will count, using the ratio its last real count implied.
 func (a *Agent) estimateTokens() int {
 	rate := max(a.meter.bytesPerTok, minBytesPerTok)
-	return int(float64(a.sendingBytes())/rate) + 4*len(a.history)
+	bytes := a.sendingBytes()
+	// the server counted the conversation it just read; only what has moved since then needs guessing, so
+	// the error of a byte ratio is not paid again over the whole conversation every turn
+	if a.meter.anchorTokens > 0 && bytes >= a.meter.anchorBytes {
+		return a.meter.anchorTokens + int(float64(bytes-a.meter.anchorBytes)/rate)
+	}
+	return int(float64(bytes)/rate) + 4*len(a.history)
 }
 
 // trimHistory keeps the conversation inside the window: large tool results are blanked first, then,

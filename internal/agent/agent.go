@@ -35,6 +35,7 @@ type Agent struct {
 	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
+	seenThrough   int // how far the history has reached the model: a result past it was never read
 	meter         meter
 	savedRatio    float64     // the byte ratio the session log last heard of
 	sincePlan     int         // tool calls since the model last touched its plan
@@ -80,6 +81,7 @@ func (a *Agent) Reset() {
 // saved conversation leaves the one it was in standing as it was, so it can be come back to again.
 func (a *Agent) startOver() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
+	a.seenThrough = len(a.history) // only the prompt is there, and it is not sent as a turn
 	a.meter.clearCost()
 	a.compactedAt = -1
 	a.readFiles, a.modifiedFiles = nil, nil
@@ -132,6 +134,7 @@ func (a *Agent) Learned(bytesPerTok float64) {
 // Resume continues where a saved conversation stopped.
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
+	a.seenThrough = len(a.history) // the run that wrote these sent them to its model
 	// the new calls continue the saved numbering, or a fresh result would take an id that recall
 	// already points at, and the store would answer with someone else's output
 	a.callSeq = highestCallID(a.history)

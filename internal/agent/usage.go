@@ -31,6 +31,7 @@ type meter struct {
 	turns, prompt, cached, generated, totalPrompt, cachedTotal int
 	draft, draftOK                                             int
 	bytesPerTok                                                float64
+	anchorTokens, anchorBytes                                  int // what the server counted for a conversation this size
 }
 
 // percent of part in whole, 0 when there was nothing to compare against.
@@ -54,6 +55,7 @@ func newMeter() meter { return meter{bytesPerTok: defaultBytesPerTok} }
 func (m *meter) clearCost() {
 	m.turns, m.prompt, m.cached, m.generated, m.totalPrompt, m.cachedTotal = 0, 0, 0, 0, 0, 0
 	m.draft, m.draftOK = 0, 0
+	m.anchorTokens, m.anchorBytes = 0, 0 // the conversation this number was counted for is gone
 }
 
 // observe folds one turn in; a server that sends no timings only leaves the counters at zero.
@@ -67,6 +69,9 @@ func (m *meter) observe(stats Stats, sentBytes int) {
 	if stats.PromptTokens <= 0 || sentBytes <= 0 {
 		return
 	}
+	// the one token count in the run that is not a guess: what the server said the conversation it just
+	// read was. Everything added after it is measured against the ratio this pair teaches.
+	m.anchorTokens, m.anchorBytes = stats.PromptTokens, sentBytes
 	if ratio := float64(sentBytes) / float64(stats.PromptTokens); ratio >= minBytesPerTok && ratio <= maxBytesPerTok {
 		m.bytesPerTok = ratio
 	}
