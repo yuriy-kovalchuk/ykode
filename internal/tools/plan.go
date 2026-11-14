@@ -40,6 +40,7 @@ const (
 func NewPlan() *Plan { return &Plan{} }
 
 func (*Plan) Name() string { return "plan" }
+func (*Plan) Class() Class { return ClassSays }
 
 func (*Plan) Description() string {
 	return "Keep a checklist for a long task: send every step each call, with its status (pending, active for the one you are on, done, failed). Skip it for work that needs no plan."

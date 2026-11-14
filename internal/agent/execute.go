@@ -17,7 +17,7 @@ import (
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) string {
 	name := call.Function.Name
 	args := a.normalizedArgs(name, call.Function.Arguments)
-	argsText := oneLine(string(args), 200) // for the audit log; events carry the whole call, a cut one is no longer JSON
+	argsText := string(args) // the log holds the call as the model wrote it: a cut fragment is neither readable nor JSON
 	a.emit(Event{Kind: ToolStart, Tool: name, Args: string(args)})
 	start := time.Now()
 	if ctx.Err() != nil {
@@ -61,7 +61,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 		if worthGuarding(tool) {
 			a.repeats.release(repeatKey(call)) // it answered nothing, so trying again is not a repeat
 		}
-		if changesProject(name) {
+		if a.changesProject(name) {
 			a.repeats.changed() // a command that failed may still have changed files on the way
 		}
 		a.record(id, name, argsText, targets, outside, decision, "error", "", tools.Detail{}, start)
@@ -77,7 +77,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	}
 	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
 	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result, Change: detailOf(tool).Change})
-	if changesProject(name) {
+	if a.changesProject(name) {
 		a.repeats.changed() // the project changed: what was read before is no longer the answer
 	}
 	return result

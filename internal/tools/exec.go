@@ -68,6 +68,7 @@ func (t Exec) logDir() string {
 }
 
 func (Exec) Name() string { return "exec_command" }
+func (Exec) Class() Class { return ClassRuns }
 
 func (Exec) Description() string {
 	return "Run a shell command (sh -c on " + runtime.GOOS + ") in the project root; returns the output and exit code. A cut output names the file with the full log. " +

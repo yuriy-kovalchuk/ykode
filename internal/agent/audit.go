@@ -72,7 +72,7 @@ func targetPaths(targets []tools.Target) []string {
 
 // detailOf asks a tool what its last result says beyond the text.
 func detailOf(tool tools.Tool) tools.Detail {
-	if runsTogether(tool.Name()) {
+	if tool.Class() == tools.ClassReads {
 		return tools.Detail{} // calls that overlap have no last result of their own to report
 	}
 	if d, ok := tool.(tools.Detailed); ok {
@@ -97,6 +97,15 @@ func (a *Agent) History(query string, limit int) string {
 		return "nothing has been logged yet" + audit.Skipped(damaged)
 	}
 	return audit.Answer(entries, query, limit, damaged)
+}
+
+// Logged hands a front end the calls this run logged, as entries to look through rather than as text;
+// the count that comes with them is the log lines that could not be read.
+func (a *Agent) Logged(all bool) ([]audit.Entry, int, error) {
+	if a.opts.Audit == nil {
+		return nil, 0, nil
+	}
+	return a.logged(all)
 }
 
 func (a *Agent) logged(all bool) ([]audit.Entry, int, error) {

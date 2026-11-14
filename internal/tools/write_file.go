@@ -24,6 +24,7 @@ func NewWriteFile(root *os.Root, dir string) *WriteFile {
 }
 
 func (*WriteFile) Name() string { return "write_file" }
+func (*WriteFile) Class() Class { return ClassWrites }
 
 func (*WriteFile) Description() string {
 	return "Create a file or replace it whole; parent directories are created. Use edit_file to change part of a file."

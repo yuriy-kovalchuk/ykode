@@ -12,7 +12,7 @@ import (
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
 func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 	ids := a.nextCallIDs(len(calls)) // numbered in call order whether the work overlaps or not
-	if allReadOnly(calls) && len(calls) > 1 {
+	if a.allReadOnly(calls) && len(calls) > 1 {
 		a.runAtOnce(ctx, calls, ids)
 		return
 	}
@@ -75,9 +75,9 @@ func (a *Agent) toolMessage(call llm.ToolCall, content, id string) llm.Message {
 }
 
 // allReadOnly says every call in the batch is a tool that changes nothing.
-func allReadOnly(calls []llm.ToolCall) bool {
+func (a *Agent) allReadOnly(calls []llm.ToolCall) bool {
 	for _, call := range calls {
-		if !runsTogether(call.Function.Name) {
+		if !a.runsTogether(call.Function.Name) {
 			return false
 		}
 	}

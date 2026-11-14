@@ -57,6 +57,7 @@ func NewSearchText(root *os.Root, dir string) *SearchText {
 }
 
 func (SearchText) Name() string { return "search_text" }
+func (SearchText) Class() Class { return ClassReads }
 
 func (SearchText) Description() string {
 	return "Search file contents by regex, like rg: path:line:text. To ask where rather than what, mode=files_with_matches (paths) or count (per file) costs far less."

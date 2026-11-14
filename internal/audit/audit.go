@@ -53,6 +53,17 @@ func New(dir, session string) *Logger {
 	return &Logger{dir: dir, session: session}
 }
 
+// ContinueAs says the run came back to another saved conversation: the entries from now on belong to
+// that one, so a look back at either finds its own calls.
+func (l *Logger) ContinueAs(session string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.session = session
+}
+
 // Append writes one entry, with anything that looks like a secret masked first.
 func (l *Logger) Append(e Entry) error {
 	if l == nil {

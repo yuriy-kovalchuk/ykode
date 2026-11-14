@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -243,8 +244,21 @@ func TestAnOldWriteKeepsItsIntentNotItsText(t *testing.T) {
 	}
 }
 
+// writesRun is a run that has the writing tools registered, so a name met in an older conversation
+// is known to it: the class of the tool is what says those arguments may be dropped
+func writesRun(t *testing.T) *Agent {
+	t.Helper()
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close() })
+	return New(nil, tools.NewRegistry(tools.NewWriteFile(root, dir), tools.NewEditFile(root, dir)), "m", Options{}, nil)
+}
+
 func TestTheNewestWritesAndTheFailedOnesKeepTheirText(t *testing.T) {
-	a := New(nil, nil, "m", Options{}, nil)
+	a := writesRun(t)
 	body := strings.Repeat("text the model has already paid to send once ", 40)
 	write := `{"path":"%s","content":"` + body + `"}`
 	edit := `{"path":"%s","edits":[{"old_text":"one","new_text":"` + body + `"}]}`
@@ -308,7 +322,7 @@ func TestTheNewestWritesAndTheFailedOnesKeepTheirText(t *testing.T) {
 }
 
 func TestTwoCallsWithTheSameServerIDPointAtTheirOwnReply(t *testing.T) {
-	a := New(nil, nil, "m", Options{}, nil)
+	a := writesRun(t)
 	body := strings.Repeat("enough text that shrinking is worth doing at all ", 40)
 	// llama.cpp repeats one id across calls, so matching by id would point every summary at r1
 	for n := range 3 {
@@ -448,5 +462,101 @@ func TestOldThinkingIsDroppedFirst(t *testing.T) {
 	}
 	if want := []string{"", "second", "third"}; !reflect.DeepEqual(kept, want) {
 		t.Errorf("thinking sent = %q, want %q", kept, want)
+	}
+}
+
+// Thinking that stopped being sent has to be saved as stopped. A resumed run reads the conversation from
+// the log: a log still carrying it frees it again every time the session comes back, which is what made
+// the shortening notice appear on every resume.
+func TestThinkingThatStoppedBeingSentIsSavedAsStopped(t *testing.T) {
+	dir := t.TempDir()
+	log := session.New(dir, "s1", dir)
+	a, done := newStoringAgent(t, &stubServer{}, Options{Session: log}, &captureSink{}, dir)
+	defer done()
+
+	thought := strings.Repeat("a line of thinking ", 20)
+	for i := 0; i < 4; i++ {
+		a.add(llm.Message{Role: "assistant", Content: fmt.Sprintf("answer %d", i),
+			Reasoning: thought, WireReasoning: thought})
+	}
+	if freed := a.shrinkOldReasoning(keepResults); freed == 0 {
+		t.Fatal("no thinking was freed: the run does not stop sending the older of it")
+	}
+
+	back, err := session.Load(filepath.Join(dir, "s1.jsonl"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent []string
+	for _, m := range back {
+		if m.Role == "assistant" {
+			sent = append(sent, m.WireReasoning)
+		}
+	}
+	if len(sent) != 4 {
+		t.Fatalf("%d assistant messages came back, want 4", len(sent))
+	}
+	if sent[0] != "" || sent[1] != "" {
+		t.Errorf("the log still holds the thinking that stopped being sent: %q", oneLine(sent[0], 40))
+	}
+	if sent[2] == "" || sent[3] == "" {
+		t.Error("the newest thinking was dropped from the log, which still sends it")
+	}
+	if back[3].Reasoning == "" {
+		t.Error("the log lost thinking it only stopped sending: a resumed session should still show it")
+	}
+
+	// the resumed run: nothing left to free, so nothing to say about it
+	b, done2 := newStoringAgent(t, &stubServer{}, Options{}, &captureSink{}, dir)
+	defer done2()
+	b.Resume(back)
+	if freed := b.shrinkOldReasoning(keepResults); freed != 0 {
+		t.Errorf("a resumed run freed %d bytes of thinking again: it will say so on every resume", freed)
+	}
+}
+
+// A long conversation is permanently near its window, so a resumed run always finds something aged out.
+// The thinking that stops being re-sent is housekeeping the user cannot act on, so it is not announced:
+// that notice went out on every resume of a session like this one.
+func TestAResumedConversationSaysNothingAboutShortening(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	names := make([]string, 5)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
+	}
+	thought := strings.Repeat("a line of thinking ", 40)
+	search := func(i int) string {
+		return sse(thought, "", "search_text", []string{`{"pattern":"line ","path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	log := session.New(dir, "s1", dir)
+	first := &captureSink{decision: Allow}
+	a, done := newStoringAgent(t, &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}},
+		Options{Session: log, MaxTurns: 8, MaxTokens: 128, CtxSize: 4100, SendReasoning: true}, first, dir)
+	if err := a.Ask(ctx, "search five files"); err != nil {
+		t.Fatal(err)
+	}
+	done()
+	if !first.noticed("shortened older tool output") {
+		t.Fatal("the first run shortened results without saying so")
+	}
+
+	back, err := session.LoadAll(filepath.Join(dir, "s1.jsonl"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := &captureSink{decision: Allow}
+	b, done2 := newStoringAgent(t, &stubServer{scripts: []string{search(4), sse("", "done", "", nil, "stop")}},
+		Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 4100, SendReasoning: true}, second, dir)
+	defer done2()
+	b.Resume(back.Messages)
+	b.Learned(back.BytesPerToken)
+	if err := b.Ask(ctx, "and once more"); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range second.events {
+		if ev.Kind == Notice && strings.Contains(ev.Text, "shortened") {
+			t.Errorf("the resumed run announced housekeeping instead of staying quiet: %s", ev.Text)
+		}
 	}
 }

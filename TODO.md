@@ -46,17 +46,16 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
   question, not a decision; measure it on a small model first. *Test:* the error names the margin and
   the options; a `--ctx` just above prompt+margin still sends a request with `minAnswerTok` left for
   the answer.
-- **T1 · S · The two shrink walkers, and a class the compiler insists on.** Done 2026-11-13: five
-  hand-maintained per-tool sets (`readOnlyTools`, `guardedTools`, `writesTheFile`, `quietTools` and
-  the `changesProject` rule) are now one table, `classes` in `internal/agent/class.go`, after
-  `ask_user` landed in none of them and was taken for a change to the project - which dropped the
-  reads the model already had. `detailOf` (`audit.go`) ignores a last result kept by a tool that
-  overlaps others, so the `Detailed` rule is code rather than only `registry_test.go`. Left:
-  `trimResults` (`history.go`) and `shrinkOldResults` (`shrink.go`) walk the same tool messages for
-  the same reason, and a name missing from `classes` falls back to `classRuns` in silence - putting
-  the class on the `Tool` interface makes it a compile error, at the cost of a method on every tool
-  and every test stub. `TestEveryToolIsClassified` pins the table to the registry meanwhile.
-  `askAgain` (`shrink.go`) stays a map of name to sentence: the sentences differ per tool on purpose.
+- **T1 · S · The two shrink walkers.** Done 2026-11-13: five hand-maintained per-tool sets
+  (`readOnlyTools`, `guardedTools`, `writesTheFile`, `quietTools` and the `changesProject` rule) are
+  gone - every tool now states a `Class` (`internal/tools/class.go`) and the run reads that: parallel
+  safety, whether what was read before still answers, whether a repeat is answered from an earlier
+  result, and whether the arguments may be dropped. `ask_user` had landed in none of the sets and so
+  counted as a change to the project, dropping the reads the model already had; `detailOf`
+  (`audit.go`) ignores a last result kept by a tool that overlaps others, so the `Detailed` rule is
+  code and not a test alone. Left: `trimResults` (`history.go`) and `shrinkOldResults` (`shrink.go`)
+  walk the same tool messages for the same reason, and merging them means tests for when each one
+  fires - they trigger at different marks and aim at different sizes.
 - **SEC · S · `--yes` runs commands with no cage.** `--yes` plus `exec_command` is a shell as your
   user: `README.md` says so plainly, which is right, but it could be narrower - do not let `--yes`
   skip `exec_command` unless `sandbox: true`, or default the sandbox on where `sandbox-exec` exists.

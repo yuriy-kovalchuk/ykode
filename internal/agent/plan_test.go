@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -74,8 +75,15 @@ func TestThePlanCommandShowsThePlanAndResetClearsIt(t *testing.T) {
 
 // a plan only the screen and the model read does not count as a change to the project
 func TestAPlanCallDoesNotResetWhatTheRunRemembersOfTheProject(t *testing.T) {
-	if changesProject("plan") || changesProject("read_file") || !changesProject("write_file") || !changesProject("exec_command") {
-		t.Error("changesProject does not tell the plan and the reads from the writes and the commands")
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Plan: tools.NewPlan()}), "m", Options{}, &captureSink{})
+	if a.changesProject("plan") {
+		t.Error("a plan counted as a change to the project: it drops what the run remembers of the files it read")
 	}
 }
 

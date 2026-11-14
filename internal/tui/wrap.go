@@ -128,6 +128,10 @@ func cutWide(word string, width int) []string {
 // wrapKept breaks a line only where it has to: a line that fits is left exactly as it was written,
 // so a table of commands keeps its columns, and a line that had to break is re-flowed under its own
 // indent.
+var labelHang = 14 // a label this short keeps its value lined up when the row carries on
+
+//x // a label this short keeps its value lined up when the row has to carry on
+
 func wrapKept(text string, width int) []string {
 	var rows []string
 	for _, line := range strings.Split(text, "\n") {
@@ -136,7 +140,17 @@ func wrapKept(text string, width int) []string {
 			continue
 		}
 		lead := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-		rows = append(rows, indent(wrap(strings.TrimLeft(line, " \t"), width-lipgloss.Width(lead)), lead)...)
+		head := strings.TrimLeft(line, " \t")
+		// a labelled value keeps its value lined up when the row carries on: text that resumes at the margin
+		// reads as a new thought, and a long command is then hard to find the end of
+		if name, value, ok := strings.Cut(head, ": "); ok && lipgloss.Width(name) <= labelHang {
+			gap := lead + strings.Repeat(" ", lipgloss.Width(name)+2)
+			parts := wrap(value, max(width-lipgloss.Width(gap), 8))
+			rows = append(rows, lead+name+": "+parts[0])
+			rows = append(rows, indent(wrap(strings.Join(parts[1:], " "), max(width-lipgloss.Width(gap), 8)), gap)...)
+			continue
+		}
+		rows = append(rows, indent(wrap(head, max(width-lipgloss.Width(lead), 8)), lead)...)
 	}
 	return rows
 }

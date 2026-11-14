@@ -13,6 +13,7 @@ import (
 // Tool is one callable: Run takes raw JSON arguments and returns text, and Targets reports the paths it touches.
 type Tool interface {
 	Name() string
+	Class() Class // what it does to the project, which is what decides how a call of it runs
 	Description() string
 	Schema() json.RawMessage // JSON Schema for the "parameters" object
 	NeedsConfirm() bool

@@ -39,6 +39,7 @@ func NewFindFiles(root *os.Root, dir string) *FindFiles {
 }
 
 func (FindFiles) Name() string { return "find_files" }
+func (FindFiles) Class() Class { return ClassReads }
 
 func (FindFiles) Description() string {
 	return "Find files by glob, e.g. '*.go', 'internal/**/*.go'. List one directory with pattern '*' and depth 1 (directories end in '/'). Skips .git and .gitignore entries."

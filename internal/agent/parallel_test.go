@@ -46,6 +46,7 @@ func newBarrier(names ...string) []*barrierTool {
 }
 
 func (b *barrierTool) Name() string        { return b.name }
+func (b *barrierTool) Class() tools.Class  { return tools.ClassReads } // only ever batched with reads
 func (b *barrierTool) Description() string { return "a read that waits for its neighbour" }
 func (b *barrierTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`)
@@ -143,6 +144,7 @@ func TestAWriteInTheBatchKeepsTheOrder(t *testing.T) {
 type orderingTool struct{ order *[]string }
 
 func (o *orderingTool) Name() string        { return "read_file" }
+func (o *orderingTool) Class() tools.Class  { return tools.ClassReads }
 func (o *orderingTool) Description() string { return "records that it ran" }
 func (o *orderingTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`)
@@ -157,6 +159,7 @@ func (o *orderingTool) Run(_ context.Context, args json.RawMessage) (string, err
 type writeStub struct{ order *[]string }
 
 func (w *writeStub) Name() string        { return "write_file" }
+func (w *writeStub) Class() tools.Class  { return tools.ClassWrites }
 func (w *writeStub) Description() string { return "records that it ran" }
 func (w *writeStub) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}}}`)

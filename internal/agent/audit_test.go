@@ -235,6 +235,7 @@ func TestAConfirmationNamesTheFileNotTheJSON(t *testing.T) {
 type lastDetailer struct{}
 
 func (*lastDetailer) Name() string                                    { return "read_file" }
+func (*lastDetailer) Class() tools.Class                              { return tools.ClassReads }
 func (*lastDetailer) Description() string                             { return "" }
 func (*lastDetailer) Schema() json.RawMessage                         { return nil }
 func (*lastDetailer) NeedsConfirm() bool                              { return false }

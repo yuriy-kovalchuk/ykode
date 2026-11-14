@@ -7,39 +7,41 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// a tool left out of the table runs serially and counts as a change to the project, quietly: the
-// table must know every tool the run can be asked for
-func TestEveryToolIsClassified(t *testing.T) {
+// every tool states what it does to the project: that one answer decides whether calls overlap,
+// whether what was read before still holds the answer, and whether the arguments may be dropped
+func TestEveryToolStatesItsClass(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer root.Close()
+
 	registry := tools.BuiltIn(root, dir, tools.Options{})
-	want := map[string]class{
-		"find_files":   classReads,
-		"search_text":  classReads,
-		"read_file":    classReads,
-		"write_file":   classWrites,
-		"edit_file":    classWrites,
-		"exec_command": classRuns,
-		"plan":         classSays,
-		"ask_user":     classSays, // the agent adds it after the built-ins
+	registry.Add(tools.NewAskUser(nil)) // the agent adds it after the built-ins
+	want := map[string]tools.Class{
+		"find_files":   tools.ClassReads,
+		"search_text":  tools.ClassReads,
+		"read_file":    tools.ClassReads,
+		"write_file":   tools.ClassWrites,
+		"edit_file":    tools.ClassWrites,
+		"exec_command": tools.ClassRuns,
+		"plan":         tools.ClassSays,
+		"ask_user":     tools.ClassSays,
 	}
-	for name, expected := range want {
-		got, ok := classes[name]
-		if !ok {
-			t.Errorf("%s is not classified: it would run as an unknown tool", name)
+	for _, tool := range registry.All() {
+		expected, known := want[tool.Name()]
+		if !known {
+			t.Errorf("%s is offered to the model and no test knows what it does to the project", tool.Name())
 			continue
 		}
-		if got != expected {
-			t.Errorf("%s is class %d, wanted %d", name, got, expected)
+		if got := tool.Class(); got != expected {
+			t.Errorf("%s says it is class %d, wanted %d", tool.Name(), got, expected)
 		}
+		delete(want, tool.Name())
 	}
-	for _, name := range append(registry.Names(), "ask_user") {
-		if _, ok := classes[name]; !ok {
-			t.Errorf("%s is offered to the model but classified as nothing", name)
-		}
+	for name := range want {
+		t.Errorf("%s is not in the registry the run builds", name)
 	}
 }
 
@@ -51,10 +53,24 @@ func TestOnlyReadsWithoutTheirOwnMemoryAreGuarded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer root.Close()
+
 	for _, tool := range tools.BuiltIn(root, dir, tools.Options{}).All() {
-		guarded := worthGuarding(tool)
-		if want := tool.Name() != "read_file" && runsTogether(tool.Name()); guarded != want {
+		guarded, want := worthGuarding(tool), tool.Class() == tools.ClassReads && tool.Name() != "read_file"
+		if guarded != want {
 			t.Errorf("%s guarded = %v, wanted %v", tool.Name(), guarded, want)
 		}
+	}
+}
+
+// a resumed conversation can name a tool this run no longer offers: it reads as a change, run on its
+// own, since nothing is known about it
+func TestAToolNobodyOffersReadsAsAChange(t *testing.T) {
+	a := New(nil, tools.NewRegistry(), "m", Options{}, &captureSink{})
+	if !a.changesProject("old_tool") {
+		t.Error("an unknown tool was not taken for a change to the project")
+	}
+	if a.runsTogether("old_tool") {
+		t.Error("an unknown tool was allowed to overlap another call")
 	}
 }

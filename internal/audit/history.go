@@ -10,6 +10,15 @@ import (
 // idRe names one logged call: /history r12 asks for a single call in full.
 var idRe = regexp.MustCompile(`^r[0-9]{1,6}$`)
 
+// CallID returns the call the words name, or nothing when they name none: /history r12 asks for one call
+// in full, and a front end that shows calls in its own screen opens that one already read.
+func CallID(what string) string {
+	if q := strings.TrimSpace(what); idRe.MatchString(q) {
+		return q
+	}
+	return ""
+}
+
 // Match keeps the calls a history question is about: an id selects that one call, anything else
 // is a filter over the tools. "started" lines never make the cut - the final line has the outcome.
 func Match(entries []Entry, what string, limit int) []Entry {
@@ -103,7 +112,9 @@ func (e Entry) Detail() string {
 		fmt.Fprintf(&b, " · exit %d", *e.ExitCode)
 	}
 	fmt.Fprintf(&b, " · %dms\n", e.DurationMS)
-	fmt.Fprintf(&b, "  args %s\n", e.Args)
+	if asked := WholeArgs(e.Args); len(asked) > 0 {
+		b.WriteString("  asked for:\n" + indent(strings.Join(asked, "\n")) + "\n")
+	}
 	if len(e.Paths) > 0 {
 		fmt.Fprintf(&b, "  paths %s\n", strings.Join(e.Paths, " "))
 	}

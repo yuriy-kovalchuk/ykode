@@ -8,6 +8,7 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/size"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
@@ -22,13 +23,25 @@ func (a *Agent) underPressure() bool {
 }
 
 // shrinkWhatAged shortens old results and the arguments of old file writes together: both are
-// text the model has already been paid for.
-func (a *Agent) shrinkWhatAged(keep int) int {
-	freed := a.shrinkOldReasoning(keep) + a.shrinkOldResults(keep) + a.shrinkOldEdits(keep)
+// text the model has already been paid for. It also says how much of what went was thinking, which is
+// worth naming: it is not output the model asked for.
+func (a *Agent) shrinkWhatAged(keep int) (freed, thinking int) {
+	thinking = a.shrinkOldReasoning(keep)
+	freed = thinking + a.shrinkOldResults(keep) + a.shrinkOldEdits(keep)
 	if freed > 0 {
 		a.work.made(roomShortened)
 	}
-	return freed
+	return freed, thinking
+}
+
+// shrinkNotice is what the shortening is worth interrupting the user for: text the model loses is worth a
+// line. Thinking that stops being re-sent is per-turn housekeeping the user cannot act on, and it repeats
+// on every resume of a long conversation, so it is not announced.
+func shrinkNotice(freed, thinking int) string {
+	if real := freed - thinking; real > 0 {
+		return fmt.Sprintf("shortened older tool output to fit the context (%s)", size.Text(real))
+	}
+	return ""
 }
 
 // shrinkOldReasoning stops sending the thinking of all but the newest replies. Sent back, the thinking
@@ -44,6 +57,7 @@ func (a *Agent) shrinkOldReasoning(keep int) int {
 		if seen++; seen > keep {
 			freed += len(m.WireReasoning)
 			m.WireReasoning = ""
+			a.revised(i) // the log keeps it as stopped: a run that comes back must not free it again
 		}
 	}
 	return freed
@@ -118,7 +132,7 @@ func (a *Agent) shrinkOldEdits(keep int) int {
 	for i, m := range a.history {
 		replies := a.repliesFor(i)
 		for j, c := range m.ToolCalls {
-			if classOf(c.Function.Name) != classWrites {
+			if a.classOf(c.Function.Name) != tools.ClassWrites {
 				continue
 			}
 			reply := -1

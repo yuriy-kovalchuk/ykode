@@ -150,19 +150,3 @@ func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
 		t.Errorf("another tool's arguments were rewritten: %s", got)
 	}
 }
-
-// a question and a plan change nothing on disk, so what was read before them is still the answer
-func TestAQuestionLeavesWhatWasReadAlone(t *testing.T) {
-	changed := []string{"write_file", "edit_file", "exec_command"}
-	quiet := []string{"read_file", "search_text", "find_files", "plan", "ask_user"}
-	for _, name := range changed {
-		if !changesProject(name) {
-			t.Errorf("%s may change the project: a cached read of the file it touched would answer later", name)
-		}
-	}
-	for _, name := range quiet {
-		if changesProject(name) {
-			t.Errorf("%s was taken for a change: it drops the answers the model already has", name)
-		}
-	}
-}

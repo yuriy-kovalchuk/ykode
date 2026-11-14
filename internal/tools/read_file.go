@@ -46,6 +46,7 @@ func NewReadFile(root *os.Root, dir string) *ReadFile {
 }
 
 func (*ReadFile) Name() string { return "read_file" }
+func (*ReadFile) Class() Class { return ClassReads }
 
 func (*ReadFile) Description() string {
 	return "Read a text file. The header gives the range and total lines; the text has no line numbers. outline=true lists declarations with their line ranges: use it on a big file first."

@@ -50,6 +50,7 @@ func NewEditFile(root *os.Root, dir string) *EditFile {
 }
 
 func (*EditFile) Name() string { return "edit_file" }
+func (*EditFile) Class() Class { return ClassWrites }
 
 func (*EditFile) Description() string {
 	return "Replace exact text in a file: edits is a list of {old_text, new_text}. Each old_text is copied from read_file or search_text output and occurs once in the file. All edits apply or none."

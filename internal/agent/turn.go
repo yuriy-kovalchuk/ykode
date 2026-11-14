@@ -10,7 +10,6 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"github.com/yuriy-kovalchuk/ykode/internal/size"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -204,8 +203,10 @@ func (a *Agent) prepareTurn(ctx context.Context, turn int) {
 		a.emit(Event{Kind: Steered, Turn: turn, Text: ask.Content})
 	}
 	if a.underPressure() {
-		if freed := a.shrinkWhatAged(keepResults); freed > 0 {
-			a.tell(fmt.Sprintf("shortened older tool output to fit the context (%s)", size.Text(freed)))
+		if freed, thought := a.shrinkWhatAged(keepResults); freed > 0 {
+			if line := shrinkNotice(freed, thought); line != "" {
+				a.tell(line)
+			}
 		}
 	}
 	// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call

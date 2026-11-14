@@ -73,10 +73,13 @@ func TestOneCallInFullAnswersTheID(t *testing.T) {
 		Paths: []string{"/repo/a"}, OutputPath: "/home/.ykode/sessions/s1/results/r9.txt", ResultBytes: 8200,
 	}
 	detail := e.Detail()
-	for _, want := range []string{"r9", "exec_command", "go test", "user_yes", "timeout", "exit 2", "r9.txt", "8200"} {
+	for _, want := range []string{"r9", "exec_command", "command: go test", "asked for:", "user_yes", "timeout", "exit 2", "r9.txt", "8200"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("the detail is missing %q:\n%s", want, detail)
 		}
+	}
+	if strings.Contains(detail, `{"command"`) {
+		t.Errorf("the detail pastes the JSON instead of reading it:\n%s", detail)
 	}
 }
 

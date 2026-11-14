@@ -38,6 +38,7 @@ const noAnswer = "no answer; go on with the choice you think best, and say what 
 func NewAskUser(ask Asker) *AskUser { return &AskUser{ask: ask} }
 
 func (*AskUser) Name() string { return "ask_user" }
+func (*AskUser) Class() Class { return ClassSays }
 
 func (*AskUser) Description() string {
 	return "Pause the run and ask the person one question, with the choices you would act on. Ask when the project cannot answer what you need and a wrong guess costs work; ask once about a decision, not about every step. An empty answer means they have none: pick the most reasonable choice and say what you assumed."

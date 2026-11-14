@@ -112,6 +112,35 @@ func TestTheNewestRunIsTheOneRecalled(t *testing.T) {
 	}
 }
 
+// a run that came back to another conversation logs what it does next to that one, so a look back at
+// either finds its own calls and not the ones that were done after the switch
+func TestContinueAsMovesWhatFollowsToAnotherConversation(t *testing.T) {
+	logger := New(filepath.Join(t.TempDir(), "audit"), "s20260101-120000")
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	if err := logger.Append(Entry{Time: start, ID: "r1", Tool: "read_file", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	logger.ContinueAs("s20260101-110000")
+	if err := logger.Append(Entry{Time: start.Add(time.Minute), ID: "r2", Tool: "exec_command", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []struct {
+		session, call string
+	}{{"s20260101-120000", "r1"}, {"s20260101-110000", "r2"}} {
+		entries, _, err := logger.Read(want.session)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].ID != want.call {
+			t.Errorf("%s reads back %v", want.session, entries)
+		}
+	}
+
+	var off *Logger // auditing turned off: there is no conversation to move
+	off.ContinueAs("s20260101-100000")
+}
+
 func TestADamagedLineIsSkippedAndCounted(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "audit")
 	logger := New(dir, "s20260101-120000")
