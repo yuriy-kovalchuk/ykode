@@ -48,21 +48,87 @@ func (m *model) awaitingWords() bool {
 func (m *model) modelQuestion(screenRows int) string {
 	q := m.pending[0]
 	room := max(m.width-lipgloss.Width(askBar)-2, 10)
-	lines := []string{styleBold.Render(oneLine(q.text, room))}
-	// the question and the keys keep their rows; what is left is for the choices, and a choice that
-	// did not fit is still answerable by its number
-	shown := min(len(q.options), max(screenRows-2, 1))
-	for i, option := range q.options[:shown] {
-		lines = append(lines, styleKey.Render(fmt.Sprintf("%d", i+1))+styleDim.Render(" ")+cutToWidth(option, room))
+	keys := askKeys(room)
+	lines := askWrapped(q.text, room, max(screenRows-len(keys)-1, 1))
+	for i, line := range lines {
+		lines[i] = styleBold.Render(line)
 	}
-	if shown < len(q.options) {
-		lines = append(lines, styleDim.Render(fmt.Sprintf("… %d more, their numbers still answer", len(q.options)-shown)))
-	}
-	keys := styleDim.Render("type it, or the number of a choice · ") + styleKey.Render("enter") +
-		styleDim.Render(" answers · ") + styleKey.Render("esc") + styleDim.Render(" stops the run")
-	lines = append(lines, keys)
+	// the question and the keys keep their rows; what is left is for the choices, and a choice with no
+	// row left is still answerable by its number
+	lines = append(lines, optionRows(q.options, room, max(screenRows-len(lines)-len(keys), 1))...)
+	lines = append(lines, keys...)
 	for i, line := range lines {
 		lines[i] = styleKey.Render(askBar) + line
 	}
 	return strings.Join(lines, "\n")
+}
+
+// askKeysLine says how an ask is answered: typing it, or the number of one of its choices.
+var askKeysLine = styleDim.Render("type it, or the number of a choice · ") + styleKey.Render("enter") +
+	styleDim.Render(" answers · ") + styleKey.Render("esc") + styleDim.Render(" stops the run")
+
+// askKeys is that line as the rows the terminal has for it: a narrow one reads it as two, at the gap
+// between the two answers, rather than running one row past its edge.
+func askKeys(width int) []string {
+	if lipgloss.Width(askKeysLine) <= width {
+		return []string{askKeysLine}
+	}
+	return []string{
+		styleDim.Render("type it, or the number of a choice"),
+		styleKey.Render("enter") + styleDim.Render(" answers · ") + styleKey.Render("esc") +
+			styleDim.Render(" stops the run"),
+	}
+}
+
+// askWrapped is text that says more than fits in a row: it is read across rows rather than cut at one,
+// and only runs out of rows on a screen too small for it, where the last row shown ends in ….
+func askWrapped(text string, width, rows int) []string {
+	wrapped := wrap(text, width)
+	if len(wrapped) <= rows {
+		return wrapped
+	}
+	kept := wrapped[:rows]
+	kept[len(kept)-1] = cutToWidth(kept[len(kept)-1], max(width-1, 1))
+	return kept
+}
+
+// optionRows are the choices numbered, each across as many rows as it needs: a choice longer than the
+// terminal is still one you can read, and answer by its number, rather than a fragment of one. The
+// choices no row is left for are counted instead, which is what they were before.
+func optionRows(options []string, room, rows int) []string {
+	const optionLead = 3 // the number, the gap after it, and the column the text starts at
+	var lines []string
+	shown := 0
+	for i, option := range options {
+		parts := wrap(option, max(room-optionLead, 10))
+		spare := rows - len(lines)
+		if len(parts) > spare {
+			if len(lines) > 0 { // the first choice is shown whatever the screen: an ask with nothing of it
+				break // on the screen is an ask nobody can read, not one to answer blind
+			}
+			parts = parts[:max(spare, 1)]
+		}
+		lines = append(lines, numbered(i, parts, optionLead)...)
+		shown = i + 1
+		if len(parts) > spare {
+			break
+		}
+	}
+	if shown < len(options) {
+		lines = append(lines, styleDim.Render(fmt.Sprintf("… %d more, their numbers still answer", len(options)-shown)))
+	}
+	return lines
+}
+
+// numbered is one choice as its rows: the first opens with its number, the rest line up under the text.
+func numbered(at int, parts []string, lead int) []string {
+	rows := make([]string, 0, len(parts))
+	for i, part := range parts {
+		if i > 0 {
+			rows = append(rows, strings.Repeat(" ", lead)+part)
+			continue
+		}
+		rows = append(rows, styleKey.Render(fmt.Sprintf("%d", at+1))+styleDim.Render(" ")+part)
+	}
+	return rows
 }

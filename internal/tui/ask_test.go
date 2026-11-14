@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -26,6 +27,26 @@ func askedAbout(m *model, text string, options ...string) chan string {
 	m.pending = []*question{{text: text, options: options, words: words}}
 	m.refresh() // the way a question arriving from the run leaves the screen: the rows are re-measured
 	return words
+}
+
+// a question and its choices are read across rows instead of being cut at one: what a model asks is
+// often longer than the terminal, and the end of a choice is the part that decides it
+func TestAChoiceLongerThanTheTerminalIsReadAcrossRows(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 66, 24
+	askedAbout(m, "which of these should the sessions list do when you press enter?",
+		"continue the conversation here in this run", "print the command to run it in its own terminal")
+	plain := stripCodes(m.View())
+	for _, want := range []string{"which of these should the", "run it in its own terminal", "1 ", "2 "} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("the ask lost %q:\n%s", want, plain)
+		}
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Errorf("a row runs past the terminal (%d columns): %q", lipgloss.Width(line), line)
+		}
+	}
 }
 
 func TestTheQuestionTheModelAskedShowsItsChoicesNumbered(t *testing.T) {
