@@ -77,6 +77,9 @@ func TestAnOldResultIsSummarisedAndStillReachable(t *testing.T) {
 	sink := &captureSink{decision: Allow}
 	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 128, CtxSize: 4100}, sink, dir)
 	defer done()
+	// the fold reads results whole and has its own tests: this one is about the shortening stage, so say a
+	// fold just happened and leave the shortening as the only way to make room
+	a.compactedAt = callBlocks(a.history)
 
 	if err := a.Ask(context.Background(), "search five files"); err != nil {
 		t.Fatal(err)
@@ -536,6 +539,9 @@ func TestAResumedConversationSaysNothingAboutShortening(t *testing.T) {
 	first := &captureSink{decision: Allow}
 	a, done := newStoringAgent(t, &stubServer{scripts: []string{search(0), search(1), search(2), search(3), search(4), sse("", "done", "", nil, "stop")}},
 		Options{Session: log, MaxTurns: 8, MaxTokens: 128, CtxSize: 4100, SendReasoning: true}, first, dir)
+	// the fold reads results whole and has its own tests: this one is about the shortening stage, so say a
+	// fold just happened and leave the shortening as the only way to make room
+	a.compactedAt = callBlocks(a.history)
 	if err := a.Ask(ctx, "search five files"); err != nil {
 		t.Fatal(err)
 	}

@@ -219,6 +219,10 @@ func (a *Agent) transcriptOf(messages []llm.Message) string {
 		case m.Role == "tool":
 			fmt.Fprintf(&b, "result %s %s:\n%s\n", m.CallID, m.Name, cutText(m.Content, compactLineCap))
 		case len(m.ToolCalls) > 0:
+			if m.Reasoning != "" {
+				// what the model worked through is the only place the reason for a choice is written down
+				fmt.Fprintf(&b, "thinking: %s\n", cutText(m.Reasoning, compactLineCap))
+			}
 			if text := strings.TrimSpace(m.Content); text != "" {
 				fmt.Fprintf(&b, "assistant: %s\n", cutText(text, compactLineCap))
 			}
@@ -226,6 +230,9 @@ func (a *Agent) transcriptOf(messages []llm.Message) string {
 				fmt.Fprintf(&b, "call %s\n", callLine(call))
 			}
 		default:
+			if m.Role == "assistant" && m.Reasoning != "" {
+				fmt.Fprintf(&b, "thinking: %s\n", cutText(m.Reasoning, compactLineCap))
+			}
 			fmt.Fprintf(&b, "%s: %s\n", m.Role, cutText(m.Content, compactLineCap))
 		}
 	}
@@ -301,8 +308,10 @@ func (a *Agent) summariseWithModel(ctx context.Context, previous, transcript str
 			{Role: "user", Content: request.String()},
 		},
 		MaxTokens: compactMaxTokens,
-		// a summary needs no thinking phase, and thinking costs the window we are trying to free
+		// a summary needs no thinking phase, and thinking costs the window we are trying to free; the
+		// sampling of a thinking-off request comes from the model's own card, whose values differ
 		ChatTemplateKwargs: map[string]any{"enable_thinking": false},
+		Sampling:           a.opts.NoThink,
 	}, nil)
 	if err != nil {
 		return "", err

@@ -202,19 +202,19 @@ func (a *Agent) prepareTurn(ctx context.Context, turn int) {
 		a.repeats.changed()
 		a.emit(Event{Kind: Steered, Turn: turn, Text: ask.Content})
 	}
+	// the fold goes first: it is the only stage that reads the results at their full length, and once a
+	// shortening has replaced a result with its own marker, the recap would be written from those markers
+	if a.underPressure() && a.canCompact() && a.foldOverdue() {
+		a.tell("the conversation is out of room: asking the model to summarise the older turns")
+		a.work.made(roomFolding) // the clock is about to wait on a whole extra request: say what it waits on
+		a.Compact(ctx)
+	}
 	if a.underPressure() {
 		if freed, thought := a.shrinkWhatAged(keepResults); freed > 0 {
 			if line := shrinkNotice(freed, thought); line != "" {
 				a.tell(line)
 			}
 		}
-	}
-	// asked again after the shortening, on the same line: if it still does not fit, compaction earns its call
-	if a.underPressure() && a.canCompact() && a.foldOverdue() {
-		// shortening the results was not enough: pay one request to fold the older turns into a summary
-		a.tell("the conversation is out of room: asking the model to summarise the older turns")
-		a.work.made(roomFolding) // the clock is about to wait on a whole extra request: say what it waits on
-		a.Compact(ctx)
 	}
 	a.trimHistory() // last resort: blank what is left, then drop whole calls
 	// what a front end reads next is what this request is built from, not what the last reply cost

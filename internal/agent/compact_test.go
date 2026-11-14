@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
@@ -11,6 +12,55 @@ import (
 	"strings"
 	"testing"
 )
+
+// The fold is the one stage that reads a result at its full length, so it goes before the shortening:
+// once a result has been replaced by its own marker, a recap written from it recites the marker and
+// what the model decided, and the text inside the result is gone from every stage after that. The
+// thinking the model worked through is the only place its reasons are written down, so it goes in too.
+func TestAFoldReadsWhatTheResultsSaidRatherThanTheirMarkers(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	deep := "the phrase only the result itself holds: quux quux quux"
+	call := func(id, name, args string) llm.ToolCall {
+		return llm.ToolCall{ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: name, Arguments: json.RawMessage(args)}}
+	}
+	stub := &stubServer{scripts: []string{sse("", "Goal: read it\nWhat I learned: there is a line", "", nil, "stop")}}
+	a, done := newStoringAgent(t, stub, Options{CtxSize: 3000}, &captureSink{}, dir)
+	defer done()
+	a.add(llm.Message{Role: "user", Content: "read both files"})
+	a.add(llm.Message{Role: "assistant", Reasoning: "the reason for that range: the header comes first",
+		ToolCalls: []llm.ToolCall{call("c1", "read_file", `{"path":"a.go"}`)}})
+	a.add(llm.Message{Role: "tool", CallID: "c1", Name: "read_file",
+		Content: strings.Repeat("x", 600) + "\n" + deep + "\n" + strings.Repeat("y", 600)})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c2", "search_text", `{"pattern":"quux"}`)}})
+	a.add(llm.Message{Role: "tool", CallID: "c2", Name: "search_text", Content: strings.Repeat("z", 900)})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c3", "search_text", `{"pattern":"line"}`)}})
+	a.add(llm.Message{Role: "tool", CallID: "c3", Name: "search_text", Content: strings.Repeat("w", 400)})
+
+	a.prepareTurn(ctx, 1) // the pressure arrives here, with the fold the first thing that answers it
+
+	var asked string
+	for _, req := range stub.requests {
+		for _, m := range req["messages"].([]any) {
+			if body, _ := m.(map[string]any); body["role"] == "user" {
+				asked += body["content"].(string)
+			}
+		}
+	}
+	if !strings.Contains(asked, "<conversation>") {
+		t.Fatal("the fold was never asked: the shortening answered the pressure first")
+	}
+	if !strings.Contains(asked, deep) {
+		t.Errorf("the fold was asked about a conversation with the middle of a result missing:\n%s", asked)
+	}
+	if strings.Contains(asked, shrinkMark) {
+		t.Errorf("the fold was asked to recap shortening markers:\n%s", asked)
+	}
+	if !strings.Contains(asked, "thinking: the reason for that range") {
+		t.Error("the fold was asked about the calls without the reasoning behind them")
+	}
+}
 
 func TestCompactShortensTheRestAndSaysHowMuch(t *testing.T) {
 	dir := t.TempDir()
