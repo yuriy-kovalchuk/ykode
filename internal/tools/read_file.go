@@ -182,15 +182,16 @@ func splitLines(data []byte) []string {
 	return parts
 }
 
-// alreadyShown records one result and says whether that exact text went to the model before. The
-// text is the key, so a different window, an edited file or a different cut is a different result.
+// alreadyShown records one result and says whether that exact text went to the model before. A
+// different window, an edited file or a different cut is a different result. The key is the trimmed
+// text, which is what the conversation keeps: the run forgets a result by that form, not by this one.
 func (t *ReadFile) alreadyShown(text string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.served == nil {
 		t.served = map[string]bool{}
 	}
-	key := resultKey(text)
+	key := resultKey(strings.TrimSpace(text))
 	if t.served[key] {
 		return true
 	}
@@ -203,7 +204,7 @@ func (t *ReadFile) alreadyShown(text string) bool {
 func (t *ReadFile) Forget(shown Shown) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.served, resultKey(shown.Text))
+	delete(t.served, resultKey(strings.TrimSpace(shown.Text)))
 }
 
 // ForgetAll empties the memory, which is what a reset does to the conversation.

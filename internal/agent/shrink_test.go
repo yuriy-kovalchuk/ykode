@@ -393,40 +393,43 @@ func TestAStaleFileReadIsNotStoredForRecall(t *testing.T) {
 	}
 }
 
+// The conversation stores the trimmed result, sometimes with the plan reminder glued to it, while the
+// tool remembers what it showed under a hash of the text it returned. A shortening that says "this text
+// is gone" therefore released nothing, and the next read of that window answered with a pointer to text
+// the model could no longer see.
 func TestAReReadAfterShorteningBringsTheTextBack(t *testing.T) {
+	ctx := context.Background()
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
 	dir := t.TempDir()
 	name := writeLines(t, dir, "big.txt", 40)
 	a, done := newStoringAgent(t, stub, Options{CtxSize: 8000}, &captureSink{}, dir)
 	defer done()
 
-	reader, ok := a.tools.Get("read_file")
-	if !ok {
-		t.Fatal("the registry has no read_file")
-	}
-	args := json.RawMessage(`{"path":"` + name + `"}`)
-	first, err := reader.Run(context.Background(), args)
-	if err != nil {
+	// a plan with an open step and a stale counter, so the reminder rides the result as it does in a long run
+	plan := tools.NewPlan()
+	if _, err := plan.Run(ctx, json.RawMessage(`{"steps":[{"text":"read it","status":"pending"}]}`)); err != nil {
 		t.Fatal(err)
 	}
-	a.history = append(a.history,
-		llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
-			ID:       "call1",
-			Type:     "function",
-			Function: llm.FunctionCall{Name: "read_file", Arguments: args},
-		}}},
-		llm.Message{Role: "tool", Name: "read_file", ToolCallID: "call1", CallID: "r1", Content: first},
-	)
-	if freed := a.shrinkOldResults(0); freed == 0 {
+	a.opts.Plan = plan
+	a.sincePlan = planStaleCalls - 1
+
+	args := json.RawMessage(`{"path":"` + name + `"}`)
+	call := llm.ToolCall{ID: "call1", Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: args}}
+	a.history = append(a.history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
+	a.runToolCalls(ctx, []llm.ToolCall{call})
+	if !strings.Contains(a.history[len(a.history)-1].Content, "the plan has not been updated") {
+		t.Fatal("the reminder did not ride the result, so the test would prove nothing")
+	}
+	a.history = append(a.history, llm.Message{Role: "assistant", Content: "read it"}) // the model has seen the answer
+	if a.shrinkOldResults(0) == 0 {
 		t.Fatal("the read was not shortened, so there was nothing to test")
 	}
 
-	again, err := reader.Run(context.Background(), args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(again, "unchanged since you read") {
-		t.Errorf("the text was shortened out of the conversation and the tool still refused to send it: %q", again)
+	call.ID = "call2"
+	a.history = append(a.history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call}})
+	a.runToolCalls(ctx, []llm.ToolCall{call})
+	if last := a.history[len(a.history)-1].Content; strings.Contains(last, "unchanged since you read") {
+		t.Errorf("the text is gone from the conversation and the tool still refuses to send it: %q", last)
 	}
 }
 

@@ -175,7 +175,7 @@ func (a *Agent) forget(messages ...llm.Message) {
 			continue
 		}
 		if f, ok := tool.(tools.Forgetter); ok {
-			f.Forget(tools.Shown{CallID: m.CallID, Text: m.Content})
+			f.Forget(tools.Shown{CallID: m.CallID, Text: strings.TrimSuffix(m.Content, planNag)})
 		}
 	}
 }
