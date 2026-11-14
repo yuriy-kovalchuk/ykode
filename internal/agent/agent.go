@@ -49,6 +49,9 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	if sink == nil {
 		sink = nullSink{}
 	}
+	if registry == nil {
+		registry = tools.NewRegistry() // a run with no tools still answers questions about the names it met
+	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
 	if _, canAnswer := sink.(Asker); canAnswer {
 		// the question is answered by the same thing that draws the run, so the tool is offered only
@@ -70,6 +73,12 @@ func (a *Agent) Reset() {
 		// the saved conversation starts over too, or --continue hands back what was just cleared
 		a.reportSave(a.opts.Session.Cleared())
 	}
+	a.startOver()
+}
+
+// startOver empties the conversation without writing anything to the log: a run coming back to another
+// saved conversation leaves the one it was in standing as it was, so it can be come back to again.
+func (a *Agent) startOver() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.meter.clearCost()
 	a.compactedAt = -1

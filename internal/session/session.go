@@ -279,6 +279,14 @@ func (c change) apply(messages []llm.Message) []llm.Message {
 	return messages
 }
 
+// ID is the id a saved conversation's file is named for: <id>.jsonl.
+func ID(path string) string {
+	if path == "" {
+		return ""
+	}
+	return strings.TrimSuffix(filepath.Base(path), ".jsonl")
+}
+
 // List names the saved conversations, newest first. The ids are stamped with the run time,
 // so name order is time order.
 func List(dir string) ([]string, error) {
@@ -289,7 +297,7 @@ func List(dir string) ([]string, error) {
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
 	ids := make([]string, len(names))
 	for i, name := range names {
-		ids[i] = strings.TrimSuffix(filepath.Base(name), ".jsonl")
+		ids[i] = ID(name)
 	}
 	return ids, nil
 }

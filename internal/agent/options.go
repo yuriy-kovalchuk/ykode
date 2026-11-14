@@ -76,3 +76,11 @@ func (a *Agent) Plan() []tools.PlanStep { return a.opts.Plan.Steps() }
 
 // SavedMessages counts the conversation this run wrote to its session file.
 func (a *Agent) SavedMessages() int { return a.opts.Session.Count() }
+
+// SessionFile names the conversation this run is writing, "" when it saves none; it moves when the run
+// comes back to another one, so a front end's "come back with" line cannot point at the wrong file.
+func (a *Agent) SessionFile() string { return a.opts.Session.Path() }
+
+// HasUndo says whether /undo has anything to put back, so a front end can ask about the change before
+// it offers the question, instead of asking about a change there is none of.
+func (a *Agent) HasUndo() bool { return a.opts.Undo != nil && !a.opts.Undo.Empty() }

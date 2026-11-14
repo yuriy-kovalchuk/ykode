@@ -209,7 +209,7 @@ func TestOutOfRoundsAsksWhereTheWorkStands(t *testing.T) {
 // a write that was interrupted before it ran keeps its text when old writes are shortened: the file
 // is not on disk, and the model must not be told it is
 func TestAnInterruptedWriteKeepsItsArguments(t *testing.T) {
-	a := New(nil, nil, "test-model", Options{}, nil)
+	a := writesRun(t)
 	args := `{"path":"big.txt","content":"` + strings.Repeat("a line of the file\\n", 100) + `"}`
 	call := func(id string) llm.Message {
 		return llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",

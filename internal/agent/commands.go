@@ -39,19 +39,19 @@ func (c CommandSpec) Spellings() []string {
 // and the screen completes from it, so neither can fall behind the other.
 func Commands() []CommandSpec {
 	return []CommandSpec{
-		{Name: "/help", Note: "show this"},
-		{Name: "/usage", Note: "what the conversation has cost the server"},
+		{Name: "/help", Note: "the commands, narrowed by typing; enter writes one in the prompt box"},
+		{Name: "/usage", Note: "what the conversation has cost the server, read from a panel of its own"},
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
-		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root"},
+		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root; on the screen, enter reads one call in the box"},
 		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it"},
-		{Name: "/sessions", Note: "the conversations saved for this project, and how to come back to one"},
+		{Name: "/sessions", Note: "the conversations saved for this project; on the screen, pick one and this run continues it"},
 		{Name: "/plan", Note: "the steps of the task the model is working through, as it last wrote them"},
-		{Name: "/ctx", Note: "how full the window is, and what the server is caching"},
+		{Name: "/ctx", Note: "how full the window is, and what the server is caching, read from a panel of its own"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
 		{Name: "/model", Args: "[id | number]", Note: "lists the models this server offers; an id or a number switches to it", Waits: true},
 		{Name: "/think", Args: "[level]", Note: "how deeply the model thinks: " + strings.Join(llm.ThinkingLevels(), ", "), Waits: true},
 		{Name: "/undo", Args: "[force]", Note: "put the most recent file change back; force also when it was edited since", Waits: true},
-		{Name: "/reset", Note: "forget the conversation", Waits: true},
+		{Name: "/reset", Note: "forget the conversation; the screen asks first", Waits: true},
 		{Name: "/exit", Also: "/quit", Note: "quit (ctrl+c at the prompt too; mid-request it cancels the request)"},
 	}
 }

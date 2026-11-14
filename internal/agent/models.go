@@ -16,30 +16,15 @@ const modelsTimeout = 10 * time.Second // /model asks the server, and a server t
 // marked; with an id or the number from that list, a switch to it. A model the server does not list is
 // still accepted, because a proxy may load models it does not advertise.
 func (a *Agent) modelCommand(ctx context.Context, arg string) string {
-	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
-	defer cancel()
-	models, err := a.client.Models(ctx)
+	models, err := a.ServerModels(ctx)
 	if arg == "" {
 		if err != nil {
 			return fmt.Sprintf("model: %s (the server did not list its models: %v)\n", a.model, err)
 		}
 		return a.modelList(models)
 	}
-	chosen := llm.ModelInfo{ID: arg}
-	listed := false
-	if n, convErr := strconv.Atoi(arg); convErr == nil && n >= 1 && n <= len(models) {
-		chosen, listed = models[n-1], true
-	}
-	for _, m := range models {
-		if m.ID == arg {
-			chosen, listed = m, true
-		}
-	}
-	window := a.opts.CtxSize
-	if listed && chosen.CtxSize > 0 && !a.opts.CtxPinned {
-		window = chosen.CtxSize // another model brings its own window, unless --ctx fixed one
-	}
-	a.SetEndpoint(a.client, chosen.ID, window)
+	chosen, listed := a.resolve(ctx, arg)
+	a.UseModel(chosen, listed)
 	switch {
 	case !listed && err == nil:
 		return fmt.Sprintf("model: %s (the server does not list it; the next request asks for it anyway)\n", chosen.ID)
@@ -47,7 +32,7 @@ func (a *Agent) modelCommand(ctx context.Context, arg string) string {
 		return fmt.Sprintf("model: %s (the server did not list its models, so it is unchecked; the next request asks for it)\n", chosen.ID)
 	}
 	return fmt.Sprintf("model: %s · window %s (the next request asks for it; a model the server has to load waits before the first token)\n",
-		chosen.ID, windowText(window))
+		chosen.ID, windowText(a.windowFor(chosen, listed)))
 }
 
 // modelList is the server's models, numbered so a number can pick one.
@@ -72,6 +57,42 @@ func (a *Agent) modelList(models []llm.ModelInfo) string {
 		rows = append(rows, fmt.Sprintf("    * %s (in use, but this server does not list it)", a.model))
 	}
 	return strings.Join(rows, "\n") + "\n"
+}
+
+// ServerModels lists what this run's server offers, for a front end that shows them to choose from.
+func (a *Agent) ServerModels(ctx context.Context) ([]llm.ModelInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
+	defer cancel()
+	return a.client.Models(ctx)
+}
+
+// resolve finds the model asked for: a number from the server's list, an id the server lists, or an id
+// it does not, which a proxy may still load.
+func (a *Agent) resolve(ctx context.Context, arg string) (llm.ModelInfo, bool) {
+	models, _ := a.ServerModels(ctx)
+	chosen, listed := llm.ModelInfo{ID: arg}, false
+	if n, convErr := strconv.Atoi(arg); convErr == nil && n >= 1 && n <= len(models) {
+		chosen, listed = models[n-1], true
+	}
+	for _, m := range models {
+		if m.ID == arg {
+			chosen, listed = m, true
+		}
+	}
+	return chosen, listed
+}
+
+// UseModel points the run at a model, bringing its own window unless --ctx fixed one. A front end that
+// listed the models asks for the switch without asking the server again.
+func (a *Agent) UseModel(model llm.ModelInfo, listed bool) {
+	a.SetEndpoint(a.client, model.ID, a.windowFor(model, listed))
+}
+
+func (a *Agent) windowFor(model llm.ModelInfo, listed bool) int {
+	if listed && model.CtxSize > 0 && !a.opts.CtxPinned {
+		return model.CtxSize
+	}
+	return a.opts.CtxSize
 }
 
 func windowText(tokens int) string {
