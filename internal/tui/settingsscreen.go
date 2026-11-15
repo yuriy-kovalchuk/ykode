@@ -19,12 +19,13 @@ import (
 // change is checked and written the moment it is made, and applied to the running session where that is
 // safe, so the screen never holds a change that has not happened.
 type settingsScreen struct {
-	rows    []config.Setting // the knobs after the server row
-	at      int              // the row under the cursor; 0 is the server row
-	input   textinput.Model  // the value being typed, when editing
-	editing bool
-	note    string // what the last change did, or why it did not happen
-	bad     bool   // the note is a refusal
+	rows       []config.Setting // the knobs after the server row
+	at         int              // the row under the cursor; 0 is the server row
+	input      textinput.Model  // the value being typed, when editing
+	editing    bool
+	editingKey string // the knob the value being typed belongs to
+	note       string // what the last change did, or why it did not happen
+	bad        bool   // the note is a refusal
 }
 
 // detailRows is what the detail under the list always takes, so the box does not change height as the
@@ -124,7 +125,7 @@ const (
 
 // begin starts typing a value: a list asks for a new entry, anything else edits what is there.
 func (s *settingsScreen) begin(set config.Setting) {
-	s.editing, s.note, s.bad = true, "", false
+	s.editing, s.editingKey, s.note, s.bad = true, set.Key, "", false
 	s.input.SetValue("")
 	if !set.List && set.Value != "" {
 		s.input.SetValue(set.Value)
@@ -136,13 +137,15 @@ func (s *settingsScreen) begin(set config.Setting) {
 func (s *settingsScreen) typing(msg tea.KeyMsg, write func(key, value string) error) (settingsAction, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "ctrl+c":
-		s.editing = false
+		s.editing, s.editingKey = false, ""
 		s.input.Blur()
 		return actNone, nil
 	case "enter":
-		set, _ := s.current()
-		if s.commit(set.Key, strings.TrimSpace(s.input.Value()), write) {
-			s.editing = false
+		// the key the typing started on, not whichever row the cursor reaches by then: a value written
+		// against the wrong knob is checked against that knob's kind, so a number meant for one setting
+		// is accepted by any other setting of the same kind and saved
+		if s.commit(s.editingKey, strings.TrimSpace(s.input.Value()), write) {
+			s.editing, s.editingKey = false, ""
 			s.input.Blur()
 		}
 		return actNone, nil

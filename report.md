@@ -51,13 +51,20 @@ being described as a production crash.
 
 ### The settings screen can commit a value into the wrong setting
 
-`internal/tui/settingsscreen.go`. `begin` opens the row under the cursor for typing but stores no row
-index; `typing` calls `s.current()` — the cursor *now* — to decide which key to write. The branch
-watcher sends a message every five seconds, the spinner ticks while a turn runs, and a run's events
-arrive whenever it emits. Any of those, routed to the settings rows, moves the cursor. Pressing enter
-then writes the typed text into whichever row the cursor has reached. Values are validated against the
-kind of the row they land on, so a number typed for one knob and committed into another knob of the
-same kind is accepted and saved.
+`internal/tui/settingsscreen.go`. `begin` opened the row under the cursor for typing but stored no row
+identity; `typing` asked `s.current()` — the cursor *now* — which key to write, so enter wrote the typed
+text into whichever row the cursor stood on at that moment. Values are validated against the kind of the
+row they land on, so a number typed for one knob and committed into another knob of the same kind is
+accepted and saved. **Reproduced and fixed**: the value now carries the key of the row it was started on.
+Without the fix the test writes `max_turns: 41` into `context.safety_margin`.
+
+**The route the first draft blamed does not exist.** It said the branch watcher, the spinner tick and a
+run's events could move the cursor mid-typing. They cannot: the settings screen consumes key messages
+only, so every other message falls through untouched, and while a value is being typed the keys go to
+the text input rather than to the rows — an arrow key types instead of moving. Checked by holding the
+screen open with a value typed in and pushing each of those messages at it. The cursor only ever moves
+on an explicit arrow when nothing is being edited, which makes this latent rather than a live data
+loss — still worth closing, because the safety of the write rests on nothing but that accident.
 
 ### Pinning the context window has no effect
 

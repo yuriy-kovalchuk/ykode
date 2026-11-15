@@ -223,6 +223,12 @@ func fileHas(t *testing.T, dir, want string) bool {
 	return strings.Contains(string(saved), want)
 }
 
+func settingsFile(t *testing.T, dir string) string {
+	t.Helper()
+	saved, _ := os.ReadFile(filepath.Join(dir, "settings.yaml"))
+	return string(saved)
+}
+
 // a switch turns over on enter, is written at once, and reaches the running session
 func TestASwitchTurnsOverAndTheSessionFollows(t *testing.T) {
 	dir := settingsHome(t, "")
@@ -484,5 +490,32 @@ func TestGroupDigits(t *testing.T) {
 		if got := groupDigits(in); got != want {
 			t.Errorf("groupDigits(%d) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A typed value belongs to the row it was started on. Deciding which knob to write when enter is
+// pressed, rather than when typing began, means the value lands on whichever row the cursor has
+// reached - and a value is only checked against the kind of the knob it lands on, so a number meant
+// for one setting is accepted by any other setting of the same kind.
+func TestATypedValueGoesToTheRowItStartedOn(t *testing.T) {
+	dir := settingsHome(t, "")
+	m := newTestModel()
+	openRow(t, m, "max_turns")
+	m.Update(enter)
+	m.screen.input.SetValue("41")
+	// the cursor moves to another knob of the same kind before enter is pressed
+	for i, row := range m.screen.rows {
+		if row.Key == "context.safety_margin" {
+			m.screen.at = i + 1
+			break
+		}
+	}
+	m.Update(enter)
+
+	if !fileHas(t, dir, "max_turns: 41") {
+		t.Errorf("the value did not go to the row it was typed for:\n%s", settingsFile(t, dir))
+	}
+	if fileHas(t, dir, "safety_margin: 41") {
+		t.Errorf("the value went to the row the cursor had reached:\n%s", settingsFile(t, dir))
 	}
 }
