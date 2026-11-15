@@ -437,3 +437,127 @@ func TestThinkingStoredTwiceByAnOlderRunStillLoads(t *testing.T) {
 		t.Fatalf("an older file did not read back: %+v", back)
 	}
 }
+
+// A trim takes the oldest turns out of a conversation and writes nothing else. Recording that as one
+// line by position is the point of an append-only log: a copy of the whole conversation per removal,
+// each holding the full text of every file read, is what made the file grow a dozen times over.
+func TestADropIsOneLineRatherThanACopyOfTheConversation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-130000.jsonl")
+	log := New(dir, "s20260101-130000", "")
+	for _, m := range []llm.Message{
+		{Role: "user", Content: strings.Repeat("ask ", 500)},
+		{Role: "assistant", Content: "read it"},
+		{Role: "tool", Content: strings.Repeat("a line of the file that was read\n", 200)},
+		{Role: "user", Content: "the ask that stays"},
+	} {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	afterAppends, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Dropped(0, 3); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the drop itself costs one short line: a whole copy of what is left would carry the 6000-odd
+	// bytes of that file read again
+	if grew := len(raw) - len(afterAppends); grew > 64 {
+		t.Errorf("the drop grew the file by %d bytes, want one short line", grew)
+	}
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 1 || back[0].Content != "the ask that stays" {
+		t.Errorf("resumed %d message(s) %q, want only the ask that stays", len(back), back)
+	}
+	if log.Count() != 1 {
+		t.Errorf("Count = %d, want the log to know it holds one message now", log.Count())
+	}
+}
+
+// A change points at a position counted from the last boundary, so a fold or a start-over moves where
+// the next line points. Positions carried across a boundary would delete the wrong turns.
+func TestAChangePointsWhereTheMessageStoodAfterTheLastBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-130100.jsonl")
+	log := New(dir, "s20260101-130100", "")
+	for _, ask := range []string{"an ask before", "an answer before"} {
+		if err := log.Append(llm.Message{Role: "user", Content: ask}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := log.Folded(Fold{Kept: []llm.Message{{Role: "user", Content: "the recap"}, {Role: "user", Content: "the ask kept"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Dropped(1, 2); err != nil { // position 1 of what the fold left, not of the file
+		t.Fatal(err)
+	}
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 1 || back[0].Content != "the recap" {
+		t.Errorf("resumed %+v, want the recap alone", back)
+	}
+
+	// and the whole conversation, not a position, is what a start-over leaves
+	if err := log.Cleared(); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Dropped(0, 1); err == nil {
+		t.Error("a drop into a conversation the log says is empty was accepted")
+	}
+}
+
+// A replacement message goes in by position, which is how a repaired call is kept without writing the
+// conversation again.
+func TestAMessageReplacedInPlaceIsReadBackReplaced(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-130200.jsonl")
+	log := New(dir, "s20260101-130200", "")
+	for _, m := range []llm.Message{{Role: "user", Content: "first"}, {Role: "user", Content: "second"}} {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := log.Revised(0, llm.Message{Role: "user", Content: "first, repaired"}); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 2 || back[0].Content != "first, repaired" || back[1].Content != "second" {
+		t.Errorf("resumed %+v, want the first replaced and the second untouched", back)
+	}
+	if err := log.Revised(9, llm.Message{Role: "user", Content: "nowhere"}); err == nil {
+		t.Error("a position outside the conversation was accepted")
+	}
+}
+
+// A file written by a newer program than this one cannot be rebuilt correctly, and a conversation that
+// looks fine and is wrong is worse than a resume that refuses.
+func TestAFileFromAFutureFormatIsRefusedRatherThanGuessedAt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-130300.jsonl")
+	os.WriteFile(path, []byte(`{"root":"/work/alpha","format":99}`+"\n"+`{"role":"user","content":"a message"}`+"\n"), 0o600)
+	if _, err := Load(path, "/work/alpha"); err == nil || !strings.Contains(err.Error(), "newer") {
+		t.Errorf("a format this program does not know resumed anyway: %v", err)
+	}
+
+	// a file from before the field carries a zero, which this program does read
+	old := filepath.Join(dir, "s20260101-130400.jsonl")
+	os.WriteFile(old, []byte(`{"root":"/work/alpha"}`+"\n"+`{"role":"user","content":"an older file"}`+"\n"), 0o600)
+	back, err := Load(old, "/work/alpha")
+	if err != nil || len(back) != 1 {
+		t.Errorf("an older file failed to resume: %v %v", back, err)
+	}
+}

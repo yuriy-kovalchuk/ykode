@@ -96,10 +96,23 @@ const neverRan = "this call never ran: the request was interrupted before it fin
 // sanitizeHistory keeps history something a server accepts: a cut-off call holds invalid JSON, and a
 // call whose reply was never written (the user pressed Ctrl-C mid-tool) makes the whole request fail.
 func (a *Agent) sanitizeHistory() {
+	fixed := []int{}
 	for i := range a.history {
 		for j := range a.history[i].ToolCalls {
 			if args := a.history[i].ToolCalls[j].Function.Arguments; !json.Valid(args) {
 				a.history[i].ToolCalls[j].Function.Arguments = json.RawMessage("{}")
+				fixed = append(fixed, i)
+			}
+		}
+	}
+	// a call's arguments repaired in place is one line each, not a copy of the conversation: the trim and
+	// the fold already write the whole thing often enough. Positions are only safe while the file holds
+	// exactly this conversation less the system prompt, which the added replies below would move.
+	if len(fixed) > 0 && a.opts.Session.Count() == len(a.history)-1 {
+		for _, i := range fixed {
+			if err := a.opts.Session.Revised(i-1, a.history[i]); err != nil {
+				a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
+				break
 			}
 		}
 	}

@@ -29,8 +29,14 @@ type Log struct {
 
 // header is the first line of a conversation that knows its project.
 type header struct {
-	Root string `json:"root"`
+	Root   string `json:"root"`
+	Format int    `json:"format,omitempty"` // how the rest of the file is written; 0 is a file from before this field
+	// A reader that cannot understand a newer format says so rather than rebuilding a conversation it
+	// cannot interpret, which is the difference between refusing to resume and resuming wrongly.
 }
+
+// format is this program's session format. Lines added to it raise the number.
+const format = 1
 
 // record is a message as the log keeps it: the message the server sees, and beside it the thinking
 // that came with it, which no request carries but a resumed session should still be able to show.
@@ -141,7 +147,13 @@ func (l *Log) Append(m llm.Message) error {
 // Cleared marks the saved conversation as started over: a resume reads what follows the mark, not
 // what came before it.
 func (l *Log) Cleared() error {
-	return l.write(mustJSON(boundary{Boundary: boundaryCleared}))
+	if err := l.write(mustJSON(boundary{Boundary: boundaryCleared})); err != nil {
+		return err
+	}
+	if l != nil {
+		l.messages = 0 // positions for the changes that follow count from here
+	}
+	return nil
 }
 
 // Folded saves what a fold left standing, so a resume starts from the recap rather than reloading
@@ -151,8 +163,46 @@ func (l *Log) Folded(f Fold) error {
 	for i, m := range f.Kept {
 		kept[i] = recordOf(m)
 	}
-	return l.write(mustJSON(boundary{Boundary: boundaryFolded, Kept: kept, Summary: f.Summary,
-		ReadFiles: f.ReadFiles, ModifiedFiles: f.ModifiedFiles, Dropped: f.Dropped, TokensBefore: f.TokensBefore}))
+	if err := l.write(mustJSON(boundary{Boundary: boundaryFolded, Kept: kept, Summary: f.Summary,
+		ReadFiles: f.ReadFiles, ModifiedFiles: f.ModifiedFiles, Dropped: f.Dropped, TokensBefore: f.TokensBefore})); err != nil {
+		return err
+	}
+	if l != nil {
+		l.messages = len(f.Kept) // a boundary restarts the positions the change lines point at
+	}
+	return nil
+}
+
+// Dropped takes a run of messages out of the conversation by position, which is what a trim does: it
+// deletes the oldest turns and writes nothing else. Saving the whole conversation for each one appends
+// a copy of everything - including the full text of every file read - to a file whose whole design is
+// to grow by one line at a time. A position outside what this log is tracking is an error rather than a
+// silent no: the caller then writes the conversation whole, which cannot delete the wrong turns.
+func (l *Log) Dropped(from, to int) error {
+	if l == nil {
+		return nil
+	}
+	if from < 0 || to <= from || to > l.messages {
+		return fmt.Errorf("session: position %d..%d is outside the %d messages saved", from, to, l.messages)
+	}
+	if err := l.write(mustJSON(change{Removed: []int{from, to}})); err != nil {
+		return err
+	}
+	l.messages -= to - from
+	return nil
+}
+
+// Revised puts one message in another's place, by position: what a repair does when it replaces a
+// call's unreadable arguments with an empty object.
+func (l *Log) Revised(at int, m llm.Message) error {
+	if l == nil {
+		return nil
+	}
+	if at < 0 || at >= l.messages {
+		return fmt.Errorf("session: position %d is outside the %d messages saved", at, l.messages)
+	}
+	r := recordOf(m)
+	return l.write(mustJSON(change{Revised: &at, Message: &r}))
 }
 
 // Rewritten saves the conversation whole, as it now stands: for a repair that moved messages about
@@ -162,7 +212,13 @@ func (l *Log) Rewritten(kept []llm.Message) error {
 	for i, m := range kept {
 		records[i] = recordOf(m)
 	}
-	return l.write(mustJSON(boundary{Boundary: boundaryRewritten, Kept: records}))
+	if err := l.write(mustJSON(boundary{Boundary: boundaryRewritten, Kept: records})); err != nil {
+		return err
+	}
+	if l != nil {
+		l.messages = len(kept)
+	}
+	return nil
 }
 
 // Learned keeps how many bytes the server counted as one token. A run that comes back without it
@@ -186,7 +242,7 @@ func (l *Log) write(lines ...[]byte) error {
 	defer f.Close()
 	var out []byte
 	if info, err := f.Stat(); err == nil && info.Size() == 0 && l.root != "" {
-		head, _ := json.Marshal(header{Root: l.root})
+		head, _ := json.Marshal(header{Root: l.root, Format: format})
 		out = append(out, append(head, '\n')...)
 	}
 	for _, line := range lines {
@@ -236,6 +292,11 @@ func load(path, root string, saved *Saved) ([]llm.Message, error) {
 		if i == 0 && json.Unmarshal([]byte(line), &h) == nil && h.Root != "" {
 			if root != "" && h.Root != root {
 				return nil, fmt.Errorf("session: %s belongs to %s; resume it with --root %s", filepath.Base(path), h.Root, h.Root)
+			}
+			if h.Format > format {
+				// a newer program wrote this one. Rebuilding it with the wrong reading of its lines gives back
+				// a conversation that looks fine and is wrong; saying so gives the user a run that works.
+				return nil, fmt.Errorf("session: %s was written by a newer ykode (format %d); this one reads %d", filepath.Base(path), h.Format, format)
 			}
 			continue
 		}

@@ -39,7 +39,6 @@ func (a *Agent) makeRoom() {
 	if messages == 0 {
 		return
 	}
-	a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
 	a.work.made(roomDropped(messages))
 	// naming what went is the difference between a model redoing a call on purpose and one that
 	// merely finds a hole in its memory and guesses at it
@@ -98,6 +97,7 @@ func (a *Agent) dropOldestUnit() []llm.Message {
 		a.histBytes -= gone
 		a.histCount -= len(unit)
 		a.meter.shrinkAnchor(gone) // the count the server gave still stands for what is left
+		a.logDropped(i, end)
 		return unit
 	}
 	return nil
@@ -114,6 +114,25 @@ func (a *Agent) sendingBytes() int {
 		a.recountBytes()
 	}
 	return a.wireSpecBytes() + a.histBytes
+}
+
+// logDropped writes the one line that says a run of messages went, rather than a copy of everything
+// left standing. A trim runs once per message it removes, and each whole copy carries the full text of
+// every file the model read: a session that folds and trims a dozen times carries a dozen copies of
+// itself in a file designed to grow one line at a time. The system prompt sits at history[0] and is
+// never saved, so the message at history index i stands at position i-1. When that mapping cannot be
+// trusted, the conversation is written whole instead: deleting the wrong turns on the way back costs a
+// great deal more than the bytes the partial line saves.
+func (a *Agent) logDropped(from, to int) {
+	// the partial line is only safe while the file holds exactly the conversation in front of us, less
+	// the system prompt: then position i-1 in the file is history[i] and nothing else. Anything that
+	// changed that without saying so falls back to the whole copy, which cannot be wrong.
+	if a.opts.Session.Count() == len(a.history)-1 {
+		if err := a.opts.Session.Dropped(from-1, to-1); err == nil {
+			return
+		}
+	}
+	a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
 }
 
 // messageBytes is what one message costs a request: the fields that go on the wire, which is what the

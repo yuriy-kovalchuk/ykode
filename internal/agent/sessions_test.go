@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,4 +177,83 @@ func lastContent(messages []llm.Message) string {
 		return ""
 	}
 	return messages[len(messages)-1].Content
+}
+
+// A trim takes the oldest turns out of the conversation and writes the whole thing back each time, so a
+// session that trims a dozen times carries a dozen copies of itself. The partial record the format
+// already replayed is the fix: one line naming positions, and a resume that reads back exactly what the
+// run is holding.
+func TestATrimSavesOneLineAndStillReadsBackWhole(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	log := session.New(sessions, "s20260101-140000.000", dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: log, Root: dir,
+		CtxSize: (len(SystemPrompt) + 900) / 4}, &captureSink{}, dir)
+	defer done()
+
+	a.add(llm.Message{Role: "user", Content: "read them all"})
+	for _, id := range []string{"c1", "c2", "c3"} {
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id,
+			Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f.go"}`)}}}})
+		a.add(llm.Message{Role: "tool", ToolCallID: id, Name: "read_file",
+			Content: strings.Repeat("x", 300)})
+	}
+	a.makeRoom()
+
+	if blocks := callBlocks(a.history); blocks >= 3 {
+		t.Fatalf("%d tool calls left, want the trim to have run", blocks)
+	}
+	sizeBefore := fileSize(t, log.Path())
+	a.add(llm.Message{Role: "user", Content: "and now again"})
+	a.makeRoom()
+	if grew := fileSize(t, log.Path()) - sizeBefore; grew > 4096 {
+		t.Errorf("one more trim grew the log by %d bytes, want a short line rather than a copy", grew)
+	}
+
+	back := loaded(t, log.Path(), dir)
+	if len(back) != len(a.history)-1 {
+		t.Fatalf("the log holds %d messages, the conversation holds %d", len(back), len(a.history)-1)
+	}
+	for i := range back {
+		if back[i].Content != a.history[i+1].Content || back[i].ToolCallID != a.history[i+1].ToolCallID {
+			t.Errorf("message %d differs: log %q/%q, live %q/%q", i, back[i].Role, back[i].Content,
+				a.history[i+1].Role, a.history[i+1].Content)
+		}
+	}
+}
+
+// A repaired call is a replacement at a position, not a new message: what the file reads back carries
+// the repair and nothing else has moved.
+func TestARepairedCallIsReadBackRepaired(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	log := session.New(sessions, "s20260101-140100.000", dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: log, Root: dir}, &captureSink{}, dir)
+	defer done()
+
+	a.add(llm.Message{Role: "user", Content: "read it"})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1",
+		Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"f`)}}}})
+	a.add(llm.Message{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: "the result"})
+	a.sanitizeHistory()
+
+	back := loaded(t, log.Path(), dir)
+	if len(back) != 3 {
+		t.Fatalf("the log holds %d messages, want the three that were said", len(back))
+	}
+	if args := string(back[1].ToolCalls[0].Function.Arguments); args != "{}" {
+		t.Errorf("the saved call holds %q, want the repaired arguments", args)
+	}
+	if back[2].Content != "the result" {
+		t.Errorf("a message after the repaired one moved: %q", back[2].Content)
+	}
+}
+
+func fileSize(t *testing.T, path string) int {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(raw)
 }
