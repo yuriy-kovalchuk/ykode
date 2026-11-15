@@ -225,7 +225,7 @@ func preview(s string) string {
 }
 
 // offTheWire is a conversation as the server should see it: r1, r2... are ykode's own ids for a
-// tool result, kept in the session file so recall can still name one after a resume, and a chat
+// tool result, kept in the session file so a resume puts it back in the same place, and a chat
 // API that has never heard of them should not be sent them.
 func offTheWire(messages []Message) []Message {
 	out := make([]Message, len(messages))

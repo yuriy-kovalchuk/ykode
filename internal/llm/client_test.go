@@ -290,10 +290,12 @@ func TestNoAuthHeaderWithoutAKey(t *testing.T) {
 	}
 }
 
+// a stream that started answering and then stops is dead; one that never started is waited for
 func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.(http.Flusher).Flush() // headers arrive, then silence
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"x"}}]}`+"\n\n")
+		w.(http.Flusher).Flush() // one chunk arrives, then silence
 		<-r.Context().Done()
 	}))
 	defer srv.Close()
@@ -301,8 +303,47 @@ func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
 	c := NewClient(srv.URL+"/v1", "")
 	c.Idle = 50 * time.Millisecond
 	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
-	if err == nil || !strings.Contains(err.Error(), "sent nothing for") {
-		t.Fatalf("ChatStream() error = %v, want the silence to be named", err)
+	if err == nil || !strings.Contains(err.Error(), "sent nothing for 50ms") {
+		t.Fatalf("ChatStream() error = %v, want the gap between tokens named", err)
+	}
+}
+
+// a server reading a prompt rewritten by a fold sends nothing for a while: that is not a dead
+// stream, so the wait for the first byte is not the wait between tokens
+func TestChatStreamWaitsForAServerToStartAnswering(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		time.Sleep(120 * time.Millisecond) // longer than a token gap, shorter than the opening wait
+		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"late"},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+		w.(http.Flusher).Flush()
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "")
+	c.Idle, c.opening = 40*time.Millisecond, 2*time.Second
+	turn, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("a slow start was cut off: %v", err)
+	}
+	if turn.Message.Content != "late" {
+		t.Fatalf("content = %q", turn.Message.Content)
+	}
+}
+
+// the opening wait still ends a stream that never began, and the error names that wait
+func TestChatStreamGivesUpWhenNoByteArrives(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush() // headers arrive, then nothing at all
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/v1", "")
+	c.Idle, c.opening = time.Minute, 50*time.Millisecond
+	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "sent nothing for 50ms") {
+		t.Fatalf("ChatStream() error = %v, want the opening wait named", err)
 	}
 }
 

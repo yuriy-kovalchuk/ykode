@@ -18,6 +18,9 @@ const (
 	// streamIdleTimeout bounds the silence between events: a cold 60k prompt can take minutes,
 	// so only a stream that stops producing altogether counts as dead.
 	streamIdleTimeout = 2 * time.Minute
+	// firstByteWait bounds the wait for a server to start answering at all. A prompt rewritten by a
+	// fold is read again before the first token, and a busy machine takes longer than any token gap.
+	firstByteWait = 10 * time.Minute
 
 	maxResponseBytes  = 8 << 20 // refuse a runaway server
 	maxErrorBodyBytes = 512     // how much of an error body to quote
@@ -30,6 +33,7 @@ type Client struct {
 	apiKey  string
 	http    *http.Client
 	Idle    time.Duration // longest silence a stream may keep before it counts as dead
+	opening time.Duration // how long the server may take to send its first byte
 
 	// Session names this conversation on every request. A server reached through a proxy can send
 	// one conversation to the slot that already holds its prompt cache; the server itself ignores it.
@@ -41,8 +45,9 @@ func NewClient(baseURL, apiKey string) *Client {
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		apiKey:  apiKey,
 		// no whole-request timeout: a long generation is fine, silence is not
-		http: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
-		Idle: streamIdleTimeout,
+		http:    &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
+		Idle:    streamIdleTimeout,
+		opening: firstByteWait,
 	}
 }
 
@@ -62,16 +67,17 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 
 // idleWatchdog cancels a stream that goes quiet, without capping how long it may take overall.
 type idleWatchdog struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	timer  *time.Timer
-	window time.Duration
+	ctx     context.Context
+	cancel  context.CancelFunc
+	timer   *time.Timer
+	idle    time.Duration
+	started bool // something has been read: the gap being watched is between bytes, not the first one
 }
 
-func newIdleWatchdog(ctx context.Context, window time.Duration) *idleWatchdog {
-	w := &idleWatchdog{window: window}
+func newIdleWatchdog(ctx context.Context, opening, idle time.Duration) *idleWatchdog {
+	w := &idleWatchdog{idle: idle}
 	w.ctx, w.cancel = context.WithCancel(ctx)
-	w.timer = time.AfterFunc(window, w.cancel)
+	w.timer = time.AfterFunc(opening, w.cancel)
 	return w
 }
 
@@ -87,7 +93,8 @@ type pokeReader struct {
 func (p *pokeReader) Read(buf []byte) (int, error) {
 	n, err := p.r.Read(buf)
 	if n > 0 {
-		p.w.timer.Reset(p.w.window)
+		p.w.started = true
+		p.w.timer.Reset(p.w.idle)
 	}
 	return n, err
 }
@@ -137,7 +144,7 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	if err != nil {
 		return empty, fmt.Errorf("encode request: %w", err)
 	}
-	watchdog := newIdleWatchdog(ctx, c.Idle)
+	watchdog := newIdleWatchdog(ctx, c.opening, c.Idle)
 	defer watchdog.stop()
 
 	resp, err := c.postChat(watchdog.ctx, payload)
@@ -149,7 +156,11 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	acc := newStreamAccumulator()
 	if err := readSSE(watchdog.wrap(resp.Body), acc, onDelta); err != nil {
 		if ctx.Err() == nil && watchdog.ctx.Err() != nil {
-			return empty, fmt.Errorf("server sent nothing for %s: the model may still be loading, or the connection died", c.Idle)
+			wait := c.opening
+			if watchdog.started {
+				wait = c.Idle
+			}
+			return empty, fmt.Errorf("server sent nothing for %s: the model may still be loading, or the connection died", wait)
 		}
 		return empty, err
 	}
