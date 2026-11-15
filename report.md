@@ -342,13 +342,24 @@ accepted anything, and a settings change typed mid-turn was refused by neither.
 
 ## Where the design closes doors it did not have to
 
-- **The yes flag can only be turned on.** No flag, setting or screen action turns it back off for a
-  run, and it suppresses the question for every write inside the project. There is no way to allow
-  file edits in a scripted run while keeping commands asked about.
-- **Answering yes once to an edit or a write allows that tool for the rest of the run, for any file.**
-  The remembering key for a file tool is the tool's name — not the path, not the change. The file
-  argues the narrowness of the rule at length for shell commands, where it genuinely is narrow, and
-  does not mention that the same rule for writes is as broad as it can be.
+- ~~The yes flag can only be turned on, and there is no way to allow file edits while keeping commands
+  asked about.~~ **Checked and clean on both counts.** The knob is on the settings screen and in
+  `settings.yaml`, so it turns off; a change through the screen writes `assume_yes: false` and the next
+  start reads it. And the allow list already does the finer thing: an entry naming `write_file` lets the
+  writes through while `exec_command` is still asked about, which is what a probe of that exact
+  configuration showed. What is true is narrower than the claim - there is no way to turn the flag off
+  for one run from the command line, since the flag is one-way by design - which is a small ergonomic
+  gap rather than a missing capability.
+- **Answering "always" once to an edit or a write allows that tool for the rest of the run, for any
+  file.** The key remembered from the prompt is the tool's name, not the path. **Left as it is, and
+  narrowed where it could be without changing what a person is agreeing to.** An existing test pins the
+  tool-level remembering on purpose, with a name that says so: the question asked on screen names the
+  tool, so the answer given covers the tool - quietly deciding it covered one file would be reading a
+  narrower consent into a wider question than the one that was asked. What was added is the narrow form
+  at the other end: an entry in `settings.yaml` may now name one file (`edit_file:src/a.go`), it matches
+  that file however the path is spelled, and it does not reach its neighbours. That is the granularity
+  the report asked for, available to whoever writes it down, without silently changing what clicking
+  "always" means.
 - **Whether a command needs asking about is decided by a list of shell punctuation.** The list is a
   good approximation of a shell and not the shell. A path containing a space makes a plain command look
   chained and forces an unnecessary question; anything the list misses makes a chained command look
@@ -358,11 +369,12 @@ accepted anything, and a settings change typed mid-turn was refused by neither.
   becomes `ls`, not `'my project' && ls` - and a quoted directory that is not the root is left exactly
   as it was, so `cd '/other place' && ls` is untouched. Checked by driving the function with quoted
   paths containing spaces, matching and not matching the root, and with a quoted argument further in.
-- **Saving an endpoint or a knob from the screen marks the project's settings file as trusted.** If the
-  file arrived distrusted — its dangerous keys withheld, the user warned and declining — the first save
-  retires the warning without ever showing what had been withheld. A cloned repository that asked to
-  skip confirmations asks once, is declined, and grants itself the moment the user touches the settings
-  screen.
+- ~~Saving an endpoint or a knob from the screen marks the project's settings file as trusted.~~
+  **Reproduced and fixed.** Declining a cloned project's withheld keys left the file unaccepted, and the
+  first `/settings` change into it recorded the file as accepted whole: held keys went from two to none
+  across one save of `max_turns`, and the cloned `base_url` and `assume_yes` took effect on the next
+  start with nothing ever accepted. The acceptance is now withheld when the file still asks for an
+  unsafe key the change itself did not write.
 - **Trust is keyed by directory path, not by project.** Two checkouts of one repository, or a directory
   reused after a version-control reset, carry the trust across without being looked at again.
 - **A trusted project sets conversation retention for the whole machine**, because every project's

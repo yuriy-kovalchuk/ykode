@@ -169,3 +169,51 @@ func TestAnAlwaysAnsweredOnAnOutsideCallIsNotRemembered(t *testing.T) {
 		t.Errorf("answering always for a path outside the project also allowed the write inside it: asked %d times, want 2", asked)
 	}
 }
+
+// An allow entry may name one file, which is the narrowest thing a person can consent to in advance.
+// The entry says one file; the run does not get to read it as the tool in general.
+func TestAnAllowEntryForOneFileCoversThatFileOnly(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("", "", "edit_file", []string{`{"path":"a.go","old_text":"x","new_text":"y"}`}, "tool_calls"),
+		sse("", "", "edit_file", []string{`{"path":"b.go","old_text":"x","new_text":"y"}`}, "tool_calls"),
+		sse("", "both", "", nil, "stop"),
+	}}
+	sink := &captureSink{decision: Refuse}
+	a, dir := newBuiltInAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000,
+		Allow: []string{"edit_file:a.go"}}, sink)
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.Ask(context.Background(), "edit both"); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	for _, ev := range sink.events {
+		if ev.Kind == Confirm {
+			asked = append(asked, ev.Args)
+		}
+	}
+	if len(asked) != 1 || strings.Contains(asked[0], `"a.go"`) {
+		t.Errorf("asked about %v, want only the file the entry does not name", asked)
+	}
+}
+
+// The same file written a different way is the same file: an entry is not a string match on how the
+// path happened to be spelled.
+func TestAFileEntryMatchesTheSameFileHoweverItIsSpelled(t *testing.T) {
+	p := newPermissions([]string{"edit_file:src/a.go"})
+	for _, args := range []string{`{"path":"src/a.go"}`, `{"path":"./src/a.go"}`, `{"path":"src/./a.go"}`} {
+		if !p.allows("edit_file", args) {
+			t.Errorf("%s was not covered by the entry for the same file", args)
+		}
+	}
+	for _, args := range []string{`{"path":"src/b.go"}`, `{"path":"src/a.go.bak"}`, `{"path":"other/a.go"}`} {
+		if p.allows("edit_file", args) {
+			t.Errorf("%s was covered by an entry for a different file", args)
+		}
+	}
+}

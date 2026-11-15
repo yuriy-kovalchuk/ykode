@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -30,10 +31,17 @@ func entryKey(entry string) string {
 	if entry == "" {
 		return ""
 	}
-	tool, rest, isCommand := strings.Cut(entry, ":")
+	tool, rest, isNamed := strings.Cut(entry, ":")
 	tool = strings.ToLower(strings.TrimSpace(tool))
-	if !isCommand {
+	if !isNamed {
 		return tool
+	}
+	if tool != "exec" {
+		key, ok := pathKey(tool, `{"path":"`+jsonQuoteInner(strings.TrimSpace(rest))+`"}`)
+		if !ok {
+			return ""
+		}
+		return key
 	}
 	if chainable(rest) {
 		return ""
@@ -43,6 +51,16 @@ func entryKey(entry string) string {
 		return "" // "exec:" on its own would stand for every command there is
 	}
 	return tool + ":" + strings.Join(words, " ")
+}
+
+// jsonQuoteInner puts a path from settings.yaml into a JSON string's inside, so the same reader takes
+// both a call's arguments and an entry written by hand.
+func jsonQuoteInner(s string) string {
+	raw, err := json.Marshal(s)
+	if err != nil || len(raw) < 2 {
+		return ""
+	}
+	return string(raw[1 : len(raw)-1])
 }
 
 // commandOf is the shell line behind an exec_command call, "" when the arguments are unreadable.
@@ -69,6 +87,26 @@ func callKey(name, args string) string {
 	return entryKey("exec:" + command)
 }
 
+// pathKey is the narrow form of a file entry: the tool and one file. An "always" answered on screen is
+// remembered at tool level, which is what the person answering was shown; a settings.yaml entry may be
+// written narrower still, and a run that was told to edit one file is not thereby told to edit every
+// file it reaches.
+func pathKey(name, args string) (string, bool) {
+	var in struct {
+		Path string `json:"path"`
+	}
+	switch name {
+	case "edit_file", "write_file":
+	default:
+		return "", false
+	}
+	if json.Unmarshal([]byte(args), &in) != nil || in.Path == "" {
+		return "", false
+	}
+	// cleaned and forward-slashed, so ./a/b.go and a/./b.go read as the entry a/b.go
+	return name + ":" + filepath.ToSlash(filepath.Clean(in.Path)), true
+}
+
 // chainable says whether a shell line does more than run one command: another command, a
 // substitution, or a file opened by the shell instead of by a tool.
 func chainable(command string) bool {
@@ -84,7 +122,14 @@ func (p *permissions) allows(name, args string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if name != "exec_command" {
-		return p.allowed[name]
+		if p.allowed[name] {
+			return true
+		}
+		// an entry written for one file covers that file and no other
+		if key, ok := pathKey(name, args); ok {
+			return p.allowed[key]
+		}
+		return false
 	}
 	command := commandOf(args)
 	if command == "" || chainable(command) {
