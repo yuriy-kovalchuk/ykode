@@ -26,3 +26,18 @@ func TestEveryRunGetsTheSamePlanAndSettings(t *testing.T) {
 		t.Error("the tools and the agent disagree on the result budget")
 	}
 }
+
+// A window named on the command line is a request about this server, not about whichever model gets
+// picked next: unmarked, a model switch replaces the number the user typed with the model's own.
+func TestAWindowNamedByTheFlagIsMarkedAsPinned(t *testing.T) {
+	_, pinned := Options(config.Config{CtxSize: 8000}, "m", 8000)
+	if !pinned.CtxPinned {
+		t.Error("--ctx 8000 did not mark the window as fixed")
+	}
+
+	// the window read from the server is not the user's number, so a model switch may replace it
+	_, chosen := Options(config.Config{}, "m", 32000)
+	if chosen.CtxPinned {
+		t.Error("a window the server volunteered was marked as one the user asked for")
+	}
+}
