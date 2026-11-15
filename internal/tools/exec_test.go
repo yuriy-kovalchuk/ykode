@@ -181,6 +181,52 @@ func TestPruneSpillLogsReportsAnUnreadableDirectory(t *testing.T) {
 	}
 }
 
+// One folder the sweep cannot remove must not strand everything listed after it: the whole point of
+// the sweep is that nothing too old is left behind, and a single stubborn folder would undo that at
+// every start.
+func TestPruneSpillLogsKeepsGoingPastOneItCannotRemove(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the permission this test relies on")
+	}
+	dir := t.TempDir()
+	old := time.Now().Add(-48 * time.Hour)
+
+	// named so the stubborn one is listed first: the point is that the sweep continues past it.
+	// written while the folder is still writable, then closed: a read-only folder holding a file
+	// cannot be emptied, so removing it fails
+	stubborn := filepath.Join(dir, spillPrefix+"a-stubborn")
+	if err := os.Mkdir(stubborn, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stubborn, "inside"), []byte("x"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stubborn, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	gone := filepath.Join(dir, spillPrefix+"b-going")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stubborn, 0o700) })
+	for _, each := range []string{stubborn, gone} {
+		if err := os.Chtimes(each, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removed, err := PruneSpillLogs(dir, 24*time.Hour)
+	if err == nil {
+		t.Error("a folder left behind was not reported")
+	}
+	if removed != 1 {
+		t.Errorf("removed %d, want the one folder that could go removed anyway", removed)
+	}
+	if _, err := os.Stat(gone); !os.IsNotExist(err) {
+		t.Error("the removable folder was stranded by the one that was not")
+	}
+}
+
 func TestCutCommandOutputLandsInTheConfiguredLogDir(t *testing.T) {
 	logs := t.TempDir()
 	tool := NewExec(t.TempDir())

@@ -174,9 +174,16 @@ func walkKeys(node *yaml.Node, prefix string, into map[string]bool) {
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		name := prefix + node.Content[i].Value
-		if node.Content[i+1].Kind == yaml.MappingNode {
+		switch node.Content[i+1].Kind {
+		case yaml.MappingNode:
 			walkKeys(node.Content[i+1], name+".", into)
-			continue
+		case yaml.ScalarNode:
+			// A key written with nothing in it is the file's way of leaving a choice to the program, not
+			// of making it: a settings file seeded before this key was dropped from the seed says so, and
+			// the program resolves an empty folder to its own, which the table then reported as chosen.
+			if node.Content[i+1].Value == "" {
+				continue
+			}
 		}
 		into[name] = true
 	}

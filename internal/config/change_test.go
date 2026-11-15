@@ -7,6 +7,65 @@ import (
 	"testing"
 )
 
+// a setting goes back to the built-in by taking the key out: the file states a choice by naming a key,
+// so absence is the only thing on disk that means "use the default". Writing an empty value would be a
+// value, and before this there was no way back for a knob once it had been set.
+func TestASettingGoesBackToItsDefaultByRemovingTheKey(t *testing.T) {
+	user := fakeHome(t)
+	path := filepath.Join(user, "settings.yaml")
+	writeSettings(t, path, "# mine\nmodel: qwen3-coder\nmax_turns: 9\ncontext:\n    safety_margin: 9000\n")
+
+	if _, _, err := Set(t.TempDir(), "context.safety_margin", "unset"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "safety_margin") || strings.Contains(body, "context:") {
+		t.Errorf("the key or the section it lived in was left behind:\n%s", body)
+	}
+	for _, keep := range []string{"# mine", "model: qwen3-coder", "max_turns: 9"} {
+		if !strings.Contains(body, keep) {
+			t.Errorf("%s was lost by taking the other key back:\n%s", keep, body)
+		}
+	}
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SafetyMargin != defaultSafety {
+		t.Errorf("safety margin = %d, want the built-in %d", cfg.SafetyMargin, defaultSafety)
+	}
+
+	if _, _, err := Set(t.TempDir(), "mouse", "unset"); err == nil {
+		t.Error("taking back a key the file never set passed silently")
+	}
+}
+
+// an empty value in a file already on disk is not a choice the user made. One key resolved to a folder
+// under home, and the settings table then told the user they had chosen that folder.
+func TestAKeyWrittenEmptyIsNotReportedAsChosen(t *testing.T) {
+	fakeHome(t)
+	writeSettings(t, filepath.Join(os.Getenv("YKODE_HOME"), "settings.yaml"), "tools:\n    command_log_dir: \"\"\n    read_lines: 400\n")
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CommandLogDir == "" {
+		t.Fatal("an empty log dir was left empty rather than resolved")
+	}
+	global, project := fileKeys(cfg)
+	if global["tools.command_log_dir"] || project["tools.command_log_dir"] {
+		t.Error("a key left empty was counted as one the file set")
+	}
+	if !global["tools.read_lines"] {
+		t.Error("a key with a value in it stopped being counted")
+	}
+}
+
 // a change is written where it belongs, and the file's comments and other keys survive it
 func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
 	user := fakeHome(t)

@@ -35,13 +35,15 @@ func PrepareHome(cfg config.Config) {
 	removed("conversation(s)", n, err)
 }
 
-// pruneSessions removes the conversations past their keep.
+// pruneSessions removes the conversations past their keep. One entry that cannot be read or removed is
+// passed over rather than ending the sweep: it is one conversation among many, and stopping here would
+// leave everything after it on disk at every future start.
 func pruneSessions(cfg config.Config) (int, error) {
 	entries, err := os.ReadDir(cfg.SessionDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) { // nothing saved yet is not an error
 		return 0, fmt.Errorf("clean old conversations in %s: %w", cfg.SessionDir, err)
 	}
-	removed := 0
+	removed, skipped := 0, 0
 	for _, e := range entries {
 		id, isSession := strings.CutSuffix(e.Name(), ".jsonl")
 		if !isSession {
@@ -49,15 +51,20 @@ func pruneSessions(cfg config.Config) (int, error) {
 		}
 		info, err := e.Info()
 		if err != nil {
-			return removed, fmt.Errorf("stat %s: %w", e.Name(), err)
+			skipped++
+			continue
 		}
 		if id == cfg.Session || time.Since(info.ModTime()) < cfg.KeepSessions { // --continue just picked it
 			continue
 		}
 		if err := os.Remove(filepath.Join(cfg.SessionDir, e.Name())); err != nil {
-			return removed, fmt.Errorf("remove %s: %w", e.Name(), err)
+			skipped++
+			continue
 		}
 		removed++
+	}
+	if skipped > 0 {
+		return removed, fmt.Errorf("%d saved conversation(s) in %s could not be read or removed", skipped, cfg.SessionDir)
 	}
 	return removed, nil
 }

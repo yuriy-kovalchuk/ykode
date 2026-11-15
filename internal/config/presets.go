@@ -31,7 +31,11 @@ func builtinSettings() fileSettings {
 	s.KeepSessions = p(hours(d.KeepSessions))
 	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
 	s.StreamIdle = p(int(d.StreamIdle / time.Second))
-	s.Tools.CommandLogDir, s.Tools.KeepCommandLogs = p(""), p(hours(d.KeepCommandLogs))
+	// command_log_dir is left out rather than seeded empty: normalize turns an empty value into the
+	// folder under home, and the settings table then reads that resolved path as a value the file set -
+	// the one seeded key that does not repeat its default verbatim, and so the only one reported as
+	// chosen. A key left out is the file's own way of saying "use the default".
+	s.Tools.KeepCommandLogs = p(hours(d.KeepCommandLogs))
 	return s
 }
 

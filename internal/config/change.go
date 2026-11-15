@@ -11,7 +11,9 @@ import (
 
 // Set writes one knob into the settings file this project uses, keeping the comments and every other
 // key, and names the file it wrote and whether that was the project's own. The value is checked
-// before anything is touched: a knob only takes what it can use.
+// before anything is touched: a knob only takes what it can use. Asking for no value at all takes the
+// key out, which is the only way a setting goes back to the built-in: a file states a choice by naming
+// a key, so absence, not an empty string, is what "use the default" looks like on disk.
 func Set(root, key, value string) (string, bool, error) {
 	k, ok := knobFor(key)
 	if !ok {
@@ -23,11 +25,20 @@ func Set(root, key, value string) (string, bool, error) {
 		return path, local, err
 	}
 	top := doc.Content[0]
-	if k.kind == kindList {
+	switch {
+	case k.kind == kindList && isUnset(value):
+		return path, local, fmt.Errorf("%s is a list: remove an entry by deleting its line in %s", k.key, path)
+	case k.kind == kindList:
 		if err := addToList(top, path, k.key, value); err != nil {
 			return path, local, err
 		}
-	} else {
+	case isUnset(value):
+		// A key left out is the file's way of asking for the built-in, and this is the only way back for a
+		// knob that has been set: writing an empty value would be a value, not an absence.
+		if !unsetPath(top, k.key) {
+			return path, local, fmt.Errorf("%s is not set in %s, so there is nothing to take back", k.key, path)
+		}
+	default:
 		scalar, err := scalarFor(k, value)
 		if err != nil {
 			return path, local, err
@@ -43,6 +54,58 @@ func Set(root, key, value string) (string, bool, error) {
 		}
 	}
 	return path, local, nil
+}
+
+// isUnset says the caller asked for a key to go back to its default rather than for a value.
+func isUnset(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "unset", "default", "clear":
+		return true
+	}
+	return false
+}
+
+// unsetPath takes one key out of the document, sections and all: a section left with no keys in it
+// would read as a choice the file no longer makes.
+func unsetPath(top *yaml.Node, key string) bool {
+	sections := strings.Split(key, ".")
+	parents := make([]*yaml.Node, 0, len(sections))
+	node := top
+	for _, section := range sections[:len(sections)-1] {
+		child := childOf(node, section)
+		if child == nil || child.Kind != yaml.MappingNode {
+			return false
+		}
+		parents = append(parents, node)
+		node = child
+	}
+	last := sections[len(sections)-1]
+	found := false
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == last {
+			node.Content = append(node.Content[:i], node.Content[i+2:]...)
+			found = true
+			break // the spliced slice shifts everything past i, so stop rather than step over it
+		}
+	}
+	if !found {
+		return false
+	}
+	// empty the sections a removed key leaves with nothing in them, from the deepest out
+	for i := len(parents); i > 0; i-- {
+		parent, section := parents[i-1], node
+		if len(section.Content) > 0 {
+			break
+		}
+		for j := 0; j+1 < len(parent.Content); j += 2 {
+			if parent.Content[j+1] == section {
+				parent.Content = append(parent.Content[:j], parent.Content[j+2:]...)
+				break
+			}
+		}
+		node = parent
+	}
+	return true
 }
 
 // scalarFor checks a value against the kind of its knob and returns the node to write.
@@ -78,7 +141,7 @@ func scalarFor(k knob, value string) (*yaml.Node, error) {
 		return text(hours(d)), nil
 	default:
 		if value == "" {
-			return nil, fmt.Errorf("%s cannot be empty; a setting left out goes back to its default by deleting its line", k.key)
+			return nil, fmt.Errorf("%s cannot be empty; /settings %s unset takes it back to its default", k.key, k.key)
 		}
 		return text(value), nil
 	}

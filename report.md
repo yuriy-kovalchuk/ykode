@@ -101,15 +101,12 @@ the conversation back byte for byte so the server's prompt cache still matches; 
 for the most common mutation defeats the file size and the read cost while preserving the letter of the
 principle. The partial record the format already supports, and already knows how to replay, is the fix.
 
-### The settings file the program writes for itself reports as a user choice, and a knob the screen
-### writes is refused by the loader
+### A settings file the program writes for itself reports a derived path as a user choice
 
-Two drifts between the settings layer's own copies of itself, both reproduced on a clean home.
-
-First, provenance. `internal/config/presets.go` seeds a file whose keys all repeat the built-in
-defaults, and `internal/config/catalogue.go` then suppresses the "came from the file" mark whenever a
-value equals the default. Every seeded key reports as unset except one, because `command_log_dir` is
-seeded empty and the loader replaces an empty directory with `<home>/logs`:
+`internal/config/presets.go` seeds a file whose keys all repeat the built-in defaults, and
+`internal/config/catalogue.go` suppresses the "came from the file" mark whenever a value equals the
+default. Every seeded key reports as unset except one, because `command_log_dir` is seeded empty and
+the loader replaces an empty directory with `<home>/logs`:
 
 ```
 keep_sessions          value="720h"      from=default
@@ -117,22 +114,25 @@ max_tokens             value="no cap"    from=default
 tools.command_log_dir  value=".../logs"  from=file      ← the only one
 ```
 
-So clearing a key by writing an empty value is indistinguishable from never having set it, and the
-settings table tells the user they chose a directory they never mentioned. The same file writes
-`max_tokens: 0`, which the loader reads as "no cap asked for" — the seeded file's most consequential
-key is written in the form that means unset.
+The settings table therefore tells a user they chose a directory they never mentioned. The cause is a
+key seeded with nothing in it, which is the one shape that is both a value in the file and no choice at
+all. Fixed by leaving that key out of the seed and by not counting an empty scalar as a key the file
+set, so a file already on disk is read correctly too.
 
-Second, grammar. `internal/config/settings.go` accepts a retention setting only in the spoken-duration
-form, while `internal/config/change.go` writes the kind the screen's own knob declares in the
-whole-number form. Reproduced:
+The deeper gap this exposed was the way back: a file states a choice by naming a key, so absence is the
+only thing on disk that means "use the default", and there was no way to reach absence. Writing an empty
+value was refused, and the refusal said to delete the line by hand. `Set` now takes `unset` (or nothing)
+as "take the key out", emptying a section the key leaves with nothing in it.
 
-```
-keep_sessions: 30
-→ settings.yaml: keep_sessions "30" is not a duration like "720h"
-```
-
-A knob edited through the screen's own value path produces a settings file the next start refuses to
-load, and a key the loader cannot parse stops the program at start-up rather than being reported.
+**A claim the first draft made and the code denies.** It said the screen writes a retention knob in the
+whole-number form the loader then refuses, so that `keep_sessions: 30` produced a settings file the next
+start could not read. It does not: both retention knobs are declared as durations, and `Set` rejects a
+bare number with `keep_sessions wants a length of time, like 720h` before anything is written. The
+whole-number kind is declared and never used — dead, not wrong. The part that did reproduce: a key the
+loader cannot parse, or one outside the schema, fails the start with the yaml error quoted
+(`field typo_key not found in type config.fileSettings`). It is reported and the program exits, but a
+single mistyped line in a settings file is a dead start rather than a warning next to the settings that
+did read, and a settings file the program wrote itself is the likeliest place for one.
 
 ### A model switch from the screen races the run
 

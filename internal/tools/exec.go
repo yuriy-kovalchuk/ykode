@@ -193,7 +193,9 @@ func (t Exec) aim() int {
 	return max(cap-budgetSlack, minAimBytes)
 }
 
-// PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went.
+// PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went. One entry
+// that cannot be read or removed is passed over rather than ending the sweep: it is one folder among
+// many, and stopping here would leave everything after it on disk for every future start.
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -202,22 +204,26 @@ func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("clean old files in %s: %w", dir, err)
 	}
-	removed := 0
+	removed, skipped := 0, 0
 	for _, e := range entries {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), spillPrefix) {
 			continue
 		}
 		info, err := e.Info()
-		if err != nil {
-			return removed, fmt.Errorf("stat %s: %w", e.Name(), err)
-		}
-		if time.Since(info.ModTime()) < maxAge {
+		if err != nil || time.Since(info.ModTime()) < maxAge {
+			if err != nil {
+				skipped++
+			}
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-			return removed, fmt.Errorf("remove %s: %w", e.Name(), err)
+			skipped++
+			continue
 		}
 		removed++
+	}
+	if skipped > 0 {
+		return removed, fmt.Errorf("%d old log folder(s) in %s could not be read or removed", skipped, dir)
 	}
 	return removed, nil
 }
