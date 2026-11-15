@@ -35,7 +35,7 @@ func Commands() []CommandSpec {
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
 		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it: the project's .ykode/settings.yaml when it has one, the global file when it has not"},
 		{Name: "/create-local-setting", Note: "make .ykode/settings.yaml for this project; /settings then changes it instead of the global file", Waits: true},
-		{Name: "/sessions", Note: "the conversations saved for this project; on the screen, pick one and this run continues it"},
+		{Name: "/sessions", Note: "the conversations saved for this project; on the screen, pick one and this run continues it", Waits: true},
 		{Name: "/plan", Note: "the steps of the task the model is working through, as it last wrote them"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching, read from a panel of its own"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},

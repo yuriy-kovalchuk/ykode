@@ -88,10 +88,6 @@ const noLocalFile = "no .ykode/settings.yaml in this project: this changes the g
 // createLocal gives the project a settings file of its own, starting from the server and model this
 // run is using, and reads the settings again so the screen shows where each value comes from.
 func (m *model) createLocal() {
-	if m.running {
-		m.log.notice("that waits for the turn to finish: press esc to stop this one first")
-		return
-	}
 	path, err := config.CreateLocal(m.cfg.Root, m.cfg.BaseURL, m.agent.Model())
 	if err != nil {
 		m.err = err.Error()

@@ -22,11 +22,26 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 
 	if strings.HasPrefix(text, "/") {
 		name, _, _ := strings.Cut(text, " ")
-		if name == "/compact" && !m.running {
+		if m.running && (name == "/exit" || name == "/quit") {
+			m.cancelRun() // leaving cancels the turn rather than racing it
+		}
+		// One owner for the waiting rule: the table says which commands wait for the turn, and the gate
+		// runs before any handler, screen's own included. Each handler used to check m.running itself,
+		// which is eight places that had to remember, and a command added without one would act on a
+		// conversation a request is in the middle of sending.
+		if m.running && !agent.CommandIsSafeDuringATurn(text) {
+			m.log.notice("that waits for the turn to finish: press esc to stop this one first")
+			m.refresh()
+			return m, nil
+		}
+		if name == "/compact" {
+			// the gate above is what keeps this from happening under a turn: the table marks /compact as
+			// waiting, and the fold replaces the turns a request is being built from
 			return m, m.compact()
 		}
 		if name == "/create-local-setting" {
-			// the project gets its own settings file, and every change after this lands in it
+			// the project gets its own settings file, and every change after this lands in it. The table
+			// marks it as waiting, so the gate above is what holds it while a turn runs.
 			m.createLocal()
 			m.refresh()
 			return m, nil
@@ -45,12 +60,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		if name == "/sessions" {
 			// the screen answers this one too: its list can put a saved conversation in this run's
 			// place, which a front end without a screen leaves to --continue. It would replace the
-			// history a request is in the middle of sending, so a running turn waits.
-			if m.running {
-				m.log.notice("that waits for the turn to finish: press esc to stop this one first")
-				m.refresh()
-				return m, nil
-			}
+			// history a request is in the middle of sending, so the gate above is what holds it.
 			m.openSessions()
 			m.refresh()
 			return m, nil
@@ -61,14 +71,6 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			m.picker = m.sessionReport()
 			m.refresh()
 			return m, nil
-		}
-		if m.running && !agent.CommandIsSafeDuringATurn(text) {
-			m.log.notice("that waits for the turn to finish: press esc to stop the turn first")
-			m.refresh()
-			return m, nil
-		}
-		if m.running && (name == "/exit" || name == "/quit") {
-			m.cancelRun() // leaving cancels the turn rather than racing it
 		}
 		if name == "/help" {
 			// the commands, narrowable, with enter writing one of them in the prompt box
