@@ -442,3 +442,19 @@ func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
 		t.Errorf("requests carried %v, want the run on both", seen)
 	}
 }
+
+// The second failure of a retried turn is often the blander of the two; the first one usually names
+// the reason, so it travels with the error the user reads.
+func TestARetriedFailureKeepsTheFirstReason(t *testing.T) {
+	c, attempts := flakyServer(t, 5, http.StatusServiceUnavailable, "model is loading")
+	_, _, err := collect(t, c)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if attempts.Load() != chatAttempts {
+		t.Errorf("attempts = %d, want %d", attempts.Load(), chatAttempts)
+	}
+	if !strings.Contains(err.Error(), "model is loading") {
+		t.Errorf("%v: want the first failure's reason kept beside the second", err)
+	}
+}

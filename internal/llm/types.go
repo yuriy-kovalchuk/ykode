@@ -215,6 +215,20 @@ func (e apiError) Error() string {
 	return fmt.Sprintf("code %v", e.Code)
 }
 
+// UnmarshalJSON takes an error written either as an object or as a bare string. OpenAI-compatible
+// servers are not consistent about this, and refusing the string form turns a server saying
+// "model is loading" into a JSON decode error the user cannot act on - and hides the one phrase the
+// retry path knows how to explain.
+func (e *apiError) UnmarshalJSON(raw []byte) error {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		e.Message = text
+		return nil
+	}
+	type asObject apiError // a different type: unmarshalling into apiError here would recurse
+	return json.Unmarshal(raw, (*asObject)(e))
+}
+
 // preview keeps a diagnostic short and on one line.
 func preview(s string) string {
 	s = strings.Join(strings.Fields(s), " ")

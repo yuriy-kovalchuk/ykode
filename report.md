@@ -482,7 +482,11 @@ findings were tested and which were not.
   the fix both stand; the severity does not.
 - **Checked and clean** — symlink confinement through the project root is refused by the operating
   system's directory-handle check for both reads and writes; the file listing's truncation count is
-  correct; and the manually triggered fold does run the history repair.
+  correct; the manually triggered fold does run the history repair; and the idle watchdog's flag is not
+  raced — the timer callback touches only the cancel and the timer, never that flag.
+- **Called a bug and is a decision** — the order tool calls come back in. An existing test pins it with a
+  comment explaining the intent. The fix was reverted rather than the test rewritten: a test that
+  documents a deliberate choice is evidence about the design, and it outranks a finding.
 
 ## Smaller defects
 
@@ -495,8 +499,9 @@ findings were tested and which were not.
   repeats one long sentence ten times in an answer has the reply cancelled and its partial text
   discarded.
 - A tool-call fragment whose index arrives out of arrival order is stitched into the right call but
-  handed back in arrival order: the accumulator keys by index and orders by first arrival. Reproduced —
-  index one arriving before index zero comes back as `second,first`.
+  handed back in arrival order. **Not a defect on inspection**: an existing test pins that ordering with a
+  comment saying the call that started first comes back first, which is a deliberate choice about what a
+  server's interleaving means. Recorded here because the first draft called it a bug and it is not one.
 - A stream that ends with no `[DONE]` and no finish reason is reported as possibly cut short. That is
   right for a dropped connection and wrong for servers that simply never send either marker, and the run
   cannot tell the two apart.

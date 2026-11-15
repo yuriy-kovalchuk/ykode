@@ -15,34 +15,35 @@ import (
 const finishLength = "length"
 
 type Agent struct {
-	client        *llm.Client
-	tools         *tools.Registry
-	model         string
-	opts          Options
-	sink          Sink
-	callSeq       int          // numbers the r1, r2... ids the summaries share
-	prompt        string       // the system message, built once so the cached prefix never moves
-	branch        string       // the branch the prompt was built on, which the screen can show at once
-	task          string       // the prompt being answered, which compaction keeps word for word
-	environment   string       // the date and git state the last ask carried, so an ask that changes nothing repeats nothing
-	readFiles     []string     // files the folded turns read, oldest first
-	modifiedFiles []string     // and the ones they wrote or edited
-	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
-	perms         *permissions // what the user has already agreed to keep allowing
-	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
-	turn          int          // the round-trip currently running, carried on every event
-	history       []llm.Message
-	seenThrough   int // how far the history has reached the model: a result past it was never read
-	meter         meter
-	specBytes     int         // what the tool list costs every request, counted once
-	savedRatio    float64     // the byte ratio the session log last heard of
-	sincePlan     int         // tool calls since the model last touched its plan
-	planReminded  bool        // the stale-plan line has been said for this plan already
-	usageMu       sync.Mutex  // the numbers a front end reads while a turn runs elsewhere
-	report        Usage       // what the conversation cost as of the last finished turn
-	work          contextWork // what this ask had to do to fit the conversation in, for a front end to say so
-	waitingMu     sync.Mutex  // asks typed while a turn ran, taken between round-trips
-	waiting       []string    // what the user typed into a run that is still going
+	client          *llm.Client
+	tools           *tools.Registry
+	model           string
+	opts            Options
+	sink            Sink
+	callSeq         int          // numbers the r1, r2... ids the summaries share
+	prompt          string       // the system message, built once so the cached prefix never moves
+	branch          string       // the branch the prompt was built on, which the screen can show at once
+	task            string       // the prompt being answered, which compaction keeps word for word
+	environment     string       // the date and git state the last ask carried, so an ask that changes nothing repeats nothing
+	readFiles       []string     // files the folded turns read, oldest first
+	modifiedFiles   []string     // and the ones they wrote or edited
+	compactedAt     int          // tool calls in the history when it was last folded; -1 = never
+	perms           *permissions // what the user has already agreed to keep allowing
+	sessionBroken   atomic.Bool  // the session log failed once: say so once, not per message
+	unfinishedNoted atomic.Bool  // a reply that ended without saying it was finished: said once per run
+	turn            int          // the round-trip currently running, carried on every event
+	history         []llm.Message
+	seenThrough     int // how far the history has reached the model: a result past it was never read
+	meter           meter
+	specBytes       int         // what the tool list costs every request, counted once
+	savedRatio      float64     // the byte ratio the session log last heard of
+	sincePlan       int         // tool calls since the model last touched its plan
+	planReminded    bool        // the stale-plan line has been said for this plan already
+	usageMu         sync.Mutex  // the numbers a front end reads while a turn runs elsewhere
+	report          Usage       // what the conversation cost as of the last finished turn
+	work            contextWork // what this ask had to do to fit the conversation in, for a front end to say so
+	waitingMu       sync.Mutex  // asks typed while a turn ran, taken between round-trips
+	waiting         []string    // what the user typed into a run that is still going
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {

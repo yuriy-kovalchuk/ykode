@@ -276,9 +276,11 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	}
 	a.publishUsage()
 	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
-	if turn.Unfinished {
-		// accepted, since some servers never send [DONE], but a dropped connection looks the same
-		a.tell("the server ended the reply without saying it was finished; it may be cut short")
+	if turn.Unfinished && !a.unfinishedNoted.Swap(true) {
+		// A dropped connection and a server that never sends [DONE] look identical from here, so the
+		// first one is worth saying and every one after it is noise: a server that ends all its replies
+		// this way would otherwise warn once per round-trip for the whole session.
+		a.tell("the server ended a reply without saying it was finished; it may be cut short, or this server may simply never say so")
 	}
 	msg := repair(turn.Message)
 	if a.opts.SendReasoning {

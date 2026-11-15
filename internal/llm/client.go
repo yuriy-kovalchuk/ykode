@@ -67,11 +67,15 @@ func (c *Client) newRequest(ctx context.Context, method, url string, body io.Rea
 
 // idleWatchdog cancels a stream that goes quiet, without capping how long it may take overall.
 type idleWatchdog struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	timer   *time.Timer
-	idle    time.Duration
-	started bool // something has been read: the gap being watched is between bytes, not the first one
+	ctx    context.Context
+	cancel context.CancelFunc
+	timer  *time.Timer
+	idle   time.Duration
+	// started says something has been read, so the gap being watched is between bytes and not the first
+	// one. Only the reading goroutine writes it, and it is only read after that goroutine has returned
+	// from readSSE, so it needs no lock - which is worth stating, because the timer fires on its own
+	// goroutine and touches everything else in here.
+	started bool
 }
 
 func newIdleWatchdog(ctx context.Context, opening, idle time.Duration) *idleWatchdog {
@@ -175,14 +179,21 @@ const retryWait = 500 * time.Millisecond
 
 // postChat rejects any response that is not an event stream, so the rest handles one shape.
 func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, error) {
+	var firstErr error
 	for attempt := 1; ; attempt++ {
 		resp, err := c.sendChat(ctx, payload)
 		if err == nil {
 			return resp, nil
 		}
 		if attempt == chatAttempts || !couldPassLater(err) {
+			if attempt > 1 && firstErr != nil {
+				// the first failure is usually the one that explains itself - "connection refused" on a
+				// server that is swapping a model out, where the second reads as a bare timeout
+				return nil, fmt.Errorf("%w (after a first failure: %v)", err, firstErr)
+			}
 			return nil, err
 		}
+		firstErr = err
 		select {
 		case <-time.After(retryWait):
 		case <-ctx.Done():

@@ -238,3 +238,63 @@ func TestAServerThatOnlyCountsUsageStillReportsTheCache(t *testing.T) {
 		t.Errorf("read %+v, want a prompt of 1200 with 1000 cached and 7 written", got)
 	}
 }
+
+// A server may send its counts in one chunk and its speeds in another, in either order. Assigning a
+// timings block whole threw the counts away, which left the run with no window budget on a server that
+// had reported one perfectly well.
+func TestCountsSurviveATimingsChunkThatCarriesOnlySpeeds(t *testing.T) {
+	acc := newStreamAccumulator()
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5000,\"completion_tokens\":20,\"prompt_tokens_details\":{\"cached_tokens\":4000}}}\n\n" +
+		"data: {\"choices\":[],\"timings\":{\"predicted_ms\":100,\"predicted_per_second\":30}}\n\n" +
+		"data: [DONE]\n\n"
+	if err := readSSE(strings.NewReader(stream), acc, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := acc.turn().Timings
+	if got.PromptTokens() != 5000 || got.CacheN != 4000 || got.PredictedN != 20 {
+		t.Errorf("read %+v, want the usage counts kept beside the timings speeds", got)
+	}
+	if got.PredictedPerSecond != 30 {
+		t.Errorf("the speed the timings chunk brought was lost: %+v", got)
+	}
+}
+
+// The same in the other order, and with a server that reports a cached share but no total: the part
+// that was never said stays unknown rather than being invented.
+func TestCountsArrivingInEitherOrder(t *testing.T) {
+	acc := newStreamAccumulator()
+	stream := "data: {\"choices\":[],\"timings\":{\"cache_n\":120,\"prompt_n\":900,\"predicted_n\":5,\"prompt_per_second\":400}}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":99999,\"completion_tokens\":7}}\n\n" +
+		"data: [DONE]\n\n"
+	if err := readSSE(strings.NewReader(stream), acc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := acc.turn().Timings; got.PromptTokens() != 1020 || got.PredictedN != 5 {
+		t.Errorf("read %+v, want the first block's counts to stand and its predicted count kept", got)
+	}
+
+	partial := newStreamAccumulator()
+	if err := readSSE(strings.NewReader("data: {\"usage\":{\"completion_tokens\":9,\"prompt_tokens_details\":{\"cached_tokens\":4000}}}\n\ndata: [DONE]\n\n"), partial, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := partial.turn().Timings; got.PromptTokens() != 0 || got.PredictedN != 9 {
+		t.Errorf("read %+v, want a cached share without a total to leave the prompt unknown", got)
+	}
+}
+
+// A server that writes the stream error as a bare string was a decode failure before: the message a
+// user needed became a JSON type error, and the phrase the retry path explains was never seen.
+func TestAStreamErrorWrittenAsAStringStillReachesTheUser(t *testing.T) {
+	acc := newStreamAccumulator()
+	err := readSSE(strings.NewReader("data: {\"error\":\"the model is loading\"}\n\n"), acc, nil)
+	if err == nil {
+		t.Fatal("a stream error was accepted as an empty reply")
+	}
+	if !strings.Contains(err.Error(), "the model is loading") {
+		t.Errorf("%v: want the server's own words", err)
+	}
+	if !modelIsLoading(err.Error()) {
+		t.Errorf("%v: want a loading server to be recognised as one worth asking again", err)
+	}
+}
