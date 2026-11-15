@@ -31,8 +31,15 @@ func diffText(oldText, newText string) string {
 // held twice over; the model's own copy of the change is capped much lower, and separately.
 const changeMaxLines = 3000
 
-// wholeChange is a change as a person reads it, not as the model is charged for it: every hunk, with
-// no cap on bytes. It is "" when nothing changed.
+// changeMaxBytes caps one change the other way, because lines are not a measure of size: a minified
+// file is a handful of very long lines, and a change to it is the whole file twice over. Measured on a
+// two megabyte single-line file each way, the change handed to the screen was four megabytes in three
+// lines - the line cap never engaged, and that string is held for the life of the run under the row
+// that shows it.
+const changeMaxBytes = 200_000
+
+// wholeChange is a change as a person reads it, not as the model is charged for it: every hunk, capped
+// in lines and in bytes. It is "" when nothing changed.
 func wholeChange(oldText, newText string) string {
 	if oldText == newText {
 		return ""
@@ -48,10 +55,24 @@ func wholeChange(oldText, newText string) string {
 		lines = strings.Split(strings.TrimRight(diff, "\n"), "\n")
 	}
 	if len(lines) <= changeMaxLines {
-		return strings.Join(lines, "\n")
+		return cutChange(strings.Join(lines, "\n"))
 	}
-	return strings.Join(lines[:changeMaxLines], "\n") +
+	return cutChange(strings.Join(lines[:changeMaxLines], "\n")) +
 		fmt.Sprintf("\n[… %d more lines of the change; the file on disk has all of it]", len(lines)-changeMaxLines)
+}
+
+// cutChange takes off the bytes a line count does not catch. The cut lands on a line break where one
+// is near: half a line of minified JavaScript reads as a mistake rather than as a cut, and the notice
+// that follows says what is missing either way.
+func cutChange(change string) string {
+	if len(change) <= changeMaxBytes {
+		return change
+	}
+	cut := change[:changeMaxBytes]
+	if at := strings.LastIndexByte(cut, '\n'); at > changeMaxBytes/2 {
+		cut = cut[:at]
+	}
+	return cut + fmt.Sprintf("\n[… %d more bytes of the change; the file on disk has all of it]", len(change)-len(cut))
 }
 
 // blockChange is the differing middle of two files as one hunk: the lines that went, then the lines
