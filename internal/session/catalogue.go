@@ -57,7 +57,9 @@ func describe(path string) (Conversation, error) {
 	if err != nil {
 		return Conversation{}, err
 	}
-	defer f.Close()
+	// a read whose file would not close has already given its lines: the catalogue is
+	// listing conversations, not writing one, so there is nothing unsent to lose
+	defer func() { _ = f.Close() }()
 
 	c := Conversation{ID: strings.TrimSuffix(filepath.Base(path), ".jsonl")}
 	if info, err := f.Stat(); err == nil {

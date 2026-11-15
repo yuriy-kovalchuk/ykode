@@ -61,7 +61,10 @@ func Run(args []string, version string) error {
 	if err != nil {
 		return fmt.Errorf("open root %q: %w", cfg.Root, err)
 	}
-	defer root.Close()
+	// releasing the handle cannot fail in any way this run could act on by then, and there is no
+	// result to lose: every tool has finished and the run is returning. Named as a discard so the
+	// reading is that this was weighed, not that it was missed.
+	defer func() { _ = root.Close() }()
 
 	instructions, err := agent.LoadInstructions(home.Dir(), cfg.Root, agent.InstructionBytes(ctxSize))
 	if err != nil {

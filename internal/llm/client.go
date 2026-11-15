@@ -114,7 +114,7 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, statusError(resp)
 	}
@@ -156,7 +156,7 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	if err != nil {
 		return empty, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	acc := newStreamAccumulator()
 	if err := readSSE(watchdog.wrap(resp.Body), acc, onDelta); err != nil {
@@ -216,12 +216,12 @@ func (c *Client) sendChat(ctx context.Context, payload []byte) (*http.Response, 
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, statusError(resp)
 	}
 	// a proxy may answer a streaming request with one JSON body, which as SSE looks like an empty reply
 	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "application/json") {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, fmt.Errorf("server answered %s instead of an event stream: %s", ct, preview(quotedBody(resp)))
 	}
 	return resp, nil

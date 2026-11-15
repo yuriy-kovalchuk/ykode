@@ -56,14 +56,6 @@ func describeWith[T any](args string, words func(T) string) string {
 	return words(in)
 }
 
-// joined is a phrase and its object, or nothing when there is no object.
-func joined(lead, object string) string {
-	if object == "" {
-		return ""
-	}
-	return lead + object
-}
-
 // editShape is a call that changes a file: how many places, and how the lines move.
 func editShape(in editInput) string {
 	pairs := []editPair{}
@@ -107,8 +99,6 @@ func lines(text string) int {
 	}
 	return strings.Count(strings.TrimRight(text, "\n"), "\n") + 1
 }
-
-func quote(s string) string { return `"` + s + `"` }
 
 // brief is the fallback for a call this package does not know, or arguments it cannot read.
 func brief(args string) string {

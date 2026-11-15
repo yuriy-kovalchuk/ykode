@@ -20,10 +20,37 @@ type View struct {
 	colored  bool
 	thinking bool
 	answered bool
+	// failed is the first write that did not land. Every write here is checked and kept rather than
+	// dropped, because a run piped into something that stops reading early loses its answer in silence:
+	// the writer fails, nothing is said, and the exit code says the task went fine. One error is enough
+	// to say so with - after the first EPIPE every later write fails the same way.
+	failed error
 }
 
 func NewView(out, log io.Writer) *View {
 	return &View{out: out, log: log, colored: isTerminal(log)}
+}
+
+// Err is the first write that failed, nil when everything reached its stream. A caller that can report
+// a failure - the single-task path, which has an exit code to set - asks this after the run.
+func (v *View) Err() error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.failed
+}
+
+// say writes to the log, keeping the first failure.
+func (v *View) say(format string, args ...any) {
+	if _, err := fmt.Fprintf(v.log, format, args...); err != nil && v.failed == nil {
+		v.failed = err
+	}
+}
+
+// tell writes the answer, keeping the first failure.
+func (v *View) tell(text string) {
+	if _, err := io.WriteString(v.out, text); err != nil && v.failed == nil {
+		v.failed = err
+	}
 }
 
 // Emit renders one event; only a Confirm event cares about what comes back.
@@ -34,43 +61,43 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 	switch ev.Kind {
 	case agent.Thinking:
 		if !v.thinking {
-			fmt.Fprint(v.log, v.dim()+"thinking: ")
+			v.say("%s", v.dim()+"thinking: ")
 			v.thinking = true
 		}
-		fmt.Fprint(v.log, ev.Text)
+		v.say("%s", ev.Text)
 	case agent.Answer:
 		v.endThinking()
-		fmt.Fprint(v.out, ev.Text)
+		v.tell(ev.Text)
 		v.answered = true
 	case agent.TurnEnd:
 		v.endThinking()
 		if v.answered {
-			fmt.Fprintln(v.out)
+			v.tell("\n")
 			v.answered = false
 		}
 		if ev.Stats.PromptTokens == 0 && ev.Stats.OutputTokens == 0 {
 			return agent.Allow // server gave no timings
 		}
-		fmt.Fprintf(v.log, "  .. in %d (cached %d) / out %d · prefill %.0f tok/s · decode %.0f tok/s · %s\n",
+		v.say("  .. in %d (cached %d) / out %d · prefill %.0f tok/s · decode %.0f tok/s · %s\n",
 			ev.Stats.PromptTokens, ev.Stats.CachedTokens, ev.Stats.OutputTokens,
 			ev.Stats.PrefillTokSec, ev.Stats.DecodeTokSec, ev.Stats.FinishReason)
 	case agent.ToolStart:
 		v.endThinking()
-		fmt.Fprintf(v.log, "  -> %s %s\n", ev.Tool, flat(ev.Args))
+		v.say("  -> %s %s\n", ev.Tool, flat(ev.Args))
 	case agent.ToolEnd:
-		fmt.Fprintf(v.log, "  <- %s %s\n", ev.Tool, flat(ev.Text))
+		v.say("  <- %s %s\n", ev.Tool, flat(ev.Text))
 	case agent.ToolFail:
-		fmt.Fprintf(v.log, "  !! %s: %s\n", ev.Tool, ev.Text)
+		v.say("  !! %s: %s\n", ev.Tool, ev.Text)
 	case agent.Summary:
 		v.endThinking()
-		fmt.Fprintln(v.log, "  .. the older turns, folded into:")
+		v.say("  .. the older turns, folded into:\n")
 		for _, line := range strings.Split(ev.Text, "\n") {
-			fmt.Fprintf(v.log, "     %s\n", line)
+			v.say("     %s\n", line)
 		}
 	case agent.Notice:
-		fmt.Fprintf(v.log, "  .. %s\n", ev.Text)
+		v.say("  .. %s\n", ev.Text)
 	case agent.Confirm:
-		fmt.Fprintf(v.log, "  !! %s needs a yes: run with --yes\n", ev.Tool)
+		v.say("  !! %s needs a yes: run with --yes\n", ev.Tool)
 		return agent.Refuse
 	}
 	return agent.Allow
@@ -78,7 +105,7 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 
 func (v *View) endThinking() {
 	if v.thinking {
-		fmt.Fprint(v.log, v.reset()+"\n")
+		v.say("%s", v.reset()+"\n")
 		v.thinking = false
 	}
 }

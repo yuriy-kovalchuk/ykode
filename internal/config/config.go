@@ -70,7 +70,8 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--send-reasoning] [--yes] [-p TASK] [--continue ID] [--version]")
+		// a help text that cannot be written has nowhere to go and no result to change
+		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--send-reasoning] [--yes] [-p TASK] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")

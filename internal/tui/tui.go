@@ -199,7 +199,9 @@ func Run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) error
 // run is Run with the program options a test needs: a fake terminal instead of a real one. The
 // terminal is named on the same writer the program draws to, so a test sees the tab being named too.
 func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, opts ...tea.ProgramOption) error {
-	io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame
+	// Naming the tab is decoration: a terminal that will not take it still gets the session, and the
+	// program writes its own errors to the same place and reports them through Run.
+	_, _ = io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame
 	m := newModel(ctx, a, hub, cfg)
 	program := tea.NewProgram(m, opts...)
 	// everything a run reports reaches the screen through the hub: one wire, set before the

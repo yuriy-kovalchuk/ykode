@@ -227,8 +227,10 @@ func (l *Log) Learned(bytesPerToken float64) error {
 	return l.write(mustJSON(change{BytesPerToken: bytesPerToken}))
 }
 
-// write appends JSON lines, opening the file with its project header when it is new.
-func (l *Log) write(lines ...[]byte) error {
+// write appends JSON lines, opening the file with its project header when it is new. The result is
+// named so the deferred Close can report a failure the write did not: on a network mount a write the
+// filesystem accepted and a close that then failed is a record that never reached the disk.
+func (l *Log) write(lines ...[]byte) (err error) {
 	if l == nil {
 		return nil
 	}
@@ -239,17 +241,21 @@ func (l *Log) write(lines ...[]byte) error {
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("session: close %s: %w", l.path, cerr)
+		}
+	}()
 	var out []byte
-	if info, err := f.Stat(); err == nil && info.Size() == 0 && l.root != "" {
+	if info, statErr := f.Stat(); statErr == nil && info.Size() == 0 && l.root != "" {
 		head, _ := json.Marshal(header{Root: l.root, Format: format})
 		out = append(out, append(head, '\n')...)
 	}
 	for _, line := range lines {
 		out = append(out, append(line, '\n')...)
 	}
-	if _, err := f.Write(out); err != nil {
-		return fmt.Errorf("session: %w", err)
+	if _, werr := f.Write(out); werr != nil {
+		return fmt.Errorf("session: %w", werr)
 	}
 	return nil
 }
