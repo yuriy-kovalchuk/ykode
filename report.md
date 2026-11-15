@@ -1,0 +1,558 @@
+# ykode — evaluation
+
+Scope: the whole module — one command, ten internal packages, roughly thirty thousand lines including
+tests. Built, vetted, formatting-checked, tested (plain and with the race detector), measured for
+coverage, linted, cross-compiled for another operating system, and read end to end: the agent loop,
+the tool layer, the transport, the settings layers, the session log, the screen. Findings marked as
+reproduced were confirmed by throwaway tests written in the project's own style, then deleted.
+
+Numbers: tests green with and without the race detector. Coverage — agent ninety-two, transport
+ninety-three, session ninety, settings ninety, screen ninety, tool layer eighty-six, wiring thirty.
+Total eighty-eight.
+
+Nothing here is a crisis. What the codebase has instead is a large number of carefully-commented
+decisions that quietly close doors, a context budget that throws away its only honest input whenever
+it most needs it, a screen that will get slow in precisely the situation it was tuned for, and a
+settings layer that has grown into six copies of itself.
+
+---
+
+## Reproduced defects
+
+### A file read whose first line overflows the result budget panics the program
+
+`internal/tools/read_file.go`. When the very first line of the window does not fit the remaining
+budget, the cut length is computed as `t.aim() - b.Len() - 64`. Once the header line has filled the
+buffer, that expression goes negative and is handed to `cutUTF8`, which slices out of range. A panic,
+in a tool whose contract is "whatever went wrong becomes result text the model can act on".
+
+Reproduced with four short lines and a result budget of `22` bytes:
+
+```
+panic: runtime error: slice bounds out of range [:-576]
+  tools.cutUTF8(...)                       result.go:56
+  tools.(*ReadFile).Run(...)               read_file.go:135
+```
+
+The reachable shape without a hand-set budget is a window of twelve hundred bytes — which
+`ResultBytesFor` hands out whenever the server never reported a context size — and a first line longer
+than about that. A minified asset, a generated table, a base64 blob in a source file. The branch was
+written for exactly that case, and the branch is what crashes.
+
+### The tool call's arguments are validated and then the unvalidated bytes are used
+
+`internal/agent/execute.go`. `ArgsJSON` exists because some servers send a call's arguments wrapped in
+a JSON string rather than as an object: it unwraps one layer, checks validity, and returns the inner
+bytes. Three call sites consume it — the runnable check, the session store, the history repair — and
+each of them discards the unwrapped result. `runTool` then uses the raw outer bytes for everything:
+the tool's decoder, the confirmation text, the permission key, the path targets, and the event emitted
+to the screen.
+
+Reproduced as a reading: a call whose arguments arrive as `"{\"path\":\"x\"}"` passes the validity
+check and is then decoded from the string form by every consumer. The string-shaped branches in
+`internal/tools/edit_file.go`'s argument parser and in `internal/tui/confirm.go`'s preview look like
+accommodations for this case, on a path that never actually reaches them.
+
+### The settings screen can commit a value into the wrong setting
+
+`internal/tui/settingsscreen.go`. `begin` opens the row under the cursor for typing but stores no row
+index; `typing` calls `s.current()` — the cursor *now* — to decide which key to write. The branch
+watcher sends a message every five seconds, the spinner ticks while a turn runs, and a run's events
+arrive whenever it emits. Any of those, routed to the settings rows, moves the cursor. Pressing enter
+then writes the typed text into whichever row the cursor has reached. Values are validated against the
+kind of the row they land on, so a number typed for one knob and committed into another knob of the
+same kind is accepted and saved.
+
+### Pinning the context window has no effect
+
+`internal/agent/options.go` declares `CtxPinned` — "the window was fixed by a flag: a model switch
+keeps it". `internal/agent/models.go` honours it. Nothing anywhere in the program assigns it; the only
+assignments are in a test. `--ctx 8000` followed by a model switch on a server whose model reports a
+different window silently replaces the number the user typed.
+
+### The one real measurement of the conversation is discarded on every turn that matters
+
+The budget layer learns the true prompt size from the server and keeps it as an anchor, so a turn's
+cost is the anchor plus only what moved since. The comment is explicit about why: "the error of a byte
+ratio is not paid again over the whole conversation every turn".
+
+The anchor is zeroed by every path that makes room in the conversation:
+
+- `internal/agent/compact.go` — every fold;
+- `internal/agent/history.go` — every message the trim loop drops;
+- `internal/agent/turn.go` — the overflow retry, which is the path that had to *learn* the estimate
+  was wrong;
+- `internal/agent/agent.go` — reset and switch-conversation.
+
+A new ask does not clear it; only the above do. The only case that keeps it is a round-trip that ends
+with a tool call, answered exactly and in order. So on each turn where the estimate decides whether to
+fold, and on every turn after a fold, a drop or an overflow, the conversation is re-measured from
+scratch out of a bytes-per-token guess.
+The fold decision in a long session is always taken on a guess, and the comment describing the
+mechanism that would make it exact describes a mechanism that does not run.
+
+### The session log is append-only in principle and whole-copy in practice
+
+`internal/session/session.go` defines a change record with a "replace the message at this position"
+field, and the reader applies it correctly. Nothing in the program ever writes that field. What the
+agent writes instead, from three call sites — the trim loop, the overflow path, and the history repair
+— is a rewrite record holding the entire conversation serialised again.
+
+One pass of the trim loop therefore appends the whole conversation to the file. A session that folds
+and trims a dozen times carries a dozen full copies of itself, each containing the full text of every
+file the model read or wrote. The stated reason for the append-only design is that a resume must read
+the conversation back byte for byte so the server's prompt cache still matches; the mechanism chosen
+for the most common mutation defeats the file size and the read cost while preserving the letter of the
+principle. The partial record the format already supports, and already knows how to replay, is the fix.
+
+### The settings file the program writes for itself reports as a user choice, and a knob the screen
+### writes is refused by the loader
+
+Two drifts between the settings layer's own copies of itself, both reproduced on a clean home.
+
+First, provenance. `internal/config/presets.go` seeds a file whose keys all repeat the built-in
+defaults, and `internal/config/catalogue.go` then suppresses the "came from the file" mark whenever a
+value equals the default. Every seeded key reports as unset except one, because `command_log_dir` is
+seeded empty and the loader replaces an empty directory with `<home>/logs`:
+
+```
+keep_sessions          value="720h"      from=default
+max_tokens             value="no cap"    from=default
+tools.command_log_dir  value=".../logs"  from=file      ← the only one
+```
+
+So clearing a key by writing an empty value is indistinguishable from never having set it, and the
+settings table tells the user they chose a directory they never mentioned. The same file writes
+`max_tokens: 0`, which the loader reads as "no cap asked for" — the seeded file's most consequential
+key is written in the form that means unset.
+
+Second, grammar. `internal/config/settings.go` accepts a retention setting only in the spoken-duration
+form, while `internal/config/change.go` writes the kind the screen's own knob declares in the
+whole-number form. Reproduced:
+
+```
+keep_sessions: 30
+→ settings.yaml: keep_sessions "30" is not a duration like "720h"
+```
+
+A knob edited through the screen's own value path produces a settings file the next start refuses to
+load, and a key the loader cannot parse stops the program at start-up rather than being reported.
+
+### A model switch from the screen races the run
+
+`internal/tui/modelscreen.go` opens the model picker; the picker's rows are delivered one message at a
+time, and unlike `/sessions`, `/compact`, `/reset`, `/settings` and `/think`, this path has no check
+that a turn is idle. Choosing a row calls `UseModel` → `SetEndpoint`, which assigns the agent's
+transport client, its model id and its context size, while the run's goroutine reads all three to
+build the next request. The comment on `SetEndpoint` states the precondition — "it is called between
+turns, never during one" — and this call site contradicts it.
+
+The same shape appears twice more, where the gate does hold but belongs to the caller rather than to
+the agent: the switch-conversation path and the tune-options path. Both are reachable from a front end
+without the agent ever refusing. The race detector cannot see any of this, because no test overlaps
+the two paths.
+
+### A server error written as a plain string becomes a decode failure
+
+`internal/llm/types.go` declares a stream chunk's `error` field as a struct. Verified against the
+package's own types that `{"error":"upstream model not found"}` fails the unmarshal. The user reads
+"decode stream chunk: json: cannot unmarshal string into Go value of type …", and the much more useful
+path — the matcher that explains a model is still loading — never runs, because it only inspects HTTP
+bodies.
+
+### A timings chunk erases the counts a usage chunk already brought
+
+Reproduced against the package's own types. `internal/llm/stream.go` assigns a timings chunk over the
+figures it holds wholesale, and accepts a usage block only while no prompt count has been seen. A server
+that sends usage and then a timings chunk carrying speeds but no counts therefore ends the turn with no
+counts at all:
+
+```
+usage first (5000 prompt, 4000 cached, 20 out), then timings without counts
+→ prompt=0 cached=0 out=0
+```
+
+The same gate loses a cached-only count (`cached-without-total → prompt=0`), and the byte-ratio learner
+then rejects the resulting figure by its sanity range silently. The consequence is no window budgeting,
+no cache percentage and an empty `/ctx` on a server that was reporting perfectly well, with nothing said
+to the user about why.
+
+### One-shot mode cannot change a file, and says so only to the log stream
+
+`internal/cli/view.go` refuses every confirmation unconditionally. As a default for a scripted run
+that is right, but it means `-p` can never write or edit anything, and the model is told only "the user
+refused this tool call", with no hint of the way out. The escape is the yes flag, which also allows
+shell commands; there is no setting that allows file edits while keeping commands asked about. The
+refusal notice goes to the log stream, so a caller capturing the answer stream never learns why
+nothing happened.
+
+### The module does not build for windows, and nothing would notice
+
+`internal/tools/exec.go` sets `Setpgid` and calls `syscall.Kill`, both unix-only; a bare build for
+windows fails. The release target in the Makefile names three targets, all unix. The tool's own
+description string names the shell for the machine it was compiled on, so it would also promise
+behaviour the code cannot deliver. Either the process-group code needs its other half, or a build
+constraint and one line in the requirements section should say the module is unix-only.
+
+### Formatting has not been run, and no linter is part of the checks
+
+`gofmt -l` reports `internal/app/options.go`. The Makefile has a formatting target but does not
+include formatting or a linter in `check`, so both drift.
+
+### A zero-length file is tracked in the tree
+
+`internal/tui/a` — empty, committed, from a commit named with a single letter.
+
+---
+
+## Architectural problems
+
+### The screen object owns everything and reaches into everything
+
+The model type holds the conversation handle, the resolved settings, the tool layer's display state,
+the transcript, the scroll position, three separate overlays, the branch watcher, the run's cancel
+function and the frame throttle. It calls the agent, the settings writer, the session helpers and the
+transport directly — it constructs a transport client itself, in `internal/tui/settings.go`.
+
+The agent has one clean boundary pointing outward, the event sink, and none pointing inward: it is
+driven by direct calls in both directions. The cost is already visible. The scripted front end cannot
+ask a question, because the question path was shaped around the screen's box. No screen behaviour can
+be tested without a live agent. A second front end — a web view, an editor host, a batch harness —
+would reconstruct the tangle.
+
+### The screen re-derives the conversation it is shown
+
+`internal/tui/resume.go` walks the saved message list and re-parses it into transcript entries:
+recognising the fold marker, the ykode-note marker, the environment marker, re-attaching a tool answer
+to a call whose row was trimmed away. Those markers are the agent's private format; the screen holds
+its own copies of the strings and its own idea of what they mean, and nothing fails when the two
+disagree.
+
+The events the agent already emits are a complete description of a session. Replaying saved messages
+through the path the live run uses would remove both the duplication and the drift.
+
+### The agent is fifteen files over one struct with twenty-seven fields
+
+That struct holds the loop state, the plan nag counters, the read and written file lists, the fold
+bookkeeping, the byte-ratio estimate and its anchor, the per-ask environment note, the session-failure
+flag, the waiting-ask queue, the published usage and its mutex, the context-work label and its mutex,
+and the cached tool-description size. Each subsystem's state sits in the middle of the shared struct,
+so changing any one of them means reading all of them to know what may be touched, and the ownership
+rules — which fields belong to the run's goroutine, which may be read elsewhere — live entirely in
+comments.
+
+Grouping the meter, anchor and estimates into one type with its own lock, and the fold bookkeeping into
+another, would make several of the races below unrepresentable rather than merely not-yet-written.
+
+### The command surface lives in four places and one lookup table
+
+A slash command may be answered by the agent, by the screen, by an overlay, or by some combination. The
+one table that lists them all carries the name, the note, the argument shape and whether it waits for
+the turn. Some paths consult the table, some bypass it, and `CommandIsSafeDuringATurn` answers "safe"
+for any name it does not recognise — so a command that has never been described defaults to the
+permissive answer, and the model picker is the live proof of what that costs.
+
+One owner per command — name, handler, waiting rule and output shape in one place — removes the class
+of problem the picker is an instance of.
+
+### Six hand-maintained lists of the same settings
+
+The defaults, the file shape, the withheld-key list for untrusted projects, the typed knob table, the
+catalogue the screen prints, and the live-knob map that decides what a running session takes up at
+once. Six lists of the same keys, agreeing by luck. The provenance bug, the unset-versus-zero
+confusion and the two grammars for one duration are three drifts already present between them, all
+reproduced above.
+
+### The session format grows without a version
+
+A fold record, a change record and a boundary each add fields an older build cannot know, and the file
+carries no marker. An older build reading a newer file cannot tell a field it does not recognise from a
+line cut off mid-write, and its recovery for a cut line is to keep what it has and continue — so a
+format change degrades silently into a shorter conversation rather than an error.
+
+### No extension seam, though everything around one is ready
+
+The tool interface is complete, the registry keeps registration order deliberately for cache stability,
+the sink interface is clean, and the event vocabulary covers a run. But the tool set is a literal in
+`internal/tools/tool.go` and the model's view of it is frozen at construction. The gap between
+"extensible" and "hard-coded" here is one function and one settings key wide, which is worth naming
+because the surrounding design was plainly built with that door in mind.
+
+### The tool descriptions cost about six thousand bytes in every request
+
+The screen reports this honestly, and the tool order is frozen specifically so a server's cached prefix
+keeps matching — a good decision. Six thousand bytes is paid every round-trip and is a few percent of a
+small window. The descriptions are well written; they are also reference prose for a reader who has
+already read them, while the tool layer already knows how to word a call for a person in far fewer
+words.
+
+---
+
+## Shared state without an agreement
+
+The agent has no lock. Its own comments state the rule: the history belongs to the goroutine
+answering; read the conversation between turns. The discipline is real and mostly respected — usage is
+published behind a mutex, the plan list is behind a mutex, the waiting-ask queue is behind a mutex, the
+transcript's row cache is only touched by the screen's goroutine — which is exactly why the exceptions
+matter.
+
+- The run's cancel function is assigned by the screen's goroutine, read by a key handler, and cleared
+  by a message arriving from the run's goroutine. Two owners, no lock, on the escape hatch.
+- `Conversation()` copies the slice but not the messages, and `sanitizeHistory` rewrites tool-call
+  arguments inside the stored messages in place. A reader holding the copy can see strings change
+  underneath it.
+- The tool layer's options are written by the settings screen and read by a tool, with a comment
+  asserting that nothing reads them during a turn. Nothing makes the settings screen refuse to open
+  during a turn; the refusal lives in one caller, and the model picker shows how a second caller
+  forgets it.
+- The idle watchdog is a timer, an unguarded "something has been read" flag and a cancel, mutated by
+  the reading goroutine and fired by the timer's own.
+- Several agent methods mutate state a front end reads — switch endpoint, tune options, switch model,
+  switch thinking level, switch conversation, reset. All are described as front-end helpers; none
+  checks that no turn is running.
+- The detail a finished call hands the screen is guarded by the tool's class, which is the right
+  instinct, but the class that means "may run beside others" is not excluded: the shell tool runs
+  concurrently and keeps no state, so the guard finds nothing today. Nothing would stop a future
+  tool that runs concurrently *and* keeps state.
+
+The cheapest structural fix is not more mutexes. It is one rule enforced in code — a turn-running flag
+these methods refuse when it is set — so the comments stop being load-bearing.
+
+---
+
+## Where the design closes doors it did not have to
+
+- **The yes flag can only be turned on.** No flag, setting or screen action turns it back off for a
+  run, and it suppresses the question for every write inside the project. There is no way to allow
+  file edits in a scripted run while keeping commands asked about.
+- **Answering yes once to an edit or a write allows that tool for the rest of the run, for any file.**
+  The remembering key for a file tool is the tool's name — not the path, not the change. The file
+  argues the narrowness of the rule at length for shell commands, where it genuinely is narrow, and
+  does not mention that the same rule for writes is as broad as it can be.
+- **Whether a command needs asking about is decided by a list of shell punctuation.** The list is a
+  good approximation of a shell and not the shell. A path containing a space makes a plain command look
+  chained and forces an unnecessary question; anything the list misses makes a chained command look
+  plain — and those are the lines that then get remembered as always-allowed.
+- **A leading change-of-directory into the project root is stripped from commands, including inside
+  quotes.** The regular expression matches a quoted directory and the check that follows compares the
+  text with the quotes removed, so a command whose opening argument is a quoted path equal to the root
+  loses its quoting on the way to the shell.
+- **Saving an endpoint or a knob from the screen marks the project's settings file as trusted.** If the
+  file arrived distrusted — its dangerous keys withheld, the user warned and declining — the first save
+  retires the warning without ever showing what had been withheld. A cloned repository that asked to
+  skip confirmations asks once, is declined, and grants itself the moment the user touches the settings
+  screen.
+- **Trust is keyed by directory path, not by project.** Two checkouts of one repository, or a directory
+  reused after a version-control reset, carry the trust across without being looked at again.
+- **A trusted project sets conversation retention for the whole machine**, because every project's
+  conversations live in one folder.
+- **Every command the model runs is given the home directory in its environment.** The shell is openly
+  documented as unconfined, which is honest; the documentation could also say where the boundary does
+  sit — dot-files in the home directory are readable by every command the model runs.
+- **Two notions of the project root.** The file tools work through a directory handle and follow the
+  root as it moves; command execution works from a recorded string. The confinement itself was verified
+  to hold — a symbolic link inside the project pointing outside is refused by the operating system's
+  own handle check, both for reading and for writing — so this is not a hole. It is a second
+  implementation of "here" that the command layer did not need to have.
+- **Instruction files are cut by a plain prefix trim.** The cap that scales with the window is well
+  argued, and the cut tells the model to read the rest. What it cannot say is which section it stopped
+  inside, so a project whose rules are cut mid-section leaves the model following half a rule with no
+  hint of which one.
+- **The system prompt lists the tools by hand.** The question tool is registered at run time, only when
+  the front end can answer. The list and the registry cannot see each other, so the prompt can name a
+  tool the model was not given — a mismatch the project's own comments record having caused trouble.
+- **Retired settings are still parsed, and unknown keys are a hard error.** Four keys that do nothing
+  are accepted; a file carrying a key the program deleted fails to load at all. Deleting a key is
+  therefore a breaking change to every file that mentions it.
+- **`/model` with an argument asks the server for its model list twice** — once to answer and once to
+  resolve — two round-trips to a server that may be starting a model.
+- **A fold's request is sent twice** when the model answers the first with a tool call, which is common
+  for small models, and the second re-reads the whole prefix. Tools could be refused on the first
+  attempt for a server that has already done this once.
+
+---
+
+## Slowness and memory, each with its fix
+
+The screen is measured and careful, and it shows: transcript rows are cached and rebuilt only from the
+first entry that changed; markdown blocks are laid out once; syntax colouring is chunked and cached at
+three granularities; the transcript window copies rows rather than measuring them; streaming is
+throttled to thirty frames a second; command output arrives through a fixed window with the overflow
+spilled to a file. This is better than most. What is not bounded is history.
+
+- **Every transcript entry ever drawn stays in memory for the life of the run**, with its rendered rows
+  and the full text of every change under a tool row. Nothing ages out and nothing is capped. *Fix:*
+  fold entries the reader has scrolled far past into single summary rows, keeping the text available but
+  not rendered, and cap what one change costs a call.
+- **A resumed conversation is replayed into the transcript in full at start-up**, on the screen's own
+  goroutine, before the first keystroke. *Fix:* the same fold-on-demand, plus replay lazily from the
+  oldest visible row.
+- **The token estimate walks the whole conversation on every call**, and is called four times per
+  round-trip plus once per message inside the trim loop. The tool-description size is memoised and the
+  history size is not, for no visible reason. *Fix:* a running byte total, added on append and
+  subtracted on drop — a small change with a direct effect on the loop's inner path.
+- **Every slash command that prints a list rebuilds the catalogue and re-reads both settings files from
+  disk**, and the settings screen recomputes its header wrapping on every keystroke. *Fix:* cache the
+  catalogue, invalidate on write.
+- **The thinking-rate estimator appends a timing sample per chunk and trims from the front by
+  re-slicing.** *Fix:* a fixed ring.
+- **A fold is allowed a summary of a fixed six thousand characters**, which does not scale with the
+  window the way every other cap in the same file does; on a small window it is a large part of the room
+  the fold was trying to free. *Fix:* scale it from the same share the response reserve uses.
+- **The request refuses to send when the estimate passes the ceiling, and the ceiling is derived from
+  the same estimate.** The reactive path then corrects the estimate after the server has refused the
+  request already — a deliberate design choice, and an expensive one, since each correction costs a
+  full round-trip of server time.
+
+---
+
+## Practices that invite drift
+
+- **Comments do the work of types.** Several invariants a type, a lock or a constructor would enforce
+  are stated in prose: only tools that never run beside each other may keep display state; nothing reads
+  the options while a turn is in flight; read the conversation between turns, not while one runs. The
+  comments are unusually good and unusually load-bearing, and each is a rule a future change can break
+  with no tool noticing.
+- **A tool failure becomes prose and is then re-read as prose.** The marker at the front of a failure
+  string is parsed by the plan restorer, by the transcript's failure state, by the call row's colour and
+  by the exit-status reader. The tool layer already has one place where a result is returned as both a
+  message for the model and a structure for the screen; the same split everywhere would let the marker
+  go away.
+- **Two constructors exist for the agent**, differing in whether the question tool is attached, and
+  neither is documented as the canonical one. The wiring uses the one that attaches it; anything built
+  through the other behaves differently in a way invisible from the call site.
+- **Start-up reads the settings twice**, once before the trust question and once after, and always seeds
+  the settings file and walks both retention folders before doing anything the user asked for. A
+  read-only home directory turns an ordinary run into an error before the first request.
+- **The pruning loops stop at the first entry they cannot stat**, leaving everything after it in the
+  folder forever.
+- **One byte cap is computed in three places** — the tool layer's scope, the command tool, and the agent
+  when it formats a result — each subtracting its own slack from the same budget. They currently agree,
+  by three separate pieces of arithmetic.
+- **Write results to the terminal are never checked**, and the linter that would say so is not part of
+  the checks. The scripted answer stream is the worst place for it: piping into something that stops
+  reading early fails every write, reports nothing, and exits zero.
+- **Terminal detection is a mode-bit test rather than asking the terminal**, which calls `/dev/null` a
+  terminal and would accept a character device that is not one.
+- **The trust question reads one line from standard input with no timeout**, after having established the
+  stream is a terminal — a terminal nobody is answering hangs start-up indefinitely.
+
+---
+
+## Corrections made to this report while verifying it
+
+Five claims in the first draft did not survive being checked against the code, and one was inverted. They
+are recorded rather than quietly deleted, because a reader acting on this report needs to know which
+findings were tested and which were not.
+
+- **Wrong** — that a tool call written as text inside an answer runs without a confirmation. It goes
+  through the same runner as a real call and is asked about the same way.
+- **Wrong** — that the trim loop protects the oldest message because a three-character fragment of an
+  appended note matches it. The comparison is exact, the note is not involved, and the protection is what
+  the code intends.
+- **Wrong** — that a plan step whose text contains another status marker is restored twice. A line can
+  match one marker only.
+- **Overstated** — that the conversation is re-measured at the start of every ask. A new ask keeps the
+  anchor; only a fold, a drop, an overflow, a reset or a conversation switch discards it. Still every
+  turn that matters, not every turn.
+- **Understated** — the transport counting bug. A timings chunk does not merely fail to merge with a usage
+  block; it overwrites the counts already gathered, which is a stronger defect than the one first written
+  up.
+- **Inverted** — a model switch was reported as silently changing the sampling sent to the server. It is
+  the reverse: the switch leaves the previous model's sampling in place and never picks up the new
+  model's card.
+- **Held up under testing** — the file reader's panic, the validated-then-ignored call arguments, the
+  settings screen's row identity, the unused pinned-window option, the session log's whole-conversation
+  rewrites, the seeded file's false provenance, the duration grammar mismatch, the model picker racing a
+  turn, the stream error that cannot be a string, the tool-call ordering, the failed windows build, the
+  unformatted file and the tracked empty file.
+- **Checked and clean** — symlink confinement through the project root is refused by the operating
+  system's directory-handle check for both reads and writes; the file listing's truncation count is
+  correct; and the manually triggered fold does run the history repair.
+
+## Smaller defects
+
+- The oldest message the trim loop refuses to delete is the one whose text equals the current ask. The
+  match is by exact content, and the ask may carry a note appended to it, so any first ask longer than
+  three characters is matched by a three-character fragment of that note and becomes permanently
+  undeletable in the oldest part of the history.
+- The repetition guard counts whole lines, so a reply that repeats itself inside one long line is not
+  caught — and the guard is armed for the answer as well as the thinking, so a model that legitimately
+  repeats one long sentence ten times in an answer has the reply cancelled and its partial text
+  discarded.
+- A tool-call fragment whose index arrives out of arrival order is stitched into the right call but
+  handed back in arrival order: the accumulator keys by index and orders by first arrival. Reproduced —
+  index one arriving before index zero comes back as `second,first`.
+- A stream that ends with no `[DONE]` and no finish reason is reported as possibly cut short. That is
+  right for a dropped connection and wrong for servers that simply never send either marker, and the run
+  cannot tell the two apart.
+- The idle watchdog's "has anything been read yet" flag is written by the reading goroutine and read
+  after the stream ends to decide which timeout to report; it is the one field in the transport whose
+  value decides what a user reads, with no owner.
+- The room a fold may use is derived from the window in one function and charged against it in another,
+  with the reserve applied on both sides of the comparison. The arithmetic works out; it reads as
+  double-counted, which makes it hard to change safely.
+- The trim loop can never drop the recap, the current ask, or the newest call, so a conversation whose
+  remaining turns are individually huge cannot be made to fit at all; the request is then refused with
+  advice to reset, which is the right answer but arrives after the work of trying.
+- The retry path treats a refused connection as retryable, waits once, and reports only the second
+  failure — on a cold server the first attempt's reason, which is the interesting one, is discarded.
+- Switching the model updates the model id, the window and the transport client, but not the sampling or
+  the send-reasoning flag, which were resolved from the *previous* model's card at start-up and are never
+  looked up again. A model whose card recommends different values keeps receiving the old model's.
+- A model the server does not list carries no window, and the switch path then keeps the previous
+  window rather than reporting the size as unknown.
+
+---
+
+## What this codebase does well, so the above reads in proportion
+
+- Test density and quality are high. The tests exercise truncated streams, half-written files, cut-off
+  calls, resume across a fold, and the argument shapes models actually send, rather than happy paths.
+  Every defect above was found by reading and then confirmed by writing a test in the project's own
+  style, which took minutes each time — that is a sign of a testable design at the unit level.
+- Every non-obvious decision carries a comment saying what went wrong before it was made. That is rare,
+  and it is the single most valuable asset in the repository.
+- The event sink is a genuinely clean boundary: the agent prints nothing itself, and both front ends are
+  consumers of one stream.
+- Streaming is treated as the only mode. Timings, cache statistics and speculative-decoding acceptance
+  are used properly. The prompt cache is respected deliberately and thoughtfully — tool order frozen,
+  environment notes moved onto the newest message specifically so the cached prefix does not move. That
+  last decision is the kind most agents get wrong.
+- Command output is bounded in memory by construction, with the whole text spilled to a file and a
+  pointer handed to the model.
+- File confinement is done with the operating system's own directory-handle machinery rather than string
+  comparison, and it was verified to hold against a symbolic-link escape.
+- The settings-trust model — withholding dangerous keys from an untrusted project's file, hashing the
+  file so any edit re-asks — is better than what most tools in this space ship.
+- Screen drawing is performance-conscious at the level of the block, the frame, the grammar and the row,
+  and the comments say what was measured.
+
+---
+
+## The order to work in
+
+First, the panic in the file reader's byte-cut guard, and the validated-then-ignored arguments in the
+tool runner. Both are one function wide and both can end a run.
+
+Next, the cheap and dangerous ones: the settings screen committing into the wrong row, the duration the
+screen writes that the loader refuses, the settings value that cannot be cleared, the pinned window
+being overwritten, the command-lookup default of safe, the stream error field that cannot be a string,
+the usage counts that zero the prompt size.
+
+Then the budget's memory. Keep the server's real count across folds, drops, trims and new asks instead
+of discarding it, and make the history byte total incremental. Those two changes are what make the rest
+of the context machinery honest rather than approximate.
+
+Then the session log: write the partial change record that already has a reader, and stop appending
+whole conversations.
+
+Then the seams that only prose protects: one owner for the cancel function, a turn-running guard on the
+between-turns methods, one place that decides whether a command waits, one constructor for the agent,
+and one list of the settings that generates the other five.
+
+Then the transcript's unbounded growth, which is what a heavy user will feel first.
+
+Then the leftovers: the tracked empty file, the unformatted file, the unused helpers, the retired keys,
+the linter and the formatter in the checks, and a decision about whether the module is meant to build
+anywhere other than unix.
