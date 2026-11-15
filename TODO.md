@@ -3,7 +3,7 @@
 Open work only. When an item is done, delete it from this file in the same change. Undecided
 ideas live in `ideas.md`.
 
-Last full scan: 2026-11-13, and the review file that scan was written into has been retired: what it found is fixed (`§2`, `§3.1-3.4`, `§3.6`), did not hold (`§3.5`, `§4b`, `§4e`), or is one of T1, T2, SEC and MEAS below. `go build`, `go vet` and `go test ./...` pass.
+Last full scan: 2026-11-13, and the review file that scan was written into has been retired: what it found is fixed (`§2`, `§3.1-3.4`, `§3.6`), did not hold (`§3.5`, `§4b`, `§4e`), or is one of T2, O3, O5 and MEAS below. `go build`, `go vet` and `go test ./...` pass.
 Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 ## Rules for the work
@@ -46,41 +46,33 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
   question, not a decision; measure it on a small model first. *Test:* the error names the margin and
   the options; a `--ctx` just above prompt+margin still sends a request with `minAnswerTok` left for
   the answer.
-- **T1 · S · The two shrink walkers.** Done 2026-11-13: five hand-maintained per-tool sets
-  (`readOnlyTools`, `guardedTools`, `writesTheFile`, `quietTools` and the `changesProject` rule) are
-  gone - every tool now states a `Class` (`internal/tools/class.go`) and the run reads that: parallel
-  safety, whether what was read before still answers, whether a repeat is answered from an earlier
-  result, and whether the arguments may be dropped. `ask_user` had landed in none of the sets and so
-  counted as a change to the project, dropping the reads the model already had; `detailOf`
-  (`audit.go`) ignores a last result kept by a tool that overlaps others, so the `Detailed` rule is
-  code and not a test alone. Left: `trimResults` (`history.go`) and `shrinkOldResults` (`shrink.go`)
-  walk the same tool messages for the same reason, and merging them means tests for when each one
-  fires - they trigger at different marks and aim at different sizes.
-- **SEC · S · `--yes` runs commands with no cage.** `--yes` plus `exec_command` is a shell as your
-  user: `README.md` says so plainly, which is right, but it could be narrower - do not let `--yes`
-  skip `exec_command` unless `sandbox: true`, or default the sandbox on where `sandbox-exec` exists.
-  Two edges of the cage itself: the writable list includes `os.UserCacheDir()`
-  (`internal/tools/sandbox.go:14-17`, on macOS `~/Library/Caches`, where tools keep session state),
-  and the profile is `(allow default)` then `(deny file-write*) (deny network*)` (`sandbox.go:33-42`),
-  so reads and process spawning stay open. That matches what the README claims; do not let the
-  wording drift into "isolation". Nothing yet mitigates a file the model reads steering it into
-  `sh -c`.
+
+- **O3 · M · Thinking is sent back for the whole conversation.** With `send_reasoning` on, every
+  assistant message keeps `reasoning_content` going back to the server (`turn.go` sets it,
+  `historyBytes` counts it), and nothing but a fold ever removes it: the prefix therefore changes
+  mid-task, at whatever point pressure arrives, which is where a prompt cache is lost. *Do:* decide
+  when a message is added instead - thinking goes back only for the ask in progress and is cleared
+  when the next ask starts, so the prefix changes once per ask at a known place. *Blocked on:* a
+  measurement of whether the model works worse without older thinking; `bench.py` is retired, so a
+  pass rate over tasks 03 and 09 by hand, or a `-p` loop, has to stand in.
+- **O5 · XS · Two costs paid over and over.** (a) `session.Log.write` opens, stats and closes the file
+  per saved line, so an ask with ten tool calls is ~22 cycles: hold the handle, or batch per turn.
+  (b) `withEnvironment` runs two `git` subprocesses per ask; `git status --branch --porcelain` answers
+  branch and dirt in one. *Test:* (a) an append still writes the header line once and survives a reopen;
+  (b) the note still names branch and dirtiness, with one `git` call.
 - **MEAS · S · Things believed but not measured.** What chroma's full lexer set costs the binary
   (`lexers.Exclude` behind a build tag; `make release` cross-builds three targets); what the reply
   nudges cost in pass rate and wall clock (`~/Developer/testing-ykode/bench.py --agents ykode
   --repeat 5 --cache asis`); and whether `runAtOnce` and the interrupted-call path
-  (`sanitizeHistory` with `shrinkOldEdits`) are reached by any test rather than assumed.
+  (`sanitizeHistory`) are reached by any test rather than assumed.
 - **T2 · S · Compare all the budgets to pi**, turn by turn and result by result: the window marks
   (`budget.go:75-82`), the per-result caps (`budgetSlack`, `budgetSlackDiv`, `maxResultTokens`) and
   what a turn spends (rounds, nudges, the folding marks). The pi side is in `~/Developer/pi/packages/coding-agent/src/` and `~/Developer/pi/packages/ai/src/`.
-- **Later:** explore sub-agent, MCP, goreleaser/Homebrew, hash-chained audit log. Image input
+- **Later:** explore sub-agent, MCP, goreleaser/Homebrew. Image input
   and the rest are in `ideas.md`.
 
 ## Measured, do not retry blindly
 
-- Narrowing the verify-nudge words (old C14: drop `add`, `read`, `file`…) made
-  `answer-from-file` fail: the model answered "add" from the function's name without reading.
-  The nudge stays as it is.
 - The system prompt is pi's shape, not a list of task rules (F1, 2026-11-08). Each rule fixed one
   task and broke another: "say so in your answer" padded task 05's answers, N1's "just that value"
   then dropped the file name `read-the-note` needs, "follow a project file even if the code suggests
@@ -97,3 +89,10 @@ Measured against pi in `~/Developer/testing-ykode/BASELINE.md`. Rerun `./bench.p
 - Trimming a path description to "relative to the project root" made the model write the root's own path
   without its leading slash (3 of 5 task-11 runs, 0 in 397 runs before). The description now gives an
   example (`src/main.go`), and the path tools read such a path as the root anyway.
+- `find_files` and `search_text` went (the reduction, 2026-11-09). Two things learned on the way: the two
+  dependencies they pulled (`bmatcuk/doublestar`, `sbarro/go-gitignore`) had no test of their own, so
+  `go mod tidy` dropped them with the code and nothing complained; and the loop guard's
+  "same call repeats" rule was not what kept a rewritten file's old listing short —
+  `TestAChangedFileIsNotToldTwice` still passed with the guard deleted, because the fold had already
+  replaced it. That test went with A1 (2026-11-14), when a second read of the same window started
+  sending the text again: no memory of what was shown, so nothing to be told twice.

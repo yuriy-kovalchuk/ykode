@@ -13,8 +13,8 @@ confines file access to the project root it started in.
 - Go 1.25 or newer.
 - A server speaking `/v1/chat/completions` with tool calling over SSE. For
   `llama-server`, tool calling needs `--jinja`.
-- Optional: `rg` and `fd`. `search_text` and `find_files` use them when installed
-  (faster, `.gitignore`-aware) and fall back to pure Go when they are not.
+- Optional: `rg` and `fd`. Searching is `grep` and `find` run through
+  `exec_command`, so they only make those faster; ykode needs neither.
 
 ## Build and run
 
@@ -34,25 +34,24 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--ctx` | — | read from the server | context window in tokens |
 | `--max-tokens` | — | no cap | tokens per reply; with no cap it gets the room the window has left |
 | `--max-turns` | — | `100` | tool rounds per request |
+| `--api-key KEY` | — | — | bearer token, for a server that asks; `api_key_env` in the file is the safer way |
 | `--thinking LEVEL` | — | `medium` | how deeply the model thinks: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--no-think` | — | thinking on | shorthand for `--thinking off` |
 | `--yes` | — | off | skip in-project confirmations |
-| `-p TASK` | — | — | answer one task and exit (pipeable; add `--json` for event lines) |
+| `--send-reasoning` | — | off | send earlier thinking back to the model, which some chat templates expect |
+| `-p TASK` | — | — | answer one task and exit; the answer goes to stdout, so it pipes |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405.123` |
-| `--no-tui` | — | full screen | a line prompt instead of the full-screen session (also when not on a terminal, or with `-p`/`--json`) |
 | `--version` | — | — | print the version and exit |
 
 ## In the session
 
 Type a request. A `/` lists the commands it could still be and `tab` completes one;
-`/compact` folds the older turns into a summary the model writes, `/undo` puts the most
-recent file change back, `/exit` (or `/quit`) leaves.
+`/compact` folds the older turns into a summary the model writes, and `/exit` (or `/quit`) leaves.
 
 Several commands are answered with a box over the session instead of text in the transcript,
 because a list you can look through beats a paragraph you have to re-read: `/sessions` the
-saved conversations, newest first, `/model` the models the server offers, `/history [what]` the
-calls this run made (a tool name, `failed`, `outside` or `--all` narrow it, and `r12` opens that
-call), `/tools` the tools the model may call, `/help` the commands themselves. In any of
+saved conversations, newest first, `/model` the models the server offers,
+`/tools` the tools the model may call, `/help` the commands themselves. In any of
 them: type to narrow, `↑/↓` move, `esc` gives the session back, and enter chooses — continue the
 conversation, switch to the model, read a whole call, write one command in the prompt box.
 A call is read inside the box, never written into the conversation: everything there is of it - the
@@ -60,8 +59,8 @@ arguments in the order the model wrote them, every line of a file it wrote or a 
 files it touched, what it changed, what it came back with. Longer than the box, it scrolls: `↑/↓` and
 `pgup/pgdn` through it, `end` straight to its last row, `←/→` to the call next to it without going back
 through the list. `/ctx` and `/usage` open the same box with the figures in it, the window's fullness drawn
-as a bar rather than a sentence. `/reset`, and `/undo force`, ask once before they do it: neither
-can be undone.
+as a bar rather than a sentence. `/reset` asks once before it does it: what the run had
+learned cannot be brought back.
 
 Four commands change the run rather than the conversation:
 
@@ -72,10 +71,11 @@ Four commands change the run rather than the conversation:
 | `/plan` | the steps of the task the model is working through, as it last wrote them |
 | `/model [id \| number]` | on its own, opens the list of models the server offers, with its window and the one in use marked, and enter switches to the one under the cursor; an id or the number from that list switches from where you stand (the window follows the model unless `--ctx` fixed one) |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
-| `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, verify, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
+| `/create-local-setting` | make `<root>/.ykode/settings.yaml` for this project, starting from the server and model this run uses; `/settings` changes that file afterwards instead of `~/.ykode/settings.yaml`, and says which it wrote. Between turns |
+| `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
 
-A turn owns the conversation and its own settings, so `/reset`, `/compact`, `/undo`,
-`/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage`, `/history` and
+A turn owns the conversation and its own settings, so `/reset`, `/compact`,
+`/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage` and
 `/settings` answer straight away. `Ctrl-C` during a reply cancels that request and
 returns to the prompt.
 
@@ -83,8 +83,8 @@ returns to the prompt.
 
 A plain `ykode` opens an alternate-screen session: the transcript scrolls, the thinking and
 the answer arrive as one block each, a tool call shows while the model is still writing it, and
-two rows at the bottom report where the session runs and what it costs. `--no-tui` keeps the line prompt; so does
-a run that is not on a terminal, and `-p`/`--json`, which write to stdout.
+two rows at the bottom report where the session runs and what it costs. Without a terminal there is
+no screen to draw: such a run has to name one task with `-p`.
 
 The terminal's own tab is named for the project — `ykode: ykode` when it was opened in
 `~/Developer/ykode` — so several sessions in one window say which is which. The name goes to the
@@ -127,7 +127,7 @@ round-trip instead of waiting for the whole turn to end. The request already in 
 tools already running are not interrupted. Until it is taken, an ask keeps a row of its own above
 the prompt so it cannot scroll away; one still waiting when the run ended starts a turn of its own.
 The commands of `In the session` work there too, except
-that `/reset`, `/compact` and `/undo` wait for the running turn rather than
+that `/reset` and `/compact` wait for the running turn rather than
 racing it.
 
 The box a prompt is typed in grows with what is typed, to ten rows, and past that scrolls the text
@@ -147,9 +147,8 @@ all three summed over the whole session; then `cache %` for what the last reques
 kept), and last how full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
 keeps the window. What is happening now sits on the right of that row: the running prompt's clock
 (`✓ done in 51s` once it finishes) and, beside it, what that ask had to do to fit the conversation in —
-`shortened old output`, `summarising older turns`, `folded 12 older turns`, `trimmed 3 tool results`,
-`dropped 1 older turn` — said while it happens, because that is what a slow round-trip makes a reader
-wonder about. It starts over with the next ask. Then the server's speed, `↑` reading the prompt and `↓`
+`summarising older turns`, `folded 12 older turns`, `dropped 3 older messages` — said while it
+happens, because that is what a slow round-trip makes a reader wonder about. It starts over with the next ask. Then the server's speed, `↑` reading the prompt and `↓`
 writing, both in tokens per second. A server that reports its speeds with every chunk (llama.cpp's own
 `llama-server`) updates both live. One that
 reports them only at the end of the reply, as Strata does, still gets a live `↓`: ykode counts the streamed text
@@ -239,41 +238,34 @@ screen's: the result tells it `read it with exec_command, e.g. sed -n '1,80p' FI
 
 ## Tools
 
-`find_files`, `search_text`, `read_file`, `write_file`, `edit_file`, `exec_command` and `plan`,
+`read_file`, `write_file`, `edit_file`, `exec_command` and `plan`,
 plus `ask_user` where someone is there to answer it. The list is fixed for the whole session: Qwen
 renders it inside the system message, so a tool that appears later throws away everything the server
-had cached. The descriptions cost about 3.9 KB on every request, and `ask_user` adds about 0.7 KB
+had cached. The descriptions cost about 2.4 KB on every request, and `ask_user` adds about 0.7 KB
 where it is offered; tests keep both under their budgets.
-`find_files` lists one directory with `depth: 1`;
-`read_file` answers with `outline: true` when a big file only needs its shape.
+There is no search tool: locating code is `grep` or `find` through `exec_command`, and the
+description says so — filter in the command itself, because a result that has to be cut off costs
+the round-trip that reading the file again would have. Neither command reads `.gitignore` on its
+own, so the instructions say to exclude what git ignores.
 Every truncated result says how to continue — a `read_file`
 window reports the next `offset`, a cut `exec_command` log reports the saved file. Nothing reads a
-file it cannot hold: `read_file` and `search_text` stop at 1 MB and name the tool that can (a
-`search_text` over a tree skips such files, one named on `path` is refused), and `exec_command`
+file it cannot hold: `read_file` stops at 1 MB and names the tool that can, and `exec_command`
 streams its output through a window instead of waiting for all of it.
 `edit_file` takes several `edits[]` in one call and matches them atomically, so a
 bad pair never applies half an edit. `edit_file` and `write_file` answer with a
 short diff, and every path they name is one the next call can use: project-relative
 inside the root, absolute only for an approved outside path.
 
-`search_text` answers in three sizes: matching lines (default), `mode="count"`
-(matches per file) and `mode="files_with_matches"` (names only). The two summaries
-cost a fraction of the tokens when the question is *where*, not *what*. Matching
-lines read `path:line:text`; a file with several matches gets its path once with the
-lines indented under it, including the lines of context, because the path is the part
-that repeats.
-
 `ask_user` stops the run and puts one question to the person, with the choices the model would
 act on. On the screen it appears above the box with the choices numbered, and the answer is typed:
 a number picks the choice it names (the model reads the choice in words, not the number), anything
 else is the answer as typed, and an empty line or `esc` says there is none, which tells the model to
 make the choice itself and say what it assumed. A question offers up to six choices; on a short
-terminal the ones that do not fit are counted in one line, and their numbers still answer. The line
-front end asks the same way on stdin. A run writing JSON lines, or reading a pipe with nobody at the
-keyboard, is not offered the tool at all:
+terminal the ones that do not fit are counted in one line, and their numbers still answer. A `-p` run
+has nobody at the keyboard, so it is not offered the tool at all:
 a call nobody can answer would only stall the run.
 
-When a turn asks for several reads at once, `find_files`, `search_text` and `read_file`
+When a turn asks for several reads at once, the `read_file` calls
 run at the same time and their replies still come back in the order the
 model asked for. Anything that changes something — a write, an edit, a command —
 still runs one at a time, in order.
@@ -283,7 +275,7 @@ still runs one at a time, in order.
 Each turn's timing line reports the server's own prompt, cached and generated
 token counts, and `/usage` adds them up. Those numbers also calibrate the
 estimate used to set each reply's `max_tokens` (when no cap was asked for) and to
-trim old tool output, so the context budget stops guessing.
+decide when to fold, so the context budget stops guessing.
 
 What ykode does about the server's prompt cache is keep still rather than instruct: the system message
 and the tool list hold nothing that changes from one run to the next, so the prefix is the same bytes in
@@ -297,79 +289,49 @@ server's business. The one thing every request does say is which conversation it
 `X-Session-Id` carries the run's id, which is how a proxy in front of a server keeps one conversation
 on the slot that already holds its cache.
 
-Past 3/4 of the server's window, ykode stops paying for output the model has
-already used. In order, cheapest first:
+ykode makes room in two steps, and nothing between them: a message stays exactly as it was sent until
+it is folded away or dropped whole. A fold is asked at the last moment a fold request still fits - the
+window less the summary it would write - and the drop at the last moment a reply still fits, so the
+model keeps whole results until they cost the run something it actually needs to spend. Both marks, and
+what a request costs, are in `/ctx`.
 
-1. Older tool results are replaced with a summary the code writes — which call it
-   was, how big it was, how it began — and how to get the rest back, whichever is
-   cheapest: a `read_file` says to read the range again and a `find_files` or
-   `search_text` says to run it again, because the disk is the source of truth and a
-   stored copy goes stale the moment the model edits a file. A command's output is the
-   one thing kept, in `~/.ykode/results/<run>/r7.txt`, because running a test suite
-   twice costs minutes; the summary names the file to grep, the way a cut command log
-   already does. The two newest results are never shortened, and a `read_file` of a
-   window the model already has, of a file that has not changed, comes back as one
-   line. That pointer lasts only while the text is still in front of the model: once a
-   result has been shortened, trimmed or dropped away, the same read sends the text again.
-   The same pass drops the text an older `write_file` or `edit_file` sent: the
-   history keeps one line saying how much went where, because the file on disk has
-   the rest. A call that failed keeps its arguments, so a retry still has them.
-2. If that was not enough, the older turns are folded into a summary the **model**
-   writes, in fixed sections (goal, constraints, progress done / in progress / blocked,
-   decisions, critical context such as exact names and error text, next steps). The newest
-   work stays whole: at least the two newest calls, and back to a fifth of the window
-   (at most 20k tokens) where the window is known; a cut never separates a call from its
-   results. A later fold updates the earlier summary instead of starting over, and the
-   summary ends with the files the session read (`<read-files>`) and changed
-   (`<modified-files>`), accumulated across folds and restored on resume. `/compact`
-   asks for a fold directly.
-3. Past 9/10 of the window the emergency brake applies: whole tool calls and their
-   replies are removed, oldest first.
+1. **Fold.** The older turns are replaced by a summary the **model** writes, in fixed sections (goal,
+   constraints, progress done / in progress / blocked, decisions, critical context such as exact names
+   and error text, next steps). The request sends the conversation exactly as the server already holds
+   it — same system message, same tool list, same messages — and one instruction after them, so the
+   prompt cache covers the asking and the summariser reads the real results, calls and thinking rather
+   than a transcript of markers. The notice it prints says how many of the prompt tokens the server had
+   cached. The newest work stays whole: at least the two newest calls - one, where the whole conversation is
+   two calls and keeping two would leave nothing to fold - and back to a fifth of the window (at most
+   20k tokens) where the window is known; a cut never separates a call from its results. A
+   later fold updates the recap an earlier one left, because that recap is part of what gets sent. The
+   summary ends with the files the session read (`<read-files>`) and changed (`<modified-files>`),
+   accumulated across folds and restored on resume. `/compact` asks for a fold directly. A summary may
+   cost 1500 tokens, or an eighth of the window where the window is smaller: a fold request has to fit
+   the window it is making room in, and a fold that would not is refused out loud.
+2. **Drop.** Past 9/10 of the window the emergency brake applies: the oldest messages go, whole — a
+   call together with its replies — until the estimate fits. A fold's recap, the ask being answered and
+   the newest call are never dropped. The notice names what went (`dropped 3 older messages to fit the
+   context: read_file src/parser.go; exec_command go test ./...; ...`), so a model that needs one of
+   them again can ask for it instead of guessing at what it forgot.
 
 Result sizes scale with the window: 4.8 KB on a 4k context, 50 KB (as pi) on a 128k one. A gateway failure or a model still loading on a router
 gets one retry; a request the server rejected on its merits is never replayed.
 
-## Sessions and the audit log
+## Saved conversations
 
 Every conversation is appended to `$YKODE_HOME/sessions/<id>.jsonl`, one line per
-message, and every tool call is appended to `$YKODE_HOME/audit/YYYY-MM.jsonl`
-before it runs and again after, including the calls that were refused. The audit
-log is never trimmed, compacted or reset — it is the record of what actually
-happened, with the file each call touched, a command's exit code, the size and
-fingerprint of each result, and `OUTSIDE` when a call reached past the root.
-Anything that reads like a key, token or password is masked on the way in.
-Months past their retention (180 days, `audit_retention_days`) are removed at
-startup, never the current one, and `"audit": false` stops the log being written.
-
-`/history` answers the same questions inside a session. Outside one:
-
-```sh
-ykode history                      # the last run, call by call
-ykode history --all exec           # every command of this root
-ykode history --failed --since 24h # what went wrong today
-ykode history --all r12            # one call in full, with its output path
-ykode history --json --all         # the same, one JSON object per call
-ykode sessions                     # the conversations that can be resumed (--limit N)
-```
-
-Flags come first, then what to look for.
-
-`/undo` takes the most recent change off a small stack of snapshots that
-`write_file` and `edit_file` leave behind: a file that was edited goes back to the
-exact bytes it held, and a file that was created is removed. It is a stack, so a
-second `/undo` undoes the change before that. If the file was changed after ykode wrote it, `/undo` refuses
-rather than lose that work; `/undo force` puts the old text back anyway.
+message, with every tool call and its result. It is what `--continue` reads back, and
+what `/sessions` lists on the screen.
 
 `--continue last` starts the newest conversation again; `--continue <id>` picks one
 by id. An id is a timestamp to the millisecond, so enough of it to be unique is
-enough (`--continue 2137`), and `ykode sessions` lists what there is with what each
+enough (`--continue 2137`), and `/sessions` on the screen lists what there is with what each
 was about. On the screen `/sessions` opens that list as a menu: enter puts the
 conversation under the cursor in this run's place - the screen draws it, the model
 reads it, and what follows is saved to its file, while the conversation the run gave
 up stays saved to be come back to the same way. A conversation written in another
-project is only named there, with the command that continues it in its own root. The
-resumed run keeps the same id, so its results and its audit entries stay with its
-conversation.
+project is only named there, with the command that continues it in its own root.
 
 The screen opens with the conversation it came back to — the asks, the calls with what they
 answered, and the recap of any fold — and `ctrl+p` still walks the earlier prompts of it.
@@ -382,8 +344,8 @@ the files it covered, how many messages it took out and what the conversation co
 the older entries stay in the file, only no longer sent. The recap the model
 wrote for it is saved with the conversation, and `/reset` marks the saved log as
 started over, so nothing that was put away comes back. What a resume cannot save is
-the trimming a turn does to fit the window, so a conversation bigger than the window
-still sheds its oldest turns and keeps the newest.
+the folding and dropping a turn does to fit the window, so a conversation bigger than
+the window still sheds its oldest turns and keeps the newest.
 
 ## Staying inside the project
 
@@ -428,22 +390,26 @@ The first run creates `~/.ykode` (mode `0700`) and writes `~/.ykode/settings.yam
 
 Settings resolve in this order, later winning: built-in defaults, `~/.ykode/settings.yaml`,
 `<root>/.ykode/settings.yaml`, environment variables, flags. Both are YAML and meant to be edited by
-hand; a folder that still holds the old `settings.json` is read for one more release, and the YAML file
-wins when both are there.
+hand.
 
-`/settings` is the way in from inside a session. Alone it lists every knob with what it is now, and
-marks the ones someone changed with what they were and whether a flag, the environment or the file
-decided it; a knob nobody chose says nothing else, so the list reads as what is unusual about this
-run. `/settings thinking_level` explains one knob — what it is for, its choices, how to change it.
-`/settings tools.read_lines 40` writes that key into `~/.ykode/settings.yaml`, comments and other keys
-kept, and says which way it moved; the next run reads it. A value the knob cannot take is refused
-before the file is touched. `api_key` is reported as set, never repeated.
+`/settings` is the way in from inside a session. Alone it opens a screen whose header says which
+file it writes: this project's `.ykode/settings.yaml` when it has one, or a warning that it is about
+to change `~/.ykode/settings.yaml`, the file every project reads. It lists every knob with what it is
+now, and marks the ones someone changed with what they were and whether a flag, the environment, the
+project's file or the global one decided it; a knob nobody chose says nothing else, so the list reads
+as what is unusual about this run. `/settings thinking_level` explains one knob — what it is for, its
+choices, how to change it. `/settings tools.read_lines 40` writes that key into the file this project
+uses, comments and other keys kept, and says which file took it and which way it moved; the next run
+reads it. A value the knob cannot take is refused before the file is touched. `api_key` is reported as
+set, never repeated.
 
-A project's file is not trusted just because it is there. `<root>/.ykode/settings.yaml` may set
-`max_turns`, `max_tokens`, `thinking_level`, `verify`, `context.*`, `tools.read_lines`,
-`tools.search_limit`, `tools.exec_timeout_sec` and `models.*` — how the project is read and what a
-turn costs. Everything else waits until you trust the project: the server it talks to, any key,
-`assume_yes`, `permissions.allow`, the audit log, and where command output is written. ykode names
+A project can keep its own settings: `<root>/.ykode/settings.yaml` overrides the global file key by
+key, and a key left out keeps the global value. `/create-local-setting` makes one, starting from the
+server and model this run is using; after that `/settings` changes it and never the global file.
+A project's file is not trusted just because it is there — only one ykode wrote is. It may set
+`max_turns`, `max_tokens`, `thinking_level`, `context.*`, `tools.read_lines`,
+`tools.exec_timeout_sec` and `models.*` — how the project is read and what a turn costs. Everything else waits until you trust the project: the server it talks to, any key,
+`assume_yes`, `permissions.allow`, and where command output is written. ykode names
 what it held back, asks once when someone is at the keyboard, and records the answer in
 `~/.ykode/trusted.json` as project root → the hash of that file, so editing it asks again.
 
@@ -452,11 +418,8 @@ base_url: http://127.0.0.1:8080/v1
 api_key_env: LOCAL_LLM_API_KEY
 model: Qwen3.6-35B-A3B-GSQ-hybrid
 max_turns: 100
-verify: true
 assume_yes: false
 mouse: false
-audit: true
-audit_retention_days: 180
 keep_sessions: 720h
 max_tokens: 0
 thinking_level: medium
@@ -465,7 +428,6 @@ context:
   safety_margin: 4096
 tools:
   read_lines: 2000
-  search_limit: 50
   exec_timeout_sec: 60
   command_log_dir: ""
   keep_command_logs: 24h
@@ -490,17 +452,13 @@ gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p
 `api_key`, or from the variable `api_key_env` names — the second keeps the secret out of
 the file, and an unset variable is no error.
 
-A saved conversation ages out after `keep_sessions` (30 days by default), and the command output
-that run saved go with it: a saved file is only named by the conversation that shortened it, so
-the two survive exactly as long as each other.
+A saved conversation ages out after `keep_sessions` (30 days by default).
 
 A key the settings file does not recognise is an error naming the file and the key, not a
 silently ignored line.
 
 The per-user directory is `~/.ykode`, or `$YKODE_HOME` when that is set; command logs a cut
-`exec_command` left behind live in `~/.ykode/logs`, and shortened tool results in
-`~/.ykode/results`; both are pruned at startup after `keep_command_logs`, and the audit
-months after `audit_retention_days`. `$YKODE_HOME/AGENTS.md` holds rules for every project
+`exec_command` left behind live in `~/.ykode/logs`, pruned at startup after `keep_command_logs`. `$YKODE_HOME/AGENTS.md` holds rules for every project
 you open; they are loaded before the project's own `AGENTS.md`, so a project can overrule
 what you set for all of them.
 
@@ -514,14 +472,8 @@ outside the root is shown to you and confirmed per call; the answer is never rem
 set to `--root`, so `cat ../../secrets` or `rm -rf ~` is possible. Its environment is
 scrubbed to `PATH`, `HOME`, `TERM` and `LANG`, so a command run by the model cannot read
 `LOCAL_LLM_API_KEY` or anything else from the environment ykode was started with, but it can
-still read and write anywhere your user can. `--yes` skips the confirmation for it too.
-
-`sandbox: true` in `~/.ykode/settings.yaml` closes that gap: every command then runs under
-`sandbox-exec` (macOS) or `bwrap` (Linux) with no network and write access only to the
-project, the temp folder and your cache folder (where build tools keep theirs). If the
-sandbox tool is missing, the command is refused rather than run unconfined. A project's own
-settings file cannot turn it off. Without it, run ykode as a user with access only to what
-you are willing to let a shell touch, or in a container.
+still read and write anywhere your user can. `--yes` skips the confirmation for it too. So run
+ykode as a user with access only to what you are willing to let a shell touch, or in a container.
 
 ## Benchmarks
 
