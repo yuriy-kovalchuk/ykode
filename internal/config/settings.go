@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,19 +151,13 @@ func linesNamed(msg string) []int {
 			j++
 		}
 		if j > i+5 {
-			lines = append(lines, atoi(msg[i+5:j]))
+			if n, err := strconv.Atoi(msg[i+5 : j]); err == nil {
+				lines = append(lines, n)
+			}
 			i = j
 		}
 	}
 	return lines
-}
-
-func atoi(s string) int {
-	n := 0
-	for _, r := range s {
-		n = n*10 + int(r-'0')
-	}
-	return n
 }
 
 // keyAtLine is the setting a line of the file belongs to, dotted the way the settings table names it
