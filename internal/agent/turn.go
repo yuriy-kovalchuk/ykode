@@ -98,6 +98,12 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 			}
 			msg.Content = withoutTextCalls(msg.Content) // the answer never carries the markup
 		}
+		if finish == finishLength {
+			// a call stopped mid-tag never closed, so everything after its opening was never answer.
+			// It is not read as a call and the model is not told it wrote one: the next lines report the
+			// reply running out of tokens, which is what actually happened.
+			msg.Content = withoutCutCalls(msg.Content)
+		}
 		a.add(msg)
 
 		if finish == finishLength {

@@ -70,7 +70,7 @@ type model struct {
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
 	input := textarea.New()
-	input.Placeholder = "one sentence is enough, /help lists the commands"
+	input.Placeholder = "Hello hello"
 	input.Prompt = ""
 	input.ShowLineNumbers = false
 	input.SetHeight(1)

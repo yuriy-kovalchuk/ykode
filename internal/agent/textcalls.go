@@ -20,11 +20,23 @@ var (
 	textJSONCallRe  = regexp.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 )
 
-// textCallRe finds a tool call written out as text, the way some chat templates make models write it
-// when they were not offered the tool interface or lost track of it.
-var textCallRe = regexp.MustCompile(`(?s)<tool_call>.*?(?:</tool_call>|$)|<function=[^>]*>.*?(?:</function>|$)`)
+// textCallCutRe also matches an opening tag that never closes: a reply stopped mid-call. Its fragment
+// is never an answer, so it is taken out of the text kept, but it is not read as a call and the model
+// is not told it wrote one - the reply running out of tokens is what that turn already reports.
+var textCallCutRe = regexp.MustCompile(`(?s)<tool_call>.*?(?:</tool_call>|$)|<function=[^>]*>.*?(?:</function>|$)`)
 
-func hasTextCall(s string) bool { return textCallRe.MatchString(outsideCode(s)) }
+// emptyCallTagsRe is the wrapping pair left over once the call it wrapped has been cut out. Tags named
+// in prose survive it: only a pair with nothing but space between them was wrapping a call.
+var emptyCallTagsRe = regexp.MustCompile(`(?s)<tool_call>\s*</tool_call>`)
+
+// hasTextCall asks whether the text holds a call that parses: one in the function form with its
+// closing tag, or the JSON form between call tags. Asking the loose question instead - does any of this
+// markup appear - made prose about the markup read as a call, which cut the sentence out of the answer
+// and told the model it had written a call it had not written.
+func hasTextCall(s string) bool {
+	s = outsideCode(s)
+	return textFunctionRe.MatchString(s) || textJSONCallRe.MatchString(s)
+}
 
 // codeSpanRe is what an answer sets off as code: a ``` fence, a ~~~ fence, or a ` backtick span. A
 // fence left open reaches the end of the answer, which is the safer reading of an unfinished block.
@@ -44,18 +56,35 @@ func outsideCode(s string) string {
 
 // withoutTextCalls removes the calls written as text, leaving what the model said around them. What
 // sits inside a code span is kept as written: a quoted example is the answer, not a call that failed.
+// Only markup that parses as a call goes: a tag named in a sentence about the markup is the answer too.
 func withoutTextCalls(s string) string {
+	return cutCallMarkup(s, textFunctionRe, textJSONCallRe)
+}
+
+// withoutCutCalls is withoutTextCalls for a reply that ran out of tokens: the half of a call it managed
+// to write is dropped along with anything after the opening tag, since none of it was answer.
+func withoutCutCalls(s string) string {
+	return cutCallMarkup(s, textCallCutRe)
+}
+
+func cutCallMarkup(s string, res ...*regexp.Regexp) string {
+	cut := func(part string) string {
+		for _, re := range res {
+			part = re.ReplaceAllString(part, "")
+		}
+		return emptyCallTagsRe.ReplaceAllString(part, "")
+	}
 	if !strings.ContainsRune(s, backtick) && !strings.Contains(s, "~~~") {
-		return strings.TrimSpace(textCallRe.ReplaceAllString(s, ""))
+		return strings.TrimSpace(cut(s))
 	}
 	var out strings.Builder
 	at := 0
 	for _, span := range codeSpanRe.FindAllStringIndex(s, -1) {
-		out.WriteString(textCallRe.ReplaceAllString(s[at:span[0]], ""))
+		out.WriteString(cut(s[at:span[0]]))
 		out.WriteString(s[span[0]:span[1]]) // the code itself, exactly as it was written
 		at = span[1]
 	}
-	out.WriteString(textCallRe.ReplaceAllString(s[at:], ""))
+	out.WriteString(cut(s[at:]))
 	return strings.TrimSpace(out.String())
 }
 
