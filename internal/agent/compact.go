@@ -66,6 +66,11 @@ const FoldMark = "[ykode compacted the earlier turns into this summary]"
 // intact. It returns the tokens freed; a summary that cannot be made leaves the conversation as it was,
 // and makeRoom is the one that has to fit it then.
 func (a *Agent) Compact(ctx context.Context) int {
+	// A fold rewrites the conversation, so it owns the run while it lasts. Called from inside a turn it
+	// is already owned, and this leaves the flag for that turn to clear.
+	if owns := a.turnRunning.CompareAndSwap(false, true); owns {
+		defer a.turnRunning.Store(false)
+	}
 	a.sanitizeHistory()
 	before := a.estimateTokens()
 	start, task := a.compactCut()

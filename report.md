@@ -292,15 +292,18 @@ published behind a mutex, the plan list is behind a mutex, the waiting-ask queue
 transcript's row cache is only touched by the screen's goroutine — which is exactly why the exceptions
 matter.
 
-- The run's cancel function is assigned by the screen's goroutine, read by a key handler, and cleared
-  by a message arriving from the run's goroutine. Two owners, no lock, on the escape hatch.
-- `Conversation()` copies the slice but not the messages, and `sanitizeHistory` rewrites tool-call
-  arguments inside the stored messages in place. A reader holding the copy can see strings change
-  underneath it.
+- ~~The run's cancel function has two owners, no lock, on the escape hatch.~~ **Checked and clean**:
+  every path that touches it - starting a run, the key handler that cancels, and the clear when the run
+  reports back - runs inside the screen's single `Update`. The run's goroutine only posts a message
+  through the hub and never touches the field.
+- `Conversation()` copied the slice but not the messages, and `sanitizeHistory` rewrites tool-call
+  arguments inside the stored messages in place, so a reader holding the copy could see strings change
+  underneath it. **Reproduced and fixed** - the copy takes the call list with it. A message coming
+  through `add` is repaired before it is stored, so the case that reaches it is a conversation that came
+  back from a file, which is exactly what the screen draws.
 - The tool layer's options are written by the settings screen and read by a tool, with a comment
-  asserting that nothing reads them during a turn. Nothing makes the settings screen refuse to open
-  during a turn; the refusal lives in one caller, and the model picker shows how a second caller
-  forgets it.
+  asserting that nothing reads them during a turn. The refusal lived in one caller and nowhere else.
+  The agent refuses now, so a front end cannot reach the options under a request being built from them.
 - The idle watchdog is a timer, an unguarded "something has been read" flag and a cancel, mutated by
   the reading goroutine and fired by the timer's own.
 - Several agent methods mutate state a front end reads — switch endpoint, tune options, switch model,
@@ -313,6 +316,20 @@ matter.
 
 The cheapest structural fix is not more mutexes. It is one rule enforced in code — a turn-running flag
 these methods refuse when it is set — so the comments stop being load-bearing.
+
+**Done, and one claim in this list was wrong.** The rule is now in the agent: a turn is claimed when it
+starts and a second one is refused, and `SetEndpoint`, `Tune`, `SetModel`, `SetThinkingLevel`, `Reset`
+and `ContinueFrom` refuse while it is held rather than trusting their caller. A fold claims the flag only
+when nobody owns it, so one called from inside a turn leaves it for that turn to release - without that
+the guard would release a run it never started. Enforcing the rule turned up a race the detector had
+never seen: every event carries the number of the round-trip in flight, written by the goroutine
+answering and read by any notice from elsewhere, and the refusal made that read deliberate. It is
+atomic now.
+
+The model picker was said to lack the idle check. **It does not**: it is declared as a command that
+waits, and the gate refuses it mid-turn - checked by holding a turn open and typing each command.
+What was real is what made the claim plausible: the gate lives in the screen, so the agent itself
+accepted anything, and a settings change typed mid-turn was refused by neither.
 
 ---
 

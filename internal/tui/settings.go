@@ -172,7 +172,12 @@ func (m *model) applyEndpoint(res SetupResult) {
 	m.cfg.BaseURL, m.cfg.Model, m.cfg.EndpointSet = res.BaseURL, res.Model, true
 	client := llm.NewClient(res.BaseURL, m.cfg.APIKey)
 	client.Session, client.Idle = m.cfg.Session, m.cfg.StreamIdle
-	m.agent.SetEndpoint(client, res.Model, cmp.Or(m.cfg.CtxSize, res.CtxSize))
+	if !m.agent.SetEndpoint(client, res.Model, cmp.Or(m.cfg.CtxSize, res.CtxSize)) {
+		// the choice is saved either way: only switching this run over had to wait
+		m.log.notice("saved; this run keeps its current model until the turn finishes")
+		m.refresh()
+		return
+	}
 	where := shortenHome(path)
 	if !local {
 		where = "globally in " + where + ": " + noLocalFile

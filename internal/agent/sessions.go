@@ -55,6 +55,10 @@ func (a *Agent) ContinueFrom(dir, id string) error {
 	if dir == "" || id == "" {
 		return fmt.Errorf("no saved conversation to continue")
 	}
+	if a.turnBusy() {
+		// this replaces the whole conversation, which is what a request in flight is being built from
+		return fmt.Errorf("a turn is running: continuing another conversation waits for it to finish (esc stops it)")
+	}
 	saved, err := session.LoadAll(filepath.Join(dir, id+".jsonl"), a.opts.Root)
 	if err != nil {
 		return err

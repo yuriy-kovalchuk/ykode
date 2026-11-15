@@ -366,7 +366,7 @@ func (m *model) applyLive(before, now config.Config) {
 	if now.ThinkingLevel != before.ThinkingLevel {
 		// only a change to the level itself: writing the saved value back would undo a /think the session
 		// made without saving it
-		m.agent.SetThinkingLevel(now.ThinkingLevel)
+		m.agent.SetThinkingLevel(now.ThinkingLevel) // a turn in flight refuses, and says so itself
 	}
 	m.agent.Tune(func(o *agent.Options) {
 		o.AssumeYes = now.AssumeYes

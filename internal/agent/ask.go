@@ -17,5 +17,5 @@ func (s asksTo) Ask(ctx context.Context, q tools.Question) string {
 	if !ok {
 		return "" // a model is offered the tool only when its front end can answer
 	}
-	return asker.Ask(ctx, Event{Kind: Ask, Turn: s.a.turn, Text: q.Text, Options: q.Options})
+	return asker.Ask(ctx, Event{Kind: Ask, Turn: s.a.turnNo(), Text: q.Text, Options: q.Options})
 }

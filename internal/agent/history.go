@@ -159,8 +159,16 @@ func historyBytes(history []llm.Message) int {
 }
 
 // Conversation returns the turns the model is being sent, system prompt first: a run that came back
-// to a saved conversation draws what it already knows. Read it between turns, not while one runs -
-// the history belongs to the goroutine answering.
+// to a saved conversation draws what it already knows. The call list is copied rather than shared:
+// the run repairs a cut-off call's arguments inside the stored message, and a reader holding the copy
+// would otherwise watch one of its own strings change underneath it.
 func (a *Agent) Conversation() []llm.Message {
-	return append([]llm.Message(nil), a.history...)
+	said := make([]llm.Message, len(a.history))
+	copy(said, a.history)
+	for i := range said {
+		if len(a.history[i].ToolCalls) > 0 {
+			said[i].ToolCalls = append([]llm.ToolCall(nil), a.history[i].ToolCalls...)
+		}
+	}
+	return said
 }

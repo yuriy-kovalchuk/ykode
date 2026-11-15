@@ -31,7 +31,8 @@ type Agent struct {
 	perms           *permissions // what the user has already agreed to keep allowing
 	sessionBroken   atomic.Bool  // the session log failed once: say so once, not per message
 	unfinishedNoted atomic.Bool  // a reply that ended without saying it was finished: said once per run
-	turn            int          // the round-trip currently running, carried on every event
+	turnRunning     atomic.Bool  // a round-trip is in flight: the history belongs to the goroutine answering
+	turn            atomic.Int64 // the round-trip currently running, carried on every event: a notice from elsewhere reads it
 	history         []llm.Message
 	histBytes       int // the conversation's bytes, kept as it changes: the estimate runs on every call
 	histCount       int // how many messages that total was measured over, so a stale total is caught
@@ -71,6 +72,9 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 
 // Reset keeps the system prompt and forgets the rest of the conversation; the learned byte ratio stays.
 func (a *Agent) Reset() {
+	if a.refuseDuringATurn("forgetting the conversation") {
+		return
+	}
 	if len(a.history) > 1 {
 		// the saved conversation starts over too, or --continue hands back what was just cleared
 		a.reportSave(a.opts.Session.Cleared())
@@ -92,6 +96,22 @@ func (a *Agent) startOver() {
 	a.work.started()    // nothing has had to make room in the conversation that starts now
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
 	a.publishUsage()
+}
+
+// turnBusy says a round-trip is in flight. The history belongs to the goroutine answering it: reading
+// or changing it from elsewhere is the race this package's comments have always described, without any
+// way to enforce them.
+func (a *Agent) turnBusy() bool { return a.turnRunning.Load() }
+
+// refuseDuringATurn stops a change that belongs between turns, and says so in words a user can act on.
+// The rule was written in comments and trusted to every caller; one caller forgetting it was enough to
+// replace the conversation a request is in the middle of sending.
+func (a *Agent) refuseDuringATurn(what string) bool {
+	if !a.turnBusy() {
+		return false
+	}
+	a.tell("a turn is running: " + what + " waits for it to finish (esc stops it)")
+	return true
 }
 
 // reportSave passes on the one thing a session log can answer with, and says it only once per run:
@@ -166,14 +186,18 @@ func highestCallID(messages []llm.Message) int {
 	return highest
 }
 
-func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turn, Text: text}) }
+func (a *Agent) tell(text string) { a.emit(Event{Kind: Notice, Turn: a.turnNo(), Text: text}) }
 
 func (a *Agent) emit(ev Event) Decision {
 	if ev.Turn == 0 {
-		ev.Turn = a.turn
+		ev.Turn = a.turnNo()
 	}
 	return a.sink.Emit(ev)
 }
+
+// turnNo is the round-trip now running, 0 between turns. The goroutine answering writes it, and a
+// refusal or a notice from anywhere else reads it to say which turn it belongs to.
+func (a *Agent) turnNo() int { return int(a.turn.Load()) }
 
 // note keeps the history honest when a turn ends without an answer.
 func (a *Agent) note(text string) {

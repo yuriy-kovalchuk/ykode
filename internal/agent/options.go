@@ -29,25 +29,49 @@ type Options struct {
 	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
 }
 
-// SetEndpoint points the next request at another server and model, with that model's window. It is called
-// between turns, never during one, so nothing holds the old client.
-func (a *Agent) SetEndpoint(client *llm.Client, model string, ctxSize int) {
+// SetEndpoint points the next request at another server and model, with that model's window. A request
+// in flight is reading the client, the model and the window to build itself, so it refuses while one
+// runs rather than trusting the caller to have checked.
+func (a *Agent) SetEndpoint(client *llm.Client, model string, ctxSize int) bool {
+	if a.refuseDuringATurn("switching server") {
+		return false
+	}
 	a.client, a.model, a.opts.CtxSize = client, model, ctxSize
 	if a.opts.KeepRecentTokens > 0 {
 		a.opts.KeepRecentTokens = min(20000, ctxSize/5)
 	}
 	a.publishUsage() // the footer's window is the new one
+	return true
 }
 
-// Tune changes options between turns, for a setting changed while the session runs. Nothing reads the
-// options while a turn is in flight, because the screen only calls this when none is.
-func (a *Agent) Tune(change func(*Options)) { change(&a.opts) }
+// Tune changes options between turns, for a setting changed while the session runs. The round-trip in
+// flight is reading these options to build its request, so this refuses while one runs: the rule used to
+// be a comment and a promise about who called it.
+func (a *Agent) Tune(change func(*Options)) bool {
+	if a.refuseDuringATurn("changing a setting") {
+		return false
+	}
+	change(&a.opts)
+	return true
+}
 
 // SetModel changes what the next request asks for; the server may still be loading it.
-func (a *Agent) SetModel(id string) { a.model = id }
+func (a *Agent) SetModel(id string) bool {
+	if a.refuseDuringATurn("switching model") {
+		return false
+	}
+	a.model = id
+	return true
+}
 
 // SetThink decides whether the model gets a thinking phase on the turns that follow.
-func (a *Agent) SetThinkingLevel(level string) { a.opts.ThinkingLevel = level }
+func (a *Agent) SetThinkingLevel(level string) bool {
+	if a.refuseDuringATurn("changing the thinking level") {
+		return false
+	}
+	a.opts.ThinkingLevel = level
+	return true
+}
 
 // ThinkingLevel is how deeply the model is allowed to think before it answers.
 func (a *Agent) ThinkingLevel() string { return cmp.Or(a.opts.ThinkingLevel, llm.DefaultThinkingLevel) }

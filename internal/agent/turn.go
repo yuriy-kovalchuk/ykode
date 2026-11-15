@@ -14,7 +14,17 @@ import (
 )
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
+// It is what marks the run busy: everything in the conversation belongs to this goroutine while it is
+// in flight, and the methods that change it from outside refuse rather than trusting a caller to know.
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
+	if !a.turnRunning.CompareAndSwap(false, true) {
+		return fmt.Errorf("a turn is already running: it owns the conversation")
+	}
+	defer a.turnRunning.Store(false)
+	return a.ask(ctx, prompt)
+}
+
+func (a *Agent) ask(ctx context.Context, prompt string) error {
 	a.opts.Plan.DropIfSettled() // the steps belonged to the prompt that finished them
 	a.work.started()            // what the last ask had to do says nothing about this one
 	asked := a.withEnvironment(prompt)
@@ -26,7 +36,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	// times: the user should not have to type "continue" for a run that only lost its footing
 	emptyNudges, cutNudges, pausedNudged, overflowed := 0, 0, false, false
 	for turn := 1; ; turn++ {
-		a.turn = turn
+		a.turn.Store(int64(turn))
 		a.emit(Event{Kind: TurnStart, Turn: turn})
 		a.prepareTurn(ctx, turn)
 		req, err := a.request()
@@ -283,7 +293,7 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		a.reportSave(a.opts.Session.Learned(r)) // a run that comes back measures as this one does
 	}
 	a.publishUsage()
-	a.emit(Event{Kind: TurnEnd, Turn: a.turn, Stats: stats})
+	a.emit(Event{Kind: TurnEnd, Turn: a.turnNo(), Stats: stats})
 	if turn.Unfinished && !a.unfinishedNoted.Swap(true) {
 		// A dropped connection and a server that never sends [DONE] look identical from here, so the
 		// first one is worth saying and every one after it is noise: a server that ends all its replies
