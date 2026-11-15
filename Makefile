@@ -22,7 +22,13 @@ vet:
 test:
 	$(GO) test ./... -count=1
 
-check: vet test
+check: vet fmtcheck test
+
+# the check target reports formatting rather than only offering to fix it: a file that never went
+# through gofmt drifts one hunk at a time, and the next diff is harder to read for it
+fmtcheck:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then echo "gofmt: $$unformatted"; exit 1; fi
 
 cover:
 	$(GO) test ./... -count=1 -coverprofile=coverage.out

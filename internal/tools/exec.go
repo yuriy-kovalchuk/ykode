@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -154,11 +153,13 @@ func execTimeout(seconds int, def time.Duration) (time.Duration, bool) {
 }
 
 // groupCommand runs the command in its own process group so cancelling kills children, not just sh.
+// The group and the kill are each the operating system's own business: see exec_unix.go and
+// exec_windows.go.
 func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = waitDelay
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.SysProcAttr = groupAttributes()
+	cmd.Cancel = func() error { return killGroup(cmd) }
 	return cmd
 }
 

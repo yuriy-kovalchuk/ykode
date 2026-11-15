@@ -353,10 +353,11 @@ accepted anything, and a settings change typed mid-turn was refused by neither.
   good approximation of a shell and not the shell. A path containing a space makes a plain command look
   chained and forces an unnecessary question; anything the list misses makes a chained command look
   plain — and those are the lines that then get remembered as always-allowed.
-- **A leading change-of-directory into the project root is stripped from commands, including inside
-  quotes.** The regular expression matches a quoted directory and the check that follows compares the
-  text with the quotes removed, so a command whose opening argument is a quoted path equal to the root
-  loses its quoting on the way to the shell.
+- ~~A leading `cd` into the project root is stripped including inside quotes, losing the quoting.~~
+  **Checked and clean.** The whole match, delimiter included, is taken off - `cd '/my project' && ls`
+  becomes `ls`, not `'my project' && ls` - and a quoted directory that is not the root is left exactly
+  as it was, so `cd '/other place' && ls` is untouched. Checked by driving the function with quoted
+  paths containing spaces, matching and not matching the root, and with a quoted argument further in.
 - **Saving an endpoint or a knob from the screen marks the project's settings file as trusted.** If the
   file arrived distrusted — its dangerous keys withheld, the user warned and declining — the first save
   retires the warning without ever showing what had been withheld. A cloned repository that asked to
