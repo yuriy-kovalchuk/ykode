@@ -130,15 +130,25 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	for n := first; n <= last; n++ {
 		entry := lines[n-1] + "\n"
 		if b.Len()+len(entry) > t.aim() {
-			// one huge line (a minified asset) still gets its head shown rather than nothing
-			if n == first {
-				b.WriteString(cutUTF8(lines[n-1], t.aim()-b.Len()-64) + "\n")
+			// one huge line (a minified asset) still gets its head shown rather than nothing, but only
+			// when the budget has room left after the header: a budget smaller than the header it put
+			// there would ask for a cut of negative length
+			room := t.aim() - b.Len() - headCutSlack
+			if n == first && room > 0 {
+				b.WriteString(cutUTF8(lines[n-1], room) + "\n")
 				shown = n
 			}
 			break
 		}
 		b.WriteString(entry)
 		shown = n
+	}
+	if shown == first-1 {
+		// nothing at all fit: saying "0 of 400 lines, continue with offset=1" would send the model back
+		// to the line it just failed to read
+		fmt.Fprintf(&b, "\n[the %d byte result budget holds no line of this file; read a smaller window with limit, or use exec_command with sed -n '%d,%dp']\n",
+			t.aim(), first, first+smallWindow-1)
+		return b.String(), nil
 	}
 	if shown < len(lines) {
 		reason := "pass a larger limit"
@@ -152,6 +162,13 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	}
 	return b.String(), nil
 }
+
+// headCutSlack is what the header line and the note about a cut may cost, taken off the budget before
+// a first line is cut to what is left. smallWindow is the window suggested when nothing fits.
+const (
+	headCutSlack = 64
+	smallWindow  = 50
+)
 
 // splitLines drops the empty element a trailing newline gives and CRLF's \r, matching edit_file's text.
 func splitLines(data []byte) []string {

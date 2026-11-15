@@ -72,8 +72,14 @@ func (s scope) cap() int {
 	return defaultResultBytes
 }
 
-// aim leaves room for the note that explains a cut.
-func (s scope) aim() int { return s.cap() - budgetSlack }
+// aim leaves room for the note that explains a cut. It never answers zero or less: a budget smaller
+// than the note itself would leave nothing to fill, and every caller that cuts to this length would
+// be handed a negative one.
+func (s scope) aim() int { return max(s.cap()-budgetSlack, minAimBytes) }
+
+// minAimBytes is the least a result may hold, so a mis-set or tiny budget degrades to a short answer
+// instead of to a broken cut.
+const minAimBytes = 64
 
 // handle addresses one target as root+name, and releases anything opened for it.
 type handle struct {

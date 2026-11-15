@@ -39,7 +39,11 @@ func FormatResult(out string, maxBytes int) string {
 	if len(out) <= maxBytes {
 		return out
 	}
-	// the marker costs bytes too, or the result would break the cap it promises
+	// the marker costs bytes too, or the result would break the cap it promises - and a cap smaller than
+	// the marker holds nothing to split, so it gets the marker alone rather than a cut of negative length
+	if maxBytes < markerOverhead {
+		return fmt.Sprintf("[%d bytes omitted: the result budget is too small to show any of it]", len(out))
+	}
 	keep := (maxBytes - markerOverhead) / 2
 	head, tail := cutUTF8(out, keep), cutUTF8Tail(out, keep)
 	return fmt.Sprintf("%s\n\n[... %d bytes omitted ...]\n\n%s", head, len(out)-len(head)-len(tail), tail)

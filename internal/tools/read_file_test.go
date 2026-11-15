@@ -179,3 +179,41 @@ func TestABigFileIsReadUpToTheBudget(t *testing.T) {
 		t.Errorf("a cut read does not say how to get further:\n%s", out[max(0, len(out)-300):])
 	}
 }
+
+// A budget smaller than the header the read itself writes must not ask for a cut of negative length.
+// The floor on the ceiling keeps a small budget returning something useful; what the guard protects is
+// the cut of a first line that cannot fit at all, which the shipped settings cannot produce -
+// ResultBytesFor floors the budget at four thousand eight hundred - so this guards the next caller that
+// derives the number by hand.
+func TestATinyBudgetCutsNothingAndSaysSo(t *testing.T) {
+	long := strings.Repeat("q", 300)
+	for _, budget := range []int{1, 40, 120, 150} {
+		tool := readToolFixture(t, long+"\nbbbb\n")
+		tool.budget = budget
+		out, err := tool.Run(context.Background(), json.RawMessage(`{"path":"f.txt"}`))
+		if err != nil {
+			t.Errorf("budget %d: an impossible budget is a result, not an error: %v", budget, err)
+			continue
+		}
+		if !strings.Contains(out, "holds no line") || strings.Contains(out, "continue with offset=1") {
+			t.Errorf("budget %d: %q", budget, out)
+		}
+	}
+	// the same tiny budget on a file whose lines do fit still answers with the text
+	short := readToolFixture(t, "aaaa\nbbbb\n")
+	short.budget = 40
+	if out := runTool(t, short, `{"path":"f.txt"}`); !strings.Contains(out, "aaaa") {
+		t.Errorf("a small budget that can hold the file should still return it:\n%s", out)
+	}
+}
+
+// One huge first line still gets its head shown: the minified asset a model reached for is worth more
+// than a note saying the file is big.
+func TestOneHugeFirstLineShowsItsHead(t *testing.T) {
+	tool := readToolFixture(t, strings.Repeat("z", 4000)+"\nsecond line\n")
+	tool.budget = 1500
+	out := runTool(t, tool, `{"path":"f.txt","limit":2}`)
+	if !strings.Contains(out, "zzzz") || !strings.Contains(out, "byte limit") {
+		t.Errorf("the huge first line was not cut to the budget:\n%s", out)
+	}
+}

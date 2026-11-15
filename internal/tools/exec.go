@@ -182,13 +182,15 @@ func (t *Exec) fit(w *outWindow) string {
 	return b.String()
 }
 
-// aim is the byte ceiling for this command's output, with room left for the note about the cut.
+// aim is the byte ceiling for this command's output, with room left for the note about the cut. It
+// carries the same floor as the file tools' ceiling: a budget smaller than the note would leave every
+// cut below asking for a negative length.
 func (t Exec) aim() int {
 	cap := t.MaxBytes
 	if cap <= 0 {
 		cap = defaultResultBytes
 	}
-	return cap - budgetSlack
+	return max(cap-budgetSlack, minAimBytes)
 }
 
 // PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went.

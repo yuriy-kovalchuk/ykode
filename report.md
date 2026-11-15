@@ -34,24 +34,20 @@ panic: runtime error: slice bounds out of range [:-576]
   tools.(*ReadFile).Run(...)               read_file.go:135
 ```
 
-The reachable shape without a hand-set budget is a window of twelve hundred bytes — which
-`ResultBytesFor` hands out whenever the server never reported a context size — and a first line longer
-than about that. A minified asset, a generated table, a base64 blob in a source file. The branch was
-written for exactly that case, and the branch is what crashes.
+**How reachable it is, corrected after measuring.** Not reachable through the shipped configuration,
+which the first draft of this report claimed. The result budget comes from one function,
+`ResultBytesFor`, and that function floors it at four thousand eight hundred bytes whatever the
+server reports, so the ceiling every cut uses never falls below about four thousand three hundred —
+far above the length of the header line that would have to fill it first. The panic needs a caller that
+sets a budget below about one hundred and fifty bytes, which only a test does today.
 
-### The tool call's arguments are validated and then the unvalidated bytes are used
+So the honest shape of the finding is: a latent trap rather than a live crash. The branch was written to
+save a model reading a minified asset, it is one subtraction from being a crash, and the next caller
+that computes a budget by hand — the report lists three places that already derive that number
+independently — can walk straight into it. It is worth fixing for exactly that reason, and worth not
+being described as a production crash.
 
-`internal/agent/execute.go`. `ArgsJSON` exists because some servers send a call's arguments wrapped in
-a JSON string rather than as an object: it unwraps one layer, checks validity, and returns the inner
-bytes. Three call sites consume it — the runnable check, the session store, the history repair — and
-each of them discards the unwrapped result. `runTool` then uses the raw outer bytes for everything:
-the tool's decoder, the confirmation text, the permission key, the path targets, and the event emitted
-to the screen.
 
-Reproduced as a reading: a call whose arguments arrive as `"{\"path\":\"x\"}"` passes the validity
-check and is then decoded from the string form by every consumer. The string-shaped branches in
-`internal/tools/edit_file.go`'s argument parser and in `internal/tui/confirm.go`'s preview look like
-accommodations for this case, on a path that never actually reaches them.
 
 ### The settings screen can commit a value into the wrong setting
 
@@ -445,6 +441,20 @@ Five claims in the first draft did not survive being checked against the code, a
 are recorded rather than quietly deleted, because a reader acting on this report needs to know which
 findings were tested and which were not.
 
+- **Wrong, and it was the headline finding of the first draft** — that a call's arguments are validated
+  and then the unvalidated bytes are handed to the tool. They are not. `repair` writes the unwrapped
+  bytes back into the message before anything else reads it, and the unwrap therefore reaches the tool,
+  the confirmation text, the permission key and the path targets. Verified end to end through a stub
+  server and a tool that prints the bytes it was handed:
+
+  ```
+  server sends arguments as  "{\"path\":\"a.go\"}"
+  bytes the tool received: {"path":"a.go"}
+  ```
+
+  The three discarded return values the finding was built on are real, and each discards the value
+  because the work was already done elsewhere — which is worth a comment at each site so the next reader
+  does not reach the same wrong conclusion.
 - **Wrong** — that a tool call written as text inside an answer runs without a confirmation. It goes
   through the same runner as a real call and is asked about the same way.
 - **Wrong** — that the trim loop protects the oldest message because a three-character fragment of an
@@ -461,11 +471,15 @@ findings were tested and which were not.
 - **Inverted** — a model switch was reported as silently changing the sampling sent to the server. It is
   the reverse: the switch leaves the previous model's sampling in place and never picks up the new
   model's card.
-- **Held up under testing** — the file reader's panic, the validated-then-ignored call arguments, the
-  settings screen's row identity, the unused pinned-window option, the session log's whole-conversation
-  rewrites, the seeded file's false provenance, the duration grammar mismatch, the model picker racing a
-  turn, the stream error that cannot be a string, the tool-call ordering, the failed windows build, the
-  unformatted file and the tracked empty file.
+- **Held up under testing** — the file reader's panic, the settings screen's row identity, the unused
+  pinned-window option, the session log's whole-conversation rewrites, the seeded file's false
+  provenance, the duration grammar mismatch, the model picker racing a turn, the stream error that cannot
+  be a string, the tool-call ordering, the failed windows build, the unformatted file and the tracked
+  empty file.
+- **Reachability overstated, then measured** — the file reader's panic is real but not reachable through
+  any configuration the program can produce: the one function that supplies that budget floors it at four
+  thousand eight hundred bytes. It is a latent trap for a future caller, not a live crash. The defect and
+  the fix both stand; the severity does not.
 - **Checked and clean** — symlink confinement through the project root is refused by the operating
   system's directory-handle check for both reads and writes; the file listing's truncation count is
   correct; and the manually triggered fold does run the history repair.
@@ -532,8 +546,8 @@ findings were tested and which were not.
 
 ## The order to work in
 
-First, the panic in the file reader's byte-cut guard, and the validated-then-ignored arguments in the
-tool runner. Both are one function wide and both can end a run.
+First, the panic in the file reader's byte-cut guard — latent rather than live, as corrected above, and
+one function wide.
 
 Next, the cheap and dangerous ones: the settings screen committing into the wrong row, the duration the
 screen writes that the loader refuses, the settings value that cannot be cleared, the pinned window
