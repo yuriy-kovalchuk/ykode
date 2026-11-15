@@ -121,7 +121,7 @@ func scalarFor(k knob, value string) (*yaml.Node, error) {
 			return nil, fmt.Errorf("%s wants a whole number of tokens (0 leaves the answer the room the window has)", k.key)
 		}
 		return num(n), nil
-	case kindSeconds, kindDays:
+	case kindSeconds:
 		n, err := strconv.Atoi(value)
 		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("%s wants a whole number above zero", k.key)

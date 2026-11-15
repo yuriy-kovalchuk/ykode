@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
@@ -100,9 +101,13 @@ func (c *Config) applyFile(path string, project bool) error {
 	}
 	var s fileSettings
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	// A key the shape has no field for fails the file, naming the file and the key. That is a decision
+	// an existing test pins: a key that no longer exists (reserve_output, once a second name for
+	// max_tokens) must not read as if it had taken effect, and a misspelling one edit away is cheaper
+	// than a setting quietly ignored. The failure says which file and which key, so the fix is one edit.
 	dec.KnownFields(true)
 	if err := dec.Decode(&s); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("%s: %w", path, err)
+		return fmt.Errorf("%s: %s", path, describeDecode(raw, err))
 	}
 	if project {
 		c.ProjectSettings = path
@@ -113,6 +118,89 @@ func (c *Config) applyFile(path string, project bool) error {
 		c.ProjectHash = hex.EncodeToString(sum[:])
 	}
 	return c.applySettings(s, path)
+}
+
+// describeDecode turns a yaml complaint into one that names the setting. The library reports a line
+// number and the type it wanted; the reader has the file, not the line numbers, and a settings file is
+// the one file in this program a person is expected to edit. So the keys sitting on the lines named get
+// named, and the original wording follows underneath unchanged.
+func describeDecode(raw []byte, err error) string {
+	msg := err.Error()
+	var names []string
+	for _, line := range linesNamed(msg) {
+		if key := keyAtLine(raw, line); key != "" && !contains(names, key) {
+			names = append(names, key)
+		}
+	}
+	if len(names) == 0 {
+		return msg
+	}
+	return strings.Join(names, ", ") + ": " + msg
+}
+
+// linesNamed pulls the "line 12" mentions out of a yaml error.
+func linesNamed(msg string) []int {
+	var lines []int
+	for i := 0; i+5 < len(msg); i++ {
+		if msg[i:i+5] != "line " {
+			continue
+		}
+		j := i + 5
+		for j < len(msg) && msg[j] >= '0' && msg[j] <= '9' {
+			j++
+		}
+		if j > i+5 {
+			lines = append(lines, atoi(msg[i+5:j]))
+			i = j
+		}
+	}
+	return lines
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, r := range s {
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+// keyAtLine is the setting a line of the file belongs to, dotted the way the settings table names it
+// (tools.read_lines). Indentation gives the section; anything that is not a key line is skipped.
+func keyAtLine(raw []byte, line int) string {
+	if line <= 0 {
+		return ""
+	}
+	type entry struct {
+		indent int
+		name   string
+	}
+	var path []entry
+	for i, text := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		key, _, found := strings.Cut(trimmed, ":")
+		if !found {
+			continue
+		}
+		indent := len(text) - len(strings.TrimLeft(text, " "))
+		for len(path) > 0 && indent <= path[len(path)-1].indent {
+			path = path[:len(path)-1]
+		}
+		names := make([]string, 0, len(path)+1)
+		for _, e := range path {
+			names = append(names, e.name)
+		}
+		names = append(names, strings.TrimSpace(key))
+		if i+1 == line {
+			// the leaf counts too: max_turns rather than only the section it sits in
+			return strings.Join(names, ".")
+		}
+		path = append(path, entry{indent: indent, name: strings.TrimSpace(key)})
+	}
+	return ""
 }
 
 // stripUnsafe holds back what a cloned project must not decide alone, and shows what it asked for.

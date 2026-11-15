@@ -36,10 +36,8 @@ const detailRows = 6
 var handled = map[string]bool{"base_url": true, "model": true, "api_key": true}
 
 // liveKnobs are the settings a running session takes up at once; the others are read when ykode starts.
-var liveKnobs = map[string]bool{
-	"thinking_level": true, "assume_yes": true, "mouse": true,
-	"max_turns": true, "max_tokens": true, "context.safety_margin": true,
-}
+// They come from the one list of keys in the config package, so the two cannot name different sets.
+var liveKnobs = config.LiveKnobs()
 
 func newSettingsScreen(cfg config.Config) *settingsScreen {
 	in := textinput.New()

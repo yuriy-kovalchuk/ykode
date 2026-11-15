@@ -27,7 +27,6 @@ const (
 	kindYesNo
 	kindHours
 	kindSeconds
-	kindDays
 	kindList // written as a list; a new value is added to what is there
 )
 
@@ -39,48 +38,63 @@ type knob struct {
 	kind    int
 	options []string // the choices when there are few; anything of its kind fits when nil
 	value   func(Config) string
+	live    bool // a running session takes this up at once; the rest wait for its next start
 }
 
 // knobs are every setting the file can set, in the order a reader would look for them: the server,
-// then the model, then the tools, then what is kept.
+// then the model, then the tools, then what is kept. This is the one place a key is described - the
+// screen prints this list, Set checks a written value against it, and the live column says which of
+// them a session already running takes up. A key described anywhere else is a list that can disagree.
 func knobs() []knob {
 	return []knob{
 		{"base_url", "the server ykode asks; a first session asks for it", kindText, nil,
-			func(c Config) string { return c.BaseURL }},
+			func(c Config) string { return c.BaseURL }, false},
 		{"api_key", "bearer token, for a server that asks for one; api_key_env is the safer way", kindText, nil,
-			func(c Config) string { return shownKey(c.APIKey) }},
+			func(c Config) string { return shownKey(c.APIKey) }, false},
 		{"api_key_env", "name of a variable that holds the token, so it stays out of the file", kindText, nil,
-			func(c Config) string { return c.APIKeyEnv }},
+			func(c Config) string { return c.APIKeyEnv }, false},
 		{"model", "model id; empty takes the first one the server lists", kindText, nil,
-			func(c Config) string { return c.Model }},
+			func(c Config) string { return c.Model }, false},
 		{"thinking_level", "how deeply the model thinks before answering", kindText,
 			[]string{"off", "minimal", "low", "medium", "high", "xhigh", "max"},
-			func(c Config) string { return c.ThinkingLevel }},
+			func(c Config) string { return c.ThinkingLevel }, true},
 		{"max_tokens", "tokens per answer; empty leaves the answer the room the window has left", kindCount, nil,
-			func(c Config) string { return count(c.MaxTokens) }},
+			func(c Config) string { return count(c.MaxTokens) }, true},
 		{"max_turns", "round-trips one ask may take before it is stopped as runaway; 0 for no limit", kindCount, nil,
-			func(c Config) string { return count(c.MaxTurns) }},
+			func(c Config) string { return count(c.MaxTurns) }, true},
 		{"context.safety_margin", "tokens kept free for the answer when no cap was asked for", kindCount, nil,
-			func(c Config) string { return fmt.Sprint(c.SafetyMargin) }},
+			func(c Config) string { return fmt.Sprint(c.SafetyMargin) }, true},
 		{"tools.read_lines", "lines read_file returns when the model does not ask for a window", kindCount, nil,
-			func(c Config) string { return fmt.Sprint(c.ReadLines) }},
+			func(c Config) string { return fmt.Sprint(c.ReadLines) }, false},
 		{"tools.exec_timeout_sec", "seconds a command may run before it is cut", kindSeconds, nil,
-			func(c Config) string { return fmt.Sprint(int(c.ExecTimeout / time.Second)) }},
+			func(c Config) string { return fmt.Sprint(int(c.ExecTimeout / time.Second)) }, false},
 		{"stream_idle_sec", "seconds of silence before a stream counts as dead; a cold prompt needs more", kindSeconds, nil,
-			func(c Config) string { return fmt.Sprint(int(c.StreamIdle / time.Second)) }},
+			func(c Config) string { return fmt.Sprint(int(c.StreamIdle / time.Second)) }, false},
 		{"assume_yes", "do not ask about writes inside the project (outside it is always asked)", kindYesNo, nil,
-			func(c Config) string { return yesNo(c.AssumeYes) }},
+			func(c Config) string { return yesNo(c.AssumeYes) }, true},
 		{"mouse", "the screen takes the mouse: the wheel scrolls, and the terminal cannot select text", kindYesNo, nil,
-			func(c Config) string { return yesNo(c.Mouse) }},
+			func(c Config) string { return yesNo(c.Mouse) }, true},
 		{"permissions.allow", "never ask about these: a tool name, or exec:go test; a new one is added", kindList, nil,
-			func(c Config) string { return strings.Join(c.Allow, ", ") }},
+			func(c Config) string { return strings.Join(c.Allow, ", ") }, false},
 		{"keep_sessions", "how long a saved conversation survives", kindHours, nil,
-			func(c Config) string { return hours(c.KeepSessions) }},
+			func(c Config) string { return hours(c.KeepSessions) }, false},
 		{"tools.keep_command_logs", "how long a cut command's full output is kept", kindHours, nil,
-			func(c Config) string { return hours(c.KeepCommandLogs) }},
+			func(c Config) string { return hours(c.KeepCommandLogs) }, false},
 		{"tools.command_log_dir", "where that output goes; empty is under the home folder", kindText, nil,
-			func(c Config) string { return c.CommandLogDir }},
+			func(c Config) string { return c.CommandLogDir }, false},
 	}
+}
+
+// LiveKnobs are the settings a running session takes up at once, named by the list above rather than
+// kept as a second list of the same keys.
+func LiveKnobs() map[string]bool {
+	live := map[string]bool{}
+	for _, k := range knobs() {
+		if k.live {
+			live[k.key] = true
+		}
+	}
+	return live
 }
 
 // Setting is one knob as a screen shows it: the key, what it is for, what it is now, what it would

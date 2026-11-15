@@ -135,11 +135,25 @@ as "take the key out", emptying a section the key leaves with nothing in it.
 whole-number form the loader then refuses, so that `keep_sessions: 30` produced a settings file the next
 start could not read. It does not: both retention knobs are declared as durations, and `Set` rejects a
 bare number with `keep_sessions wants a length of time, like 720h` before anything is written. The
-whole-number kind is declared and never used — dead, not wrong. The part that did reproduce: a key the
-loader cannot parse, or one outside the schema, fails the start with the yaml error quoted
+whole-number kind is declared and never used — dead, not wrong. **The dead kind is now gone**, and a
+test writes and reads back every knob the screen offers, so a future kind that is declared and never
+accepted by the loader fails that test rather than reaching a user.
+
+The rest of the claim did reproduce, and it stays reported: a key the loader cannot parse, or one
+outside the schema, fails the start with the yaml error quoted
 (`field typo_key not found in type config.fileSettings`). It is reported and the program exits, but a
 single mistyped line in a settings file is a dead start rather than a warning next to the settings that
 did read, and a settings file the program wrote itself is the likeliest place for one.
+
+**I tried the lenient reading, and the tests said it is a decision.** Making an unknown key a notice
+instead of a failure broke a test with the name `TestTheReplyBudgetHasOneName`, which exists to stop
+`reserve_output` - a retired second name for `max_tokens` - from reading as though it had taken effect,
+and three cases of `TestABadSettingIsRefusedByNameAndFile`. Those are pinned choices, so I reverted the
+change rather than rewrite the tests. What was fixed is the part that was genuinely poor: a type error
+in the file used to be reported as `yaml: unmarshal errors: line 1: cannot unmarshal !!str` plenty into
+int`, naming no setting at all. It now leads with the key - `max_turns: yaml: ...` and
+`tools.read_lines: yaml: ...` - by looking the key up from the line number yaml gives, so the dead
+start at least says which line to edit.
 
 ### A model switch from the screen races the run
 
@@ -265,6 +279,20 @@ catalogue the screen prints, and the live-knob map that decides what a running s
 once. Six lists of the same keys, agreeing by luck. The provenance bug, the unset-versus-zero
 confusion and the two grammars for one duration are three drifts already present between them, all
 reproduced above.
+
+**Partly collapsed, and the rest measured as not worth collapsing.** The typed knob table and the
+catalogue the screen prints were already one list when I checked. The live-knob map in the screen was a
+hand-written list of six of the same keys and is now a column of that one table (`knob.live`, read
+through `LiveKnobs`), so a key cannot be live in one place and missing in the other; a test asserts the
+column and the table agree. The defaults already feed the seeded file (`builtinSettings` reads
+`defaults()`), so the file cannot contradict them, and the withheld-key list is deliberately not the
+same list as the knobs - most knobs are safe in a project file and a few are not, and that judgement is
+the point of it.
+
+What was added instead is a check the lists could not make themselves: every key the screen is willing
+to write is written, read back, taken back and read again in a test. That is the drift that actually
+bit - the screen writing a settings file the next start refuses to parse - and it is now caught for
+every knob, at any kind, without keeping a sixth list.
 
 ### The session format grows without a version
 
