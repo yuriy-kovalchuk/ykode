@@ -37,5 +37,7 @@ func CreateLocal(root, baseURL, model string) (string, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return path, err
 	}
-	return path, trustWritten(root)
+	// the file is new and its whole content is what the user just asked for, so the keys it holds are
+	// the keys this call wrote
+	return path, trustWritten(root, "base_url", "model")
 }

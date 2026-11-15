@@ -49,7 +49,7 @@ func Set(root, key, value string) (string, bool, error) {
 		return path, local, err
 	}
 	if local {
-		if err := trustWritten(root); err != nil {
+		if err := trustWritten(root, k.key); err != nil {
 			return path, local, err
 		}
 	}

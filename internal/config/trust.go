@@ -1,12 +1,15 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
@@ -32,15 +35,38 @@ func SettingsTarget(root string) (path string, local bool) {
 	return home.Settings(), false
 }
 
-// trustWritten records the project file as it now stands as accepted: ykode wrote it, so the next
-// start has nothing to ask about.
-func trustWritten(root string) error {
+// trustWritten records the project file as it now stands as accepted: ykode wrote it, so the next start
+// has nothing to ask about. The names say which keys this call wrote. The acceptance is withheld when
+// the file still asks for an unsafe key that this call did not write - a file the user declined at
+// start-up and then saved a harmless knob into. Accepting that file retires the warning without ever
+// showing what had been withheld, and the next start applies a cloned project's base_url and
+// assume_yes unasked. Keys ykode wrote at the user's instruction, in the setup screen or
+// /create-local-setting, are the ordinary case and stay accepted.
+func trustWritten(root string, wrote ...string) error {
 	raw, err := os.ReadFile(LocalSettings(root))
 	if err != nil {
 		return err
 	}
+	held, _ := unsafeIn(raw)
+	for _, name := range held {
+		if !contains(wrote, name) {
+			return nil // leave the acceptance as it was: the next start asks about those keys again
+		}
+	}
 	sum := sha256.Sum256(raw)
 	return TrustProject(root, hex.EncodeToString(sum[:]))
+}
+
+// unsafeIn lists the unsafe keys a settings file asks for, without reading the rest of the run's
+// settings: the question "would this file need accepting?" is the same one the loader asks.
+func unsafeIn(raw []byte) (names, shown []string) {
+	var s fileSettings
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if dec.Decode(&s) != nil {
+		return nil, nil // an unreadable file is the loader's to report, not this one's
+	}
+	return stripUnsafe(&s)
 }
 
 // acceptedProject says whether the project's settings file is still the one that was accepted:

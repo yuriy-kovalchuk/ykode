@@ -31,7 +31,7 @@ func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 		return path, local, err
 	}
 	if local {
-		if err := trustWritten(root); err != nil {
+		if err := trustWritten(root, "base_url", "api_key", "model"); err != nil {
 			return path, local, err
 		}
 	}
