@@ -64,22 +64,8 @@ type scope struct {
 	budget int    // bytes one result may use; 0 means defaultResultBytes
 }
 
-// cap is the byte ceiling for this tool's result.
-func (s scope) cap() int {
-	if s.budget > 0 {
-		return s.budget
-	}
-	return defaultResultBytes
-}
-
-// aim leaves room for the note that explains a cut. It never answers zero or less: a budget smaller
-// than the note itself would leave nothing to fill, and every caller that cuts to this length would
-// be handed a negative one.
-func (s scope) aim() int { return max(s.cap()-budgetSlack, minAimBytes) }
-
-// minAimBytes is the least a result may hold, so a mis-set or tiny budget degrades to a short answer
-// instead of to a broken cut.
-const minAimBytes = 64
+// aim leaves room for the note that explains a cut, by way of the one arithmetic every caller uses.
+func (s scope) aim() int { return resultCap(s.budget) }
 
 // handle addresses one target as root+name, and releases anything opened for it.
 type handle struct {
@@ -90,9 +76,12 @@ type handle struct {
 	closer *os.Root // a Root opened for an outside path; nil for in-project ones
 }
 
+// close releases a handle opened for an approved outside path. The error is dropped on purpose: by the
+// time this runs the tool has its result, and a directory handle that would not close changes nothing
+// about it. Said out loud because a linter is right that nobody looks at it.
 func (h handle) close() {
 	if h.closer != nil {
-		h.closer.Close()
+		_ = h.closer.Close()
 	}
 }
 
@@ -156,9 +145,4 @@ func WithApprovals(ctx context.Context, paths []string) context.Context {
 func approved(ctx context.Context, path string) bool {
 	granted, _ := ctx.Value(approvalsKey{}).([]string)
 	return slices.Contains(granted, path)
-}
-
-// absolute joins a Root-relative path onto the directory its Root sits at.
-func absolute(dir, rel string) string {
-	return filepath.Join(dir, filepath.FromSlash(rel))
 }

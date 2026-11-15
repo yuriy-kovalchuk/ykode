@@ -17,6 +17,26 @@ const (
 	maxResultTokens = 12800
 )
 
+// resultCap is the one arithmetic between a result budget and what a tool may fill: the cap, the room
+// a note about the cut needs, and the floor below which there is nothing worth cutting. The file tools'
+// scope and the command tool each worked this out for itself, with its own copy of the same three
+// numbers, and they agreed only because two pieces of arithmetic happened to point the same way.
+//
+// FormatResult is deliberately not on this path: it is the last gate before text reaches the model, and
+// the cap it is handed is one it is expected to honour exactly rather than aim under. Two tests pin the
+// difference, and the cap it is given has already been aimed under by whoever measured the window.
+
+// minAimBytes is the least a result may hold, so a mis-set or tiny budget degrades to a short answer
+// instead of to a broken cut.
+const minAimBytes = 64
+
+func resultCap(budget int) int {
+	if budget <= 0 {
+		budget = defaultResultBytes
+	}
+	return max(budget-budgetSlack, minAimBytes)
+}
+
 // ResultBytesFor scales one tool result with the window it shares: about a tenth of it in tokens,
 // clamped so a small window still gets a usable result. The ceiling is pi's 50 KB, reached at a 128k
 // window: a whole source file fits in one result, and the whole call goes when room runs short.

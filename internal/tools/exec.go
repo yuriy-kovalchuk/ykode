@@ -183,16 +183,9 @@ func (t *Exec) fit(w *outWindow) string {
 	return b.String()
 }
 
-// aim is the byte ceiling for this command's output, with room left for the note about the cut. It
-// carries the same floor as the file tools' ceiling: a budget smaller than the note would leave every
-// cut below asking for a negative length.
-func (t Exec) aim() int {
-	cap := t.MaxBytes
-	if cap <= 0 {
-		cap = defaultResultBytes
-	}
-	return max(cap-budgetSlack, minAimBytes)
-}
+// aim is the byte ceiling for this command's output: the same arithmetic as the file tools and the
+// agent's formatter, in resultCap.
+func (t Exec) aim() int { return resultCap(t.MaxBytes) }
 
 // PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went. One entry
 // that cannot be read or removed is passed over rather than ending the sweep: it is one folder among
