@@ -12,6 +12,27 @@ func (c *Config) SamplingFor(model string) (thinking, noThink llm.Sampling) {
 	return s[0], s[1]
 }
 
+// Cards are every model a settings file wrote something about, so a switch mid-run can pick up the
+// model it is switching to rather than keeping the numbers of the one it is leaving. Only the models
+// named in the file appear: an unnamed one carries nothing known about it.
+func (c *Config) Cards() map[string]llm.ModelCard {
+	if len(c.modelSampling) == 0 && len(c.modelReasoning) == 0 {
+		return nil
+	}
+	cards := make(map[string]llm.ModelCard, len(c.modelSampling)+len(c.modelReasoning))
+	for model := range c.modelSampling {
+		cards[model] = llm.ModelCard{Thinking: c.modelSampling[model][0], NoThink: c.modelSampling[model][1]}
+	}
+	for model, on := range c.modelReasoning {
+		// the file may have said only that this template wants thinking sent back, with no numbers:
+		// then the card is empty for the numbers and the server's own defaults are what run
+		card := cards[model]
+		card.SendReasoning = c.SendReasoning || on
+		cards[model] = card
+	}
+	return cards
+}
+
 // SendReasoningFor reports a per-model send_reasoning setting.
 func (c *Config) SendReasoningFor(model string) bool {
 	return c.SendReasoning || c.modelReasoning[model]

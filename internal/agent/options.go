@@ -27,6 +27,10 @@ type Options struct {
 	Root             string       // the project root, recorded with every call
 	Allow            []string     // what never to ask about: a tool name, or "exec:go test"
 	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
+	// Cards are the per-model recommendations a settings file gave, for every model it named and not
+	// only the one the run started on: sampling, and whether that template wants earlier thinking sent
+	// back. Without them a switch moves the window and the model id and keeps the old model's numbers.
+	Cards map[string]llm.ModelCard
 }
 
 // SetEndpoint points the next request at another server and model, with that model's window. A request
@@ -39,6 +43,12 @@ func (a *Agent) SetEndpoint(client *llm.Client, model string, ctxSize int) bool 
 	a.client, a.model, a.opts.CtxSize = client, model, ctxSize
 	if a.opts.KeepRecentTokens > 0 {
 		a.opts.KeepRecentTokens = min(20000, ctxSize/5)
+	}
+	// the sampling and the thinking-repeat came from a model card resolved at start-up. A switch to a
+	// model that has its own card takes that card; one with no card keeps what is in use, because
+	// nothing is known about it and the server's own default is not necessarily what was working.
+	if card, known := a.opts.Cards[model]; known {
+		a.opts.Thinking, a.opts.NoThink, a.opts.SendReasoning = card.Thinking, card.NoThink, card.SendReasoning
 	}
 	a.publishUsage() // the footer's window is the new one
 	return true

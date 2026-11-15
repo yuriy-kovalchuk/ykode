@@ -59,3 +59,44 @@ func TestModelAcceptsOneTheServerDoesNotList(t *testing.T) {
 		t.Errorf("model %q, window %d, text %q", a.Model(), a.CtxSize(), text)
 	}
 }
+
+// A settings file can recommend numbers per model. A switch moved the window and the model id and kept
+// sending the model it had left: the card for the model actually being asked for was never looked up.
+func TestASwitchPicksUpTheModelItIsSwitchingTo(t *testing.T) {
+	a := agentOnAServerWithModels(t, Options{
+		CtxSize:  1000,
+		Thinking: llm.Sampling{Temperature: sp(0.2)},
+		Cards: map[string]llm.ModelCard{
+			"small": {Thinking: llm.Sampling{Temperature: sp(0.9)}, SendReasoning: true},
+		},
+	})
+	before := a.opts.SendReasoning
+	a.Command(context.Background(), "/model small")
+	if got := a.opts.Thinking.Temperature; got == nil || *got != 0.9 {
+		t.Errorf("after /model small the sampling sent is %+v, want the temperature that model's card recommends", a.opts.Thinking)
+	}
+	if a.opts.SendReasoning == before {
+		t.Errorf("send_reasoning for the new model was not taken: still %v", a.opts.SendReasoning)
+	}
+	// a model nothing was written about keeps what is in use: nothing is known about it, and the
+	// server's own default is not necessarily what had been working
+	a.Command(context.Background(), "/model big")
+	if got := a.opts.Thinking.Temperature; got == nil || *got != 0.9 {
+		t.Errorf("a model with no card lost the numbers in use: %+v", a.opts.Thinking)
+	}
+}
+
+// A model the server does not list has no window of its own. The run keeps the one it had and says so,
+// rather than switching the budget off without a word.
+func TestAModelOffTheListKeepsTheWindowAndSaysSo(t *testing.T) {
+	a := agentOnAServerWithModels(t, Options{CtxSize: 1000})
+	text, _, _ := a.Command(context.Background(), "/model proxy-loaded")
+	if a.CtxSize() != 1000 {
+		t.Errorf("window after an unlisted model: %d, want the 1000 that was in use", a.CtxSize())
+	}
+	if !strings.Contains(text, "keeping the") {
+		t.Errorf("the line did not say the window is a carry-over: %q", text)
+	}
+}
+
+func sp(v float64) *float64 { return &v }

@@ -569,11 +569,20 @@ findings were tested and which were not.
   advice to reset, which is the right answer but arrives after the work of trying.
 - The retry path treats a refused connection as retryable, waits once, and reports only the second
   failure — on a cold server the first attempt's reason, which is the interesting one, is discarded.
-- Switching the model updates the model id, the window and the transport client, but not the sampling or
-  the send-reasoning flag, which were resolved from the *previous* model's card at start-up and are never
-  looked up again. A model whose card recommends different values keeps receiving the old model's.
-- A model the server does not list carries no window, and the switch path then keeps the previous
-  window rather than reporting the size as unknown.
+- ~~Switching the model updates the model id, the window and the transport client, but not the sampling
+  or the send-reasoning flag, which were resolved from the *previous* model's card at start-up and are
+  never looked up again.~~ **Reproduced and fixed.** A probe held two cards and switched: the window
+  moved, the id moved, and the temperature sent was still the model that had been left. The run loop now
+  carries the per-model cards a settings file wrote (`Options.Cards`), and a switch takes the card of the
+  model it is moving to. A model with no card keeps what is in use rather than dropping to empty, because
+  nothing is known about it and the server's default is not necessarily what had been working. A settings
+  change mid-run refreshes the cards too, so a `/model` after editing the file sees the edit.
+- ~~A model the server does not list carries no window, and the switch path then keeps the previous
+  window rather than reporting the size as unknown.~~ **Kept as it is, and made explicit in the line the
+  user reads.** An unknown window switches the budget off entirely - the history then grows until the
+  server refuses, which is the worse failure - so the previous window is carried over. The message now
+  says which number is being kept and that the server does not list the model, so the carry-over is not
+  mistaken for the model's own size.
 
 ---
 

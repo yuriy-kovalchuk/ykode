@@ -27,9 +27,15 @@ func (a *Agent) modelCommand(ctx context.Context, arg string) string {
 	a.UseModel(chosen, listed)
 	switch {
 	case !listed && err == nil:
-		return fmt.Sprintf("model: %s (the server does not list it; the next request asks for it anyway)\n", chosen.ID)
+		// an unlisted model carries no window. The one already in use is kept rather than replaced by
+		// "unknown": a window of unknown switches the budget off and lets the history grow until the
+		// server refuses, which is worse than a guess that was working. The line says which number is
+		// being kept, so the guess is not mistaken for the model's own size.
+		return fmt.Sprintf("model: %s (the server does not list it; keeping the %s window from the model you left; "+
+			"the next request asks for it anyway)\n", chosen.ID, windowText(a.opts.CtxSize))
 	case !listed:
-		return fmt.Sprintf("model: %s (the server did not list its models, so it is unchecked; the next request asks for it)\n", chosen.ID)
+		return fmt.Sprintf("model: %s (the server did not list its models, so it is unchecked; keeping the %s window; "+
+			"the next request asks for it)\n", chosen.ID, windowText(a.opts.CtxSize))
 	}
 	return fmt.Sprintf("model: %s · window %s (the next request asks for it; a model the server has to load waits before the first token)\n",
 		chosen.ID, windowText(a.windowFor(chosen, listed)))

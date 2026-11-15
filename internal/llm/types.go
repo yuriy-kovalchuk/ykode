@@ -84,6 +84,15 @@ type Sampling struct {
 	PresencePenalty *float64 `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
 }
 
+// ModelCard is what was written down about one model: the numbers it recommends with thinking on and
+// off, and whether its chat template wants earlier thinking sent back. It travels to the run loop so a
+// model switch can pick up the new model's card instead of carrying the old model's.
+type ModelCard struct {
+	Thinking      Sampling
+	NoThink       Sampling
+	SendReasoning bool
+}
+
 // ToolSpec advertises one tool to the model.
 type ToolSpec struct {
 	Type     string       `json:"type"`

@@ -37,5 +37,6 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 			Allow:            cfg.Allow,
 			Root:             cfg.Root,
 			Plan:             plan,
+			Cards:            cfg.Cards(),
 		}
 }

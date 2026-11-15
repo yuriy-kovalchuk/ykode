@@ -374,6 +374,13 @@ func (m *model) applyLive(before, now config.Config) {
 	m.agent.Tune(func(o *agent.Options) {
 		o.AssumeYes = now.AssumeYes
 		o.MaxTurns, o.MaxTokens, o.SafetyMargin = now.MaxTurns, now.MaxTokens, now.SafetyMargin
+		// the cards a settings file wrote travel with the run, so a /model after this change picks up
+		// the model it is switching to; the numbers in use right now are only replaced if the model in
+		// use has a card, which is what it had at start-up anyway
+		o.Cards = now.Cards()
+		if card, known := o.Cards[m.agent.Model()]; known {
+			o.Thinking, o.NoThink, o.SendReasoning = card.Thinking, card.NoThink, card.SendReasoning
+		}
 	})
 	if now.Mouse != before.Mouse {
 		m.mouseOn = now.Mouse
