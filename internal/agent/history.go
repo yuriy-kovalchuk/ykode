@@ -94,24 +94,47 @@ func (a *Agent) dropOldestUnit() []llm.Message {
 		}
 		unit := a.history[i:end]
 		a.history = append(a.history[:i:i], a.history[end:]...)
-		a.meter.anchorTokens = 0
+		gone := historyBytes(unit)
+		a.histBytes -= gone
+		a.histCount -= len(unit)
+		a.meter.shrinkAnchor(gone) // the count the server gave still stands for what is left
 		return unit
 	}
 	return nil
 }
 
 // sendingBytes counts every byte a request carries; the system prompt already sits at the head of history.
+// The total is kept as the conversation grows rather than walked, because the estimate runs several times
+// a round-trip and once per message inside the trim loop. It is trusted only while the number of messages
+// still matches: a path that rebuilds the conversation whole, or assigns to it directly, is caught by the
+// count and measured again. A total quietly disagreeing with the history would drive the fold decision and
+// the response cap off a number nothing measured, and that is worth one comparison to rule out.
 func (a *Agent) sendingBytes() int {
-	return a.wireSpecBytes() + historyBytes(a.history)
+	if a.histCount != len(a.history) {
+		a.recountBytes()
+	}
+	return a.wireSpecBytes() + a.histBytes
+}
+
+// messageBytes is what one message costs a request: the fields that go on the wire, which is what the
+// server counts. Reasoning stays home unless SendReasoning copies it into WireReasoning.
+func messageBytes(m llm.Message) int {
+	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.WireReasoning)
+	for _, c := range m.ToolCalls {
+		bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
+	}
+	return bytes
+}
+
+// recountBytes brings the running total back to the conversation.
+func (a *Agent) recountBytes() {
+	a.histBytes, a.histCount = historyBytes(a.history), len(a.history)
 }
 
 func historyBytes(history []llm.Message) int {
 	bytes := 0
 	for _, m := range history {
-		bytes += len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.WireReasoning)
-		for _, c := range m.ToolCalls {
-			bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
-		}
+		bytes += messageBytes(m)
 	}
 	return bytes
 }

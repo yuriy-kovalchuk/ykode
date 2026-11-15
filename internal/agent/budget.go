@@ -132,6 +132,7 @@ func (a *Agent) sanitizeHistory() {
 		i = j - 1 // the replies that were already there have been copied
 	}
 	a.history = repaired
+	a.recountBytes()
 	if added {
 		// messages moved: the saved conversation is written again whole, so its positions still match
 		a.reportSave(a.opts.Session.Rewritten(a.history[1:]))

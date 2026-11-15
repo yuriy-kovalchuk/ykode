@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // answerWithTimings is one streamed answer plus the accounting llama.cpp sends with the last chunk.
@@ -226,5 +228,63 @@ func TestAGeneratedCountIsEstimatedWhereTheServerCountsNothing(t *testing.T) {
 	}
 	if got := a.Usage().GenTok; got <= 0 {
 		t.Errorf("GenTok = %d, want an estimate where the server reports nothing", got)
+	}
+}
+
+// the total is kept as the conversation grows, not walked: an estimate called several times a
+// round-trip and once per message in the trim loop must not reread every message each time. The count
+// of messages is what proves the incremental path is the one taken.
+func TestTheByteTotalIsKeptRatherThanRewalked(t *testing.T) {
+	a := newForHistory(Options{})
+	a.add(llm.Message{Role: "user", Content: "one"})
+	if a.histBytes != historyBytes(a.history) || a.histCount != len(a.history) {
+		t.Fatalf("total %d over %d messages, want it to match the conversation", a.histBytes, a.histCount)
+	}
+	grown := append([]llm.Message(nil), a.history...)
+	grown = append(grown, llm.Message{Role: "user", Content: "two"})
+	a.history = grown // assigned, not added: the count no longer matches
+	want := historyBytes(grown)
+	if got := a.sendingBytes() - a.wireSpecBytes(); got != want {
+		t.Errorf("after an assignment the total is %d, want %d", got, want)
+	}
+	if a.histCount != len(a.history) {
+		t.Errorf("count %d after the check, want %d", a.histCount, len(a.history))
+	}
+}
+
+// A fold and a drop take messages out of a conversation the server already counted, so the count it
+// gave is still true for what is left: it shrinks rather than being thrown away. Zeroing it sent every
+// later estimate back to a byte ratio over the whole conversation, which is where the guess comes from.
+func TestAFoldKeepsTheCountTheServerGave(t *testing.T) {
+	a := newForHistory(Options{CtxSize: 8000})
+	a.meter.bytesPerTok = 4
+	a.meter.anchorTokens, a.meter.anchorBytes = 5000, 20000
+	a.meter.shrinkAnchor(4000) // a unit of four thousand bytes leaves the conversation
+	if a.meter.anchorTokens != 4000 || a.meter.anchorBytes != 16000 {
+		t.Errorf("anchor = %d tokens over %d bytes, want 4000 over 16000", a.meter.anchorTokens, a.meter.anchorBytes)
+	}
+	// and the estimate goes on using it: only what moved since needs guessing
+	a.history = []llm.Message{{Role: "system", Content: strings.Repeat("x", 16000)}, {Role: "user", Content: strings.Repeat("y", 8000)}}
+	a.recountBytes()
+	got := a.estimateTokens()
+	if want := 4000 + 8000/4; got != want {
+		t.Errorf("estimate %d, want the count kept and only the new 8000 bytes guessed: %d", got, want)
+	}
+}
+
+// A refusal that names the size it rejected is the one exact number available at the moment the
+// estimate is known to be wrong, so it becomes the count instead of nudging the ratio.
+func TestARefusalThatNamesASizeBecomesTheCount(t *testing.T) {
+	a := newForHistory(Options{})
+	a.meter.toldByServer(9000, 36000)
+	if a.meter.anchorTokens != 9000 || a.meter.anchorBytes != 36000 {
+		t.Errorf("anchor = %d over %d, want the numbers the server stated", a.meter.anchorTokens, a.meter.anchorBytes)
+	}
+	if a.meter.bytesPerTok != 4 {
+		t.Errorf("ratio = %v, want the one those two numbers imply", a.meter.bytesPerTok)
+	}
+	a.meter.toldByServer(0, 36000) // a server that gave no number leaves the count alone
+	if a.meter.anchorTokens != 9000 {
+		t.Errorf("a refusal naming nothing overwrote the count: %d", a.meter.anchorTokens)
 	}
 }

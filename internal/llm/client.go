@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -255,6 +256,30 @@ func IsOverflow(err error) bool {
 		return false
 	}
 	return (failure.code == http.StatusBadRequest || failure.code == http.StatusRequestEntityTooLarge) && overflowWords.MatchString(failure.detail)
+}
+
+// statedTokens is where a server names the size of the request it refused, next to the size it has.
+// OpenAI says "your messages resulted in 9123 tokens"; llama-server says "prompt of 9123 tokens is
+// larger than the context". The limit itself is matched by overflowWords and deliberately not here.
+var statedTokens = regexp.MustCompile(`(?i)(?:resulted in|messages? (?:are|total)|prompt(?: of| is)?|total(?: of| is)?|used|with)\s+(\d{2,9})\s+tokens`)
+
+// StatedPromptTokens is the size a server said the request that overflowed actually was, or 0 when it
+// did not say. A refusal that names a number is the one exact measurement available at the worst moment
+// in a long session: the estimate just failed, and this replaces a guess with the server's own count.
+func StatedPromptTokens(err error) int {
+	var failure chatFailure
+	if !errors.As(err, &failure) {
+		return 0
+	}
+	match := statedTokens.FindStringSubmatch(failure.detail)
+	if len(match) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil || n <= 0 || n > 100_000_000 {
+		return 0 // a number this big is not a token count
+	}
+	return n
 }
 
 // couldPassLater reports a failure where asking again is worth the wait.

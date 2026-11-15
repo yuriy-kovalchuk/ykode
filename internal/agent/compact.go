@@ -95,7 +95,9 @@ func (a *Agent) Compact(ctx context.Context) int {
 		kept = append(kept, a.history[task])
 	}
 	a.history = append(a.history[:1:1], append(kept, a.history[start:]...)...)
-	a.compactedAt, a.meter.anchorTokens = callBlocks(a.history), 0
+	a.recountBytes()
+	a.compactedAt = callBlocks(a.history)
+	a.meter.shrinkAnchor(historyBytes(dropped)) // the count the server gave still stands for what is left
 	a.work.made(roomFolded(len(dropped)))
 	a.emit(Event{Kind: Summary, Text: summary})
 	a.reportSave(a.opts.Session.Folded(session.Fold{Kept: a.history[1:], Summary: summary,

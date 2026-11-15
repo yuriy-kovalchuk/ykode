@@ -33,6 +33,8 @@ type Agent struct {
 	unfinishedNoted atomic.Bool  // a reply that ended without saying it was finished: said once per run
 	turn            int          // the round-trip currently running, carried on every event
 	history         []llm.Message
+	histBytes       int // the conversation's bytes, kept as it changes: the estimate runs on every call
+	histCount       int // how many messages that total was measured over, so a stale total is caught
 	seenThrough     int // how far the history has reached the model: a result past it was never read
 	meter           meter
 	specBytes       int         // what the tool list costs every request, counted once
@@ -80,6 +82,7 @@ func (a *Agent) Reset() {
 // saved conversation leaves the one it was in standing as it was, so it can be come back to again.
 func (a *Agent) startOver() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
+	a.recountBytes()
 	a.seenThrough = len(a.history) // only the prompt is there, and it is not sent as a turn
 	a.meter.clearCost()
 	a.compactedAt = -1
@@ -102,6 +105,8 @@ func (a *Agent) reportSave(err error) {
 
 func (a *Agent) add(m llm.Message) {
 	m = storable(m)
+	a.histBytes += messageBytes(m)
+	a.histCount++
 	a.history = append(a.history, m)
 	a.reportSave(a.opts.Session.Append(m))
 }
@@ -117,6 +122,7 @@ func (a *Agent) Learned(bytesPerTok float64) {
 // Resume continues where a saved conversation stopped.
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
+	a.recountBytes()
 	a.seenThrough = len(a.history) // the run that wrote these sent them to its model
 	// the new calls continue the saved numbering, or a fresh result would take an id that recall
 	// already points at, and the store would answer with someone else's output

@@ -53,12 +53,20 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 				return nil
 			}
 			if llm.IsOverflow(err) && !overflowed {
-				// the server counted more tokens than the estimate did. The estimate is corrected, which
-				// puts the conversation under pressure, and the turn is tried once more with room made
+				// the server counted more tokens than the estimate did. A refusal that names the number is
+				// the one exact measurement available here, so it is taken as the count rather than nudging a
+				// guess: the estimate is what just failed. Where the server gave no number, the ratio is what
+				// has to move, and it moves down because the conversation is bigger than the bytes said.
 				overflowed = true
-				a.tell("the server says the conversation does not fit its window: making room and asking again")
-				a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
-				a.meter.anchorTokens = 0
+				count := llm.StatedPromptTokens(err)
+				if count > 0 {
+					a.tell(fmt.Sprintf("the server says the conversation is %d tokens and does not fit its window: making room and asking again", count))
+					a.meter.toldByServer(count, a.sendingBytes())
+				} else {
+					a.tell("the server says the conversation does not fit its window: making room and asking again")
+					a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
+					a.meter.anchorTokens = 0
+				}
 				if a.Compact(ctx) <= 0 {
 					for i := 0; i < 8 && a.dropOldestUnit() != nil; i++ {
 					}

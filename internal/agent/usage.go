@@ -77,6 +77,32 @@ func (m *meter) observe(stats Stats, sentBytes int) {
 	}
 }
 
+// toldByServer records a count a server named in a refusal, which is the only exact measurement there
+// is at the moment the estimate is known to have been wrong. It replaces the count, and the byte side
+// comes from what this run built for the request that was refused.
+func (m *meter) toldByServer(tokens, sentBytes int) {
+	if tokens <= 0 || sentBytes <= 0 {
+		return
+	}
+	m.anchorTokens, m.anchorBytes = tokens, sentBytes
+	if ratio := float64(sentBytes) / float64(tokens); ratio >= minBytesPerTok && ratio <= maxBytesPerTok {
+		m.bytesPerTok = ratio
+	}
+}
+
+// shrinkAnchor takes out of the anchor a piece of the conversation the model already read. The count
+// the server gave stays true for the part that is still being sent, so a fold or a drop keeps an exact
+// number instead of throwing it away: zeroing it sent every later estimate back to a byte ratio over
+// the whole conversation, which is where the error of the guess comes from.
+func (m *meter) shrinkAnchor(bytes int) {
+	if m.anchorTokens <= 0 || bytes <= 0 {
+		return
+	}
+	gone := int(float64(bytes) / max(m.bytesPerTok, minBytesPerTok))
+	m.anchorBytes = max(m.anchorBytes-bytes, 0)
+	m.anchorTokens = max(m.anchorTokens-gone, 0)
+}
+
 // publishUsage writes down what the conversation costs, once, at the end of a turn. A front
 // end reading it while the next turn runs on another goroutine never walks the history.
 func (a *Agent) publishUsage() {
