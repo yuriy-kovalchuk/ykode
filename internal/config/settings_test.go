@@ -226,7 +226,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
 	}
-	for _, key := range []string{"thinking_level", "tools", "context", "mouse"} {
+	for _, key := range []string{"thinking_level", "tools", "context", "assume_yes"} {
 		if _, ok := seeded[key]; !ok {
 			t.Errorf("%s missing from the file that shows every key", key)
 		}
@@ -484,23 +484,21 @@ func TestTheSettingsFileIsYaml(t *testing.T) {
 	}
 }
 
-// the wheel belongs to the screen only when asked for: otherwise the terminal keeps selection
-func TestTheScreenKeepsItsHandsOffTheMouseUnlessAsked(t *testing.T) {
+// the screen never takes the pointer, so selecting text and the terminal's own scrollback stay with the
+// terminal. The key is retired rather than deleted: a settings.yaml written by an older run still loads,
+// and the knob is simply gone from what can be set.
+func TestARetiredMouseSettingLoadsAndIsIgnored(t *testing.T) {
 	user := fakeHome(t)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\n")
 	cfg, err := Load([]string{"--root", t.TempDir()})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("a file still holding mouse: was refused: %v", err)
 	}
-	if cfg.Mouse {
-		t.Error("the screen takes the mouse by default, so the terminal cannot select text")
+	if _, ok := findSetting(cfg.Catalogue(), "mouse"); ok {
+		t.Error("the settings list still offers mouse, which the screen no longer acts on")
 	}
-	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\n")
-	cfg, err = Load([]string{"--root", t.TempDir()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.Mouse {
-		t.Error("mouse: true did not give the screen the wheel")
+	if _, _, err := Set(t.TempDir(), "mouse", "on"); err == nil {
+		t.Error("mouse can still be set, though nothing reads it")
 	}
 }
 

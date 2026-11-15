@@ -35,7 +35,7 @@ type fileSettings struct {
 	MaxTokens     *int    `yaml:"max_tokens,omitempty"`
 	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
 	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
-	Mouse         *bool   `yaml:"mouse,omitempty"`
+	Mouse         *bool   `yaml:"mouse,omitempty"` // retired: the screen no longer takes the pointer, so the terminal always selects and scrolls
 	StreamIdle    *int    `yaml:"stream_idle_sec,omitempty"`
 	Context       struct {
 		SafetyMargin *int `yaml:"safety_margin,omitempty"`
@@ -271,7 +271,6 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	if s.AssumeYes != nil {
 		c.AssumeYes = *s.AssumeYes
 	}
-	pick(s.Mouse, &c.Mouse)
 	pick(s.Tools.CommandLogDir, &c.CommandLogDir)
 	if err := errors.Join(
 		keepFor(path, "keep_sessions", s.KeepSessions, "720h", &c.KeepSessions),

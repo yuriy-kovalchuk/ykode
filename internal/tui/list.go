@@ -120,8 +120,8 @@ func (c *chooser) keys(msg tea.Msg, choose func(id string) (tea.Cmd, overlayNext
 }
 
 // readKeys is the box reading one entry in full: the arrows and page keys scroll it, the side arrows step
-// to the entry next to it, and esc goes back to the list. The wheel scrolls it too, when the screen has
-// the mouse.
+// to the entry next to it, and esc goes back to the list. The wheel is answered above, where it reaches
+// the transcript, so it never arrives here.
 func (c *chooser) readKeys(msg tea.Msg) (tea.Cmd, overlayNext, bool) {
 	if key, isKey := msg.(tea.KeyMsg); isKey {
 		switch key.String() {

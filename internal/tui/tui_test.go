@@ -165,6 +165,102 @@ func TestTheHubWaitsForWhatTheScreenAnswers(t *testing.T) {
 
 // stubAnswers answers each request with its own text, the way a server would.
 
+// The screen must never ask a terminal to report the pointer, on any path out: a run that ends with a
+// tracking mode switched on hands the next program raw escape reports where keystrokes belong, which is
+// what makes text unselectable and pastes wheel bytes into whatever box has the cursor. So the screen
+// switches the modes off before it draws and again when it leaves, whatever happened in between.
+func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
+	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one"}})
+	defer server.Close()
+
+	hub := NewHub()
+	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
+	in, keys, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Close()
+	defer in.Close()
+	screen := &lockedBuffer{}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+	}()
+
+	writeKeys(t, keys, "/exit\r")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the session ended with an error: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the session did not end")
+	}
+
+	raw := screen.String()
+	for _, on := range []string{"?1000h", "?1002h", "?1003h", "?1006h", "?1015h", "?1005h"} {
+		if strings.Contains(raw, on) {
+			t.Errorf("the run switched pointer reporting on with %s", on)
+		}
+	}
+	for _, off := range []string{"?9l", "?1000l", "?1002l", "?1003l", "?1006l", "?1015l", "?1005l"} {
+		if strings.Count(raw, off) < 2 {
+			t.Errorf("%s is switched off %d times; once before drawing and once on the way out are needed", off, strings.Count(raw, off))
+		}
+	}
+}
+
+// A pointer report that reaches the program because some other program left a mode switched on has to
+// be read as a report and dropped. If a fragment of it is read as keystrokes instead, the wheel writes
+// characters into the box: this feeds the bytes a terminal really sends, burst by burst, the way a
+// terminal sends them, and checks that none of them is ever drawn as text.
+func TestPointerBytesSentToTheProgramReachNothing(t *testing.T) {
+	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one"}})
+	defer server.Close()
+
+	hub := NewHub()
+	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
+	in, keys, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Close()
+	defer in.Close()
+	screen := &lockedBuffer{}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+	}()
+
+	for _, burst := range []string{
+		"\x1b[<64;20;8M", // SGR wheel up (mode 1000 with 1006)
+		"\x1b[<64;20;8m", // its release
+		"\x1b[M`\x34(",   // the older X10 form of the same notch
+	} {
+		writeKeys(t, keys, burst)
+	}
+	writeKeys(t, keys, "/exit\r")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the session ended with an error: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the session did not end")
+	}
+
+	view := stripCodes(screen.String())
+	for _, fragment := range []string{"<64;", "64;20;8", "`4("} {
+		if strings.Contains(view, fragment) {
+			t.Errorf("part of a pointer report was drawn as text: %q\n%s", fragment, view)
+		}
+	}
+}
+
 func TestTwoPromptsInARowBothRun(t *testing.T) {
 	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one", "answer two"}})
 	defer server.Close()

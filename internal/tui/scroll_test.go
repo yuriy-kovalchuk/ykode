@@ -32,7 +32,6 @@ func wheel(b tea.MouseButton) tea.MouseMsg {
 // the wheel scrolls the transcript; it never reaches the input box
 func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 	m := longSession(t)
-	m.mouseOn = true // the wheel only reaches the screen when it was given the mouse
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
 	before := m.view.at
@@ -54,7 +53,6 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 // scroll gesture cannot write one into the box
 func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 	m := longSession(t)
-	m.mouseOn = true
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -70,7 +68,6 @@ func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 // scrolled up, the screen says where the reader is and when output arrived below
 func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	m := longSession(t)
-	m.mouseOn = true
 	for i := 0; i < 5; i++ {
 		m.Update(wheel(tea.MouseButtonWheelUp))
 	}
@@ -95,28 +92,68 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	}
 }
 
-// the terminal keeps the mouse so text can be selected; ctrl+t takes the mouse for the wheel,
-// and gives it back
-func TestCtrlTTakesTheMouseForTheWheelAndGivesItBack(t *testing.T) {
+// the screen never asks the terminal for the pointer, so a wheel report can only be something another
+// program left switched on: the wheel still scrolls, and a click, a drag or a release does nothing at
+// all rather than arriving in the box as keystrokes.
+func TestAPointerReportNeverWritesIntoTheBox(t *testing.T) {
 	m := longSession(t)
-	if m.mouseOn {
-		t.Fatal("the screen starts with the mouse, so the terminal cannot select text")
-	}
+	m.input.SetValue("a prompt half typed")
 	before := m.view.at
-	m.Update(wheel(tea.MouseButtonWheelUp))
-	if m.view.at != before {
-		t.Error("a wheel event scrolled while the terminal held the mouse")
+	for _, msg := range []tea.MouseMsg{
+		{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+		{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease},
+		{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
+		{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionRelease},
+	} {
+		if _, cmd := m.Update(msg); cmd != nil {
+			t.Errorf("a pointer report asked for a command: %v", msg)
+		}
+		if got := m.input.Value(); got != "a prompt half typed" {
+			t.Errorf("pointer report %v changed the box to %q", msg, got)
+		}
+		if m.view.at != before {
+			t.Errorf("pointer report %v moved the transcript", msg)
+		}
 	}
+	// while an overlay holds a text box, the same rule holds: the wheel scrolls the session under it
+	m.scrollWithOverlayOpen(t, wheel(tea.MouseButtonWheelUp))
+}
+
+// scrollWithOverlayOpen checks that a wheel report reaches the transcript while the settings list is
+// open over the session, and writes nothing into the box that list is reading.
+func (m *model) scrollWithOverlayOpen(t *testing.T, msg tea.MouseMsg) {
+	t.Helper()
+	m.input.SetValue("/settings")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen == nil {
+		t.Fatal("/settings did not open the screen")
+	}
+	m.input.SetValue("a name being typed")
+	before := m.view.at
+	m.Update(msg)
+	if m.view.at != before-wheelStep {
+		t.Errorf("a wheel report over an open list did not scroll the session: %d, want %d", m.view.at, before-wheelStep)
+	}
+	if got := m.input.Value(); got != "a name being typed" {
+		t.Errorf("the wheel wrote %q into the box the list is reading", got)
+	}
+}
+
+// the chord that used to hand over the mouse is free again: the screen has nothing to hand over
+func TestCtrlTIsNotBoundToThePointer(t *testing.T) {
+	m := longSession(t)
+	m.input.SetValue("x")
+	before := m.view.at
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	if !m.mouseOn || cmd == nil {
-		t.Fatal("ctrl+t did not take the mouse")
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			if name := strings.ToLower(fmt.Sprintf("%T", msg)); strings.Contains(name, "mouse") {
+				t.Errorf("ctrl+t still asks the terminal for the pointer: %s", name)
+			}
+		}
 	}
-	m.Update(wheel(tea.MouseButtonWheelUp))
-	if m.view.at == before {
-		t.Error("with the mouse taken, the wheel does not scroll")
-	}
-	if _, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}); m.mouseOn || cmd == nil {
-		t.Error("a second ctrl+t did not give the mouse back")
+	if m.view.at != before {
+		t.Error("ctrl+t moved the transcript")
 	}
 }
 

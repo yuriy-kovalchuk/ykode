@@ -185,20 +185,37 @@ func newerSpeeds(before, next agent.Stats) agent.Stats {
 	return before
 }
 
-// Run draws the session until the user quits or ctx ends. The screen takes the mouse only when
-// asked: holding it gives the wheel to the transcript but leaves the terminal no way to select
-// text, and ctrl+t hands it over or back at any point.
+// Run draws the session until the user quits or ctx ends. The screen never asks the terminal for the
+// pointer: selecting text and the terminal's own scrollback stay with the terminal, and the keys
+// (arrows, pgup/pgdn, ctrl+u/ctrl+d, end) move the transcript. A wheel report that arrives anyway -
+// a mode another program left switched on - still scrolls, and is never typed into the box.
 func Run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) error {
-	opts := []tea.ProgramOption{tea.WithAltScreen()}
-	if cfg.Mouse {
-		opts = append(opts, tea.WithMouseCellMotion())
-	}
-	return run(ctx, a, hub, cfg, os.Stdout, opts...)
+	return run(ctx, a, hub, cfg, os.Stdout, tea.WithAltScreen())
+}
+
+// mouseOff switches off every pointer-tracking mode a terminal knows, in the order they are set, and
+// the extended reports with them. Two things need it. A program that exits with one of these left on
+// hands the next one - a shell, an editor, ykode itself - raw escape reports where keystrokes belong:
+// the wheel stops scrolling the terminal's history, text stops being selectable, and the reports land
+// as characters typed into whatever box holds the cursor. And a mode a previous program left behind
+// would otherwise be read here as reports, so the screen clears them before drawing anything.
+const mouseOff = "\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?1005l"
+
+// writeMouseOff runs last whatever happened first: a clean quit, a cancelled context, a panic
+// recovered inside bubbletea, an error return. It writes to the terminal the screen drew on, which
+// is the only stream that can have been left tracking the pointer.
+func writeMouseOff(terminal io.Writer) {
+	_, _ = io.WriteString(terminal, mouseOff)
 }
 
 // run is Run with the program options a test needs: a fake terminal instead of a real one. The
 // terminal is named on the same writer the program draws to, so a test sees the tab being named too.
 func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, opts ...tea.ProgramOption) error {
+	// before anything else that can return: no path out of here may leave the terminal tracking the
+	// pointer, whatever the program was doing when it ended
+	defer writeMouseOff(terminal)
+	// and nothing the last program left is allowed to survive into this one
+	writeMouseOff(terminal)
 	// Naming the tab is decoration: a terminal that will not take it still gets the session, and the
 	// program writes its own errors to the same place and reports them through Run.
 	_, _ = io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame

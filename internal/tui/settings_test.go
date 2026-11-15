@@ -46,15 +46,15 @@ func settingsModel(t *testing.T) *model {
 		ReadLines: 150, SafetyMargin: 4096,
 		ExecTimeout: time.Minute, StreamIdle: 2 * time.Minute,
 		KeepSessions: 720 * time.Hour, KeepCommandLogs: 24 * time.Hour,
-		// as a run that read the file below resolved it: the mouse was asked for there
-		Mouse: true, Allow: []string{"exec:go test"},
+		// as a run that read the file below resolved it: the never-ask list was set there
+		Allow: []string{"exec:go test"},
 	}
 	return m
 }
 
 // the list shows every knob, and what someone changed stands out from what nobody chose
 func TestSettingsListsEveryKnobAndWhatWasChanged(t *testing.T) {
-	settingsHome(t, "# mine\nmouse: true\npermissions:\n  allow:\n    - exec:go test\n")
+	settingsHome(t, "# mine\nmax_turns: 30\npermissions:\n  allow:\n    - exec:go test\n")
 	m := settingsModel(t)
 
 	out := stripCodes(m.settings("/settings"))
@@ -63,8 +63,12 @@ func TestSettingsListsEveryKnobAndWhatWasChanged(t *testing.T) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}
 	}
-	if line := rowFor(out, "mouse"); !strings.Contains(line, "on") || !strings.Contains(line, "was off · file") {
+	if line := rowFor(out, "max_turns"); !strings.Contains(line, "was 100 · file") {
 		t.Errorf("a knob someone changed is not marked as changed: %q", line)
+	}
+	// the pointer is not a knob any more: the screen never asks the terminal for it
+	if strings.Contains(out, "mouse") {
+		t.Errorf("the list still offers the retired mouse key:\n%s", out)
 	}
 	if line := rowFor(out, "permissions.allow"); !strings.Contains(line, "exec:go test") {
 		t.Errorf("the never-ask list is not shown: %q", line)
@@ -130,7 +134,7 @@ func TestAKnobNobodyNamedNamesTheOnesThereAre(t *testing.T) {
 	settingsHome(t, "")
 	m := settingsModel(t)
 	out := stripCodes(m.settings("/settings mose"))
-	if !strings.Contains(out, `no setting called mose`) || !strings.Contains(out, "mouse") {
+	if !strings.Contains(out, `no setting called mose`) || !strings.Contains(out, "model") {
 		t.Errorf("unknown knob answered:\n%s", out)
 	}
 }
@@ -140,11 +144,11 @@ func TestSettingsIsAnsweredWhileATurnRuns(t *testing.T) {
 	settingsHome(t, "")
 	m := settingsModel(t)
 	m.running = true
-	m.input.SetValue("/settings mouse")
+	m.input.SetValue("/settings max_turns")
 	m.submit()
 
 	out := stripCodes(m.View())
-	if !strings.Contains(out, "the screen takes the mouse") {
+	if !strings.Contains(out, "round-trips one ask may take") {
 		t.Errorf("a running turn was not allowed to answer /settings:\n%s", out)
 	}
 }
@@ -173,7 +177,7 @@ func TestSettingsOpensTheListOfEverySetting(t *testing.T) {
 		t.Fatal("/settings did not open the screen")
 	}
 	view := stripCodes(m.View())
-	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "mouse", "esc closes"} {
+	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "assume_yes", "esc closes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the list lacks %q:\n%s", want, view)
 		}
@@ -440,7 +444,7 @@ func TestTheSettingsBoxDoesNotChangeHeightWithTheCursor(t *testing.T) {
 // the screen names the file it writes: the project's own when it has one, and a warning before it
 // changes the file every project reads
 func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
-	settingsHome(t, "mouse: true\n")
+	settingsHome(t, "max_turns: 30\n")
 	m := settingsModel(t)
 	m.cfg.Root = t.TempDir()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -464,7 +468,7 @@ func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
 
 // /create-local-setting gives the project a file of its own and says where a change lands now
 func TestCreateLocalSettingLeavesTheProjectAFile(t *testing.T) {
-	settingsHome(t, "mouse: true\n")
+	settingsHome(t, "max_turns: 30\n")
 	m := settingsModel(t)
 	root := t.TempDir()
 	// the flags this run was started with, so reading the settings again keeps the same root

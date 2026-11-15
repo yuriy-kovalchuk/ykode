@@ -72,8 +72,6 @@ func knobs() []knob {
 			func(c Config) string { return fmt.Sprint(int(c.StreamIdle / time.Second)) }, false},
 		{"assume_yes", "do not ask about writes inside the project (outside it is always asked)", kindYesNo, nil,
 			func(c Config) string { return yesNo(c.AssumeYes) }, true},
-		{"mouse", "the screen takes the mouse: the wheel scrolls, and the terminal cannot select text", kindYesNo, nil,
-			func(c Config) string { return yesNo(c.Mouse) }, true},
 		{"permissions.allow", "never ask about these: a tool name, or exec:go test; a new one is added", kindList, nil,
 			func(c Config) string { return strings.Join(c.Allow, ", ") }, false},
 		{"keep_sessions", "how long a saved conversation survives", kindHours, nil,

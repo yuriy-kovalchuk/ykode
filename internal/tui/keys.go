@@ -79,14 +79,6 @@ func (m *model) sessionKey(key string) (tea.Cmd, bool) {
 		// the list has to open while a prompt is half typed, which ? cannot do; ctrl+/ arrives as
 		// byte 0x1f, which bubbletea names ctrl+_
 		m.toggleKeys()
-	case "ctrl+t":
-		// the wheel and the terminal's own selection cannot both have the mouse
-		m.mouseOn = !m.mouseOn
-		m.refresh()
-		if m.mouseOn {
-			return tea.EnableMouseCellMotion, true
-		}
-		return tea.DisableMouse, true
 	case "ctrl+o":
 		m.planFolded = !m.planFolded
 		m.refresh()

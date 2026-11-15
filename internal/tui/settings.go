@@ -180,15 +180,3 @@ func (m *model) applyEndpoint(res SetupResult) {
 	}
 	m.log.notice(fmt.Sprintf("now using %s at %s · saved to %s", res.Model, res.BaseURL, where))
 }
-
-// mouseCmd tells the terminal about a mouse setting that changed on the settings screen.
-func (m *model) mouseCmd() tea.Cmd {
-	if !m.wantMouse {
-		return nil
-	}
-	m.wantMouse = false
-	if m.mouseOn {
-		return tea.EnableMouseCellMotion
-	}
-	return tea.DisableMouse
-}

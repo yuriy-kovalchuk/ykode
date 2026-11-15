@@ -50,7 +50,6 @@ type model struct {
 	history    []string
 	histIdx    int
 	unsent     string // what is in the box while the earlier prompts are being read
-	mouseOn    bool   // the screen has the mouse: the wheel scrolls the transcript, and the terminal cannot select
 	planFolded bool   // ctrl+o folds the plan to its heading
 	showKeys   bool   // ? lists the keys above the prompt
 	unseen     bool   // output arrived below while the reader was scrolled up
@@ -63,11 +62,10 @@ type model struct {
 	drawn    time.Time
 	frameDue bool
 
-	probe     probeFunc       // how the modal asks a server for its models; tests put a fake here
-	screen    *settingsScreen // the list of every setting /settings opens over the session; nil when closed
-	picker    overlay         // the conversations /sessions opens over the session, to continue one; nil when closed
-	wantMouse bool            // a setting turned the mouse on or off: the terminal is told on the next update
-	modal     *setupModel     // the server and model screen /settings opens over the session; nil when closed
+	probe  probeFunc       // how the modal asks a server for its models; tests put a fake here
+	screen *settingsScreen // the list of every setting /settings opens over the session; nil when closed
+	picker overlay         // the conversations /sessions opens over the session, to continue one; nil when closed
+	modal  *setupModel     // the server and model screen /settings opens over the session; nil when closed
 }
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
@@ -85,20 +83,19 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 
 	// a terminal that will not say its size still gets a screen
 	m := &model{
-		spin:    spin,
-		ctx:     ctx,
-		hub:     hub,
-		agent:   a,
-		cfg:     cfg,
-		mouseOn: cfg.Mouse,
-		root:    a.Root(),
-		branch:  a.Branch(), // the branch the prompt was built on; the next ask refreshes it
-		head:    watchHead(a.Root()),
-		input:   input,
-		probe:   probeServer,
-		view:    window{height: defaultHeight},
-		width:   defaultWidth,
-		height:  defaultHeight,
+		spin:   spin,
+		ctx:    ctx,
+		hub:    hub,
+		agent:  a,
+		cfg:    cfg,
+		root:   a.Root(),
+		branch: a.Branch(), // the branch the prompt was built on; the next ask refreshes it
+		head:   watchHead(a.Root()),
+		input:  input,
+		probe:  probeServer,
+		view:   window{height: defaultHeight},
+		width:  defaultWidth,
+		height: defaultHeight,
 	}
 	m.log.root = a.Root() // a call names its file from where the project starts
 	for _, note := range cfg.Notices {
@@ -141,6 +138,12 @@ func (m *model) paint() tea.Cmd {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.bottom = "" // the screen under the session is rebuilt for this message, whoever asks first
+	if pointer, isMouse := msg.(tea.MouseMsg); isMouse {
+		// answered before anything else, including the overlays and their text boxes: a pointer report
+		// scrolls the transcript or does nothing, and is never handed to whatever is being typed into
+		m.wheel(pointer)
+		return m, nil
+	}
 	if _, woken := msg.(wakeMsg); woken {
 		// what the run reported since the last look, each message handled as if it had come alone
 		var cmds []tea.Cmd
@@ -156,7 +159,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	} else if m.screen != nil {
 		if cmd, taken := m.screenMsg(msg); taken {
-			return m, tea.Batch(cmd, m.mouseCmd())
+			return m, cmd
 		}
 	} else if m.picker != nil {
 		if cmd, taken := m.pickerMsg(msg); taken {
@@ -168,9 +171,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.input.SetWidth(m.width - lipgloss.Width(promptMark))
 		m.refresh()
-		return m, nil
-	case tea.MouseMsg:
-		m.wheel(msg)
 		return m, nil
 	case eventMsg:
 		m.handle(msg.ev)

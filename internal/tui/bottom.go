@@ -25,7 +25,7 @@ var keys = [][2]string{
 	{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"}, {"ctrl+w", "kill a word"},
 	{"tab", "complete a /command"},
 	{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
-	{"esc", "stop the run"}, {"ctrl+t", "terminal selects"}, {"ctrl+o", "fold the plan"},
+	{"esc", "stop the run"}, {"ctrl+o", "fold the plan"},
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 
@@ -263,9 +263,6 @@ func (m *model) keysHelp() string {
 	row, used := "", 0
 	for _, k := range keys {
 		desc := k[1]
-		if k[0] == "ctrl+t" && m.mouseOn {
-			desc = "give it back"
-		}
 		plain := k[0] + " " + desc
 		if used > 0 && used+3+lipgloss.Width(plain) > m.width {
 			rows, row, used = append(rows, row), "", 0

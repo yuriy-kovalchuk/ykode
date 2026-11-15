@@ -16,7 +16,7 @@ func TestAChangeWithoutAProjectFileGoesToTheGlobalOne(t *testing.T) {
 	user := fakeHome(t)
 	root := t.TempDir()
 
-	path, local, err := Set(root, "mouse", "on")
+	path, local, err := Set(root, "assume_yes", "on")
 	if err != nil {
 		t.Fatal(err)
 	}

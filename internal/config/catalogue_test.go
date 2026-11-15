@@ -9,7 +9,7 @@ import (
 // every setting says what it is now, what it would be with nothing set, and who set it
 func TestEachSettingSaysWhatItIsNowAndWhence(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\npermissions:\n  allow:\n    - exec:go test\n")
+	writeSettings(t, filepath.Join(user, "settings.yaml"), "assume_yes: true\npermissions:\n  allow:\n    - exec:go test\n")
 	t.Setenv("LOCAL_LLM_URL", "http://from-env:8080/v1")
 
 	cfg, err := Load([]string{"--max-turns", "9"})
@@ -22,7 +22,7 @@ func TestEachSettingSaysWhatItIsNowAndWhence(t *testing.T) {
 	}
 
 	want := []Setting{
-		{Key: "mouse", Value: "on", Default: "off", From: FromFile},
+		{Key: "assume_yes", Value: "on", Default: "off", From: FromFile},
 		{Key: "max_turns", Value: "9", Default: "100", From: FromFlag},
 		{Key: "base_url", Value: "http://from-env:8080/v1", Default: defaultBaseURL, From: FromEnv},
 		{Key: "tools.read_lines", Value: "2000", Default: "2000", From: FromDefault},

@@ -380,10 +380,6 @@ func (m *model) applyLive(before, now config.Config) {
 			o.Thinking, o.NoThink, o.SendReasoning = card.Thinking, card.NoThink, card.SendReasoning
 		}
 	})
-	if now.Mouse != before.Mouse {
-		m.mouseOn = now.Mouse
-		m.wantMouse = true // the next update tells the terminal
-	}
 }
 
 // budgetLine is every thinking level with the tokens it lets the model think for, the selected one marked.

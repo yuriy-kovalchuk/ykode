@@ -75,7 +75,7 @@ Four commands change the run rather than the conversation:
 | `/model [id \| number]` | on its own, opens the list of models the server offers, with its window and the one in use marked, and enter switches to the one under the cursor; an id or the number from that list switches from where you stand (the window follows the model unless `--ctx` fixed one) |
 | `/think [level]` | how deeply the model thinks on the turns that follow; no level prints the current one |
 | `/create-local-setting` | make `<root>/.ykode/settings.yaml` for this project, starting from the server and model this run uses; `/settings` changes that file afterwards instead of `~/.ykode/settings.yaml`, and says which it wrote. Between turns |
-| `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, assume_yes, mouse, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
+| `/settings [list \| key] [value]` | on its own, opens a screen over the session with **every setting** in one list: the server row opens the connect-and-pick-a-model screen a first run starts with; switches turn over on enter, choices cycle with enter or the arrows, and counts, durations and text are typed in place and checked before they are written. On the thinking level it also shows the budget each level gives (minimal 1,024 … high 16,384, xhigh 32,768, max no cap), the selected one marked, so moving between levels shows what each costs. Each change goes to `settings.yaml` at once, and the ones a running session can take up (thinking level, assume_yes, max turns and tokens, the safety margin) apply immediately; the rest are marked *next run*. Between turns only. `list` prints every knob with its default and who set it, a key explains one, and a key and a value write it |
 
 A turn owns the conversation and its own settings, so `/reset`, `/compact`,
 `/model` and `/think` wait for the turn in flight; `/ctx`, `/tools`, `/usage` and
@@ -113,12 +113,11 @@ screen opens when the configured server does not answer, with the error on it.
 | `ctrl+j`, `alt+enter`, `shift+enter` | starts a new line; a paste keeps its own newlines. `shift+enter` only where the terminal reports the modifier at all, and most terminals cannot tell `ctrl+enter` from `enter`, so it is not offered |
 | `ctrl+a`, `ctrl+e` | go to the start or the end of the line the caret stands on; `home` does the same |
 | `ctrl+k`, `ctrl+w` | delete from the caret to the end of the line, or the word before the caret |
-| `up`, `down` | scroll the transcript; with more than one line in the box they move the caret. A trackpad or wheel in a terminal that is not holding the mouse arrives as these keys, so they never write into the box |
+| `up`, `down` | scroll the transcript; with more than one line in the box they move the caret. A trackpad scroll in a terminal that reports it as these keys moves the transcript, never the box |
 | `ctrl+p`, `ctrl+n` | walk the prompts you sent this session; a line you were writing waits at the end of the walk |
-| mouse wheel | scrolls the transcript, once the screen has the mouse (`ctrl+t`, or `mouse: true`); scrolled up, the rule above the status says where you are and when new output arrived below |
+| mouse wheel | scrolls the transcript, and that is all the mouse does: ykode never takes the pointer, so clicks and drags do nothing here and selecting and copying text stays with your terminal. Scrolled up, the rule above the status says where you are and when new output arrived below |
 | `end` | back to the end of the transcript (with an empty box) |
 | `ctrl+o` | folds the plan to its heading, or opens it again |
-| `ctrl+t` | takes the mouse for the wheel, or gives it back so the terminal can select and copy; the screen starts without it |
 | `esc`, `ctrl+c` | stops the running turn; `ctrl+c` twice leaves |
 | `pgup`, `pgdown` | move the transcript a page; `ctrl+u`, `ctrl+d` half a page |
 | `y`, `a`, `n` | answers a question about a change, shown in a bar above the prompt with the call in words and the first lines of what it would write: yes, always, no — `n` is the default |
@@ -422,7 +421,6 @@ api_key_env: LOCAL_LLM_API_KEY
 model: Qwen3.6-35B-A3B-GSQ-hybrid
 max_turns: 100
 assume_yes: false
-mouse: false
 keep_sessions: 720h
 max_tokens: 0
 thinking_level: medium
@@ -446,8 +444,7 @@ when a server sends nothing while it reads a long cold prompt), `max_tokens` is 
 (0, the default, asks for no cap: the server's own context decides where the reply ends, and ykode never asks
 for more than the window has left), `thinking_level` how deeply the model thinks
 (`off` … `max`; each level asks llama.cpp for a thinking budget, and the budget is capped so the answer
-keeps room of its own), `mouse` gives the screen the mouse by default — the wheel then scrolls the
-transcript, and selecting text needs `shift` or `ctrl+t` to hand the mouse back), `safety_margin` what is kept free beside
+keeps room of its own), `safety_margin` what is kept free beside
 it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
 expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
 gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,

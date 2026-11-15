@@ -39,7 +39,6 @@ type Config struct {
 	SafetyMargin    int    // tokens kept free for the reply
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	AssumeYes       bool
-	Mouse           bool // the screen takes the mouse: the wheel scrolls, and the terminal cannot select text
 	SendReasoning   bool // repeat earlier thinking back to models whose template expects it
 	ReadLines       int  // read_file window when the model does not ask for one
 	ExecTimeout     time.Duration

@@ -10,9 +10,13 @@ import (
 
 const wheelStep = 3 // lines one notch of the wheel moves the transcript
 
-// wheel scrolls the transcript; only the wheel is used, so a click never moves anything.
+// wheel scrolls the transcript when a wheel report reaches us at all. The screen never asks the
+// terminal for the pointer, so normally it sends none; a report can still arrive when another
+// program left a tracking mode set, and scrolling is the only thing a wheel may do. Anything the
+// report is not about - a click, a drag, a release - is dropped here rather than passed on, so no
+// pointer event can ever reach the input box as keystrokes.
 func (m *model) wheel(msg tea.MouseMsg) {
-	if !m.mouseOn || msg.Action != tea.MouseActionPress {
+	if msg.Action != tea.MouseActionPress {
 		return
 	}
 	switch msg.Button {

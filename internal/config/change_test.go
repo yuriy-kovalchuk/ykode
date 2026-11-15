@@ -40,7 +40,7 @@ func TestASettingGoesBackToItsDefaultByRemovingTheKey(t *testing.T) {
 		t.Errorf("safety margin = %d, want the built-in %d", cfg.SafetyMargin, defaultSafety)
 	}
 
-	if _, _, err := Set(t.TempDir(), "mouse", "unset"); err == nil {
+	if _, _, err := Set(t.TempDir(), "assume_yes", "unset"); err == nil {
 		t.Error("taking back a key the file never set passed silently")
 	}
 }
@@ -72,7 +72,7 @@ func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
 	path := filepath.Join(user, "settings.yaml")
 	writeSettings(t, path, "# mine\nmodel: qwen3-coder\nmax_turns: 9\n")
 
-	if _, _, err := Set(t.TempDir(), "mouse", "true"); err != nil {
+	if _, _, err := Set(t.TempDir(), "assume_yes", "true"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -90,9 +90,9 @@ func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := findSetting(cfg.Catalogue(), "mouse")
+	got, _ := findSetting(cfg.Catalogue(), "assume_yes")
 	if got.Value != "on" || got.From != FromFile {
-		t.Errorf("mouse = %s from %s, want on from file", got.Value, got.From)
+		t.Errorf("assume_yes = %s from %s, want on from file", got.Value, got.From)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestANumberIsWrittenAsANumberAndASwitchAsASwitch(t *testing.T) {
 	if _, _, err := Set(t.TempDir(), "max_turns", "40"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Set(t.TempDir(), "mouse", "on"); err != nil {
+	if _, _, err := Set(t.TempDir(), "assume_yes", "on"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(os.Getenv("YKODE_HOME"), "settings.yaml"))
@@ -110,15 +110,15 @@ func TestANumberIsWrittenAsANumberAndASwitchAsASwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	if !strings.Contains(body, "max_turns: 40") || !strings.Contains(body, "mouse: true") {
+	if !strings.Contains(body, "max_turns: 40") || !strings.Contains(body, "assume_yes: true") {
 		t.Errorf("written as:\n%s", body)
 	}
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MaxTurns != 40 || !cfg.Mouse {
-		t.Errorf("read back as max_turns=%d mouse=%v", cfg.MaxTurns, cfg.Mouse)
+	if cfg.MaxTurns != 40 || !cfg.AssumeYes {
+		t.Errorf("read back as max_turns=%d assume_yes=%v", cfg.MaxTurns, cfg.AssumeYes)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestAValueThatWouldNotWorkIsRefused(t *testing.T) {
 	for _, ask := range []struct{ key, value string }{
 		{"stream_idle_sec", "soon"},
 		{"thinking_level", "sideways"},
-		{"mouse", "maybe"},
+		{"assume_yes", "maybe"},
 		{"max_turns", "-5"},
 		{"keep_sessions", "a week"},
 		{"no_such_thing", "1"},
