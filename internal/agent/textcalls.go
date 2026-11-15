@@ -24,11 +24,39 @@ var (
 // when they were not offered the tool interface or lost track of it.
 var textCallRe = regexp.MustCompile(`(?s)<tool_call>.*?(?:</tool_call>|$)|<function=[^>]*>.*?(?:</function>|$)`)
 
-func hasTextCall(s string) bool { return textCallRe.MatchString(s) }
+func hasTextCall(s string) bool { return textCallRe.MatchString(outsideCode(s)) }
 
-// withoutTextCalls removes the calls written as text, leaving what the model said around them.
+// codeSpanRe is what an answer sets off as code: a ``` fence, a ~~~ fence, or a ` backtick span. A
+// fence left open reaches the end of the answer, which is the safer reading of an unfinished block.
+var codeSpanRe = regexp.MustCompile("(?s)```.*?(```|$)|~~~.*?(~~~|$)|`[^`]*`")
+
+const backtick = '`' // spelled once: a backtick inside a Go string literal is easy to misread
+
+// outsideCode leaves out what the answer set off as code. Markup written as an example is being
+// described, not used: running it would act on text whose whole purpose is to show what acting looks
+// like, which is exactly what a document about this agent does when it names a call and its arguments.
+func outsideCode(s string) string {
+	if !strings.ContainsRune(s, backtick) && !strings.Contains(s, "~~~") {
+		return s // nothing is set off: the common case costs one scan
+	}
+	return codeSpanRe.ReplaceAllString(s, " ")
+}
+
+// withoutTextCalls removes the calls written as text, leaving what the model said around them. What
+// sits inside a code span is kept as written: a quoted example is the answer, not a call that failed.
 func withoutTextCalls(s string) string {
-	return strings.TrimSpace(textCallRe.ReplaceAllString(s, ""))
+	if !strings.ContainsRune(s, backtick) && !strings.Contains(s, "~~~") {
+		return strings.TrimSpace(textCallRe.ReplaceAllString(s, ""))
+	}
+	var out strings.Builder
+	at := 0
+	for _, span := range codeSpanRe.FindAllStringIndex(s, -1) {
+		out.WriteString(textCallRe.ReplaceAllString(s[at:span[0]], ""))
+		out.WriteString(s[span[0]:span[1]]) // the code itself, exactly as it was written
+		at = span[1]
+	}
+	out.WriteString(textCallRe.ReplaceAllString(s[at:], ""))
+	return strings.TrimSpace(out.String())
 }
 
 // textCalls reads the calls a model wrote as text. It answers nil unless every one of them names a
@@ -37,6 +65,7 @@ func (a *Agent) textCalls(content string, turn int) []llm.ToolCall {
 	if a.tools == nil {
 		return nil
 	}
+	content = outsideCode(content) // a call quoted as an example is not a call
 	var calls []llm.ToolCall
 	add := func(name string, args json.RawMessage) bool {
 		if _, ok := a.tools.Get(name); !ok || !json.Valid(args) {
@@ -117,18 +146,41 @@ func (a *Agent) schemaType(tool, key string) string {
 // The markup of a call written as text is not part of the answer, and it arrives a token at a time
 // like the rest of it: callHider passes the answer through and holds back what lies between a call's
 // opening tag and its closing one, so the screen never draws markup the conversation will not keep.
+// A fenced block is passed through whole, because outsideCode keeps it in the answer too: what the
+// reader watched arrive and what the conversation goes on to hold are the same text.
 type callHider struct {
 	held    string // text not passed on yet: it may be the start of a tag
 	closing string // the tag that ends the call being hidden; "" while nothing is hidden
+	fence   string // the fence we stand inside ("```" or "~~~"); "" in ordinary text
 }
 
 var callOpenings = map[string]string{"<tool_call>": "</tool_call>", "<function=": "</function>"}
+
+var fenceOpenings = []string{"```", "~~~"}
 
 // feed takes the next piece of the answer and returns what of it can be shown now.
 func (h *callHider) feed(piece string) string {
 	h.held += piece
 	var shown strings.Builder
 	for {
+		if h.fence != "" { // inside a fence: everything is answer, markup included
+			if end := strings.Index(h.held, h.fence); end >= 0 {
+				shown.WriteString(h.held[:end+len(h.fence)])
+				h.held, h.fence = h.held[end+len(h.fence):], ""
+				continue
+			}
+			// no fence closes here: all of it is answer except a tail that may open the fence again
+			keep := 0
+			for n := min(len(h.fence)-1, len(h.held)); n > keep; n-- {
+				if strings.HasSuffix(h.held, h.fence[:n]) {
+					keep = n
+					break
+				}
+			}
+			shown.WriteString(h.held[:len(h.held)-keep])
+			h.held = h.held[len(h.held)-keep:]
+			return shown.String()
+		}
 		if h.closing != "" {
 			end := strings.Index(h.held, h.closing)
 			if end < 0 {
@@ -144,14 +196,31 @@ func (h *callHider) feed(piece string) string {
 				at, closing = i, shut
 			}
 		}
+		for _, open := range fenceOpenings {
+			if i := strings.Index(h.held, open); i >= 0 && (at < 0 || i < at) {
+				at, closing = i, "" // a fence opening: shown as written, and everything after it
+			}
+		}
 		if at >= 0 {
 			shown.WriteString(h.held[:at])
+			if closing == "" {
+				h.held, h.fence = h.held[at:], h.held[at:at+3]
+				continue
+			}
 			h.held, h.closing = h.held[at:], closing
 			continue
 		}
 		// nothing opens here: all of it is answer, except an ending that could be a tag's beginning
 		keep := 0
 		for open := range callOpenings {
+			for n := min(len(open)-1, len(h.held)); n > keep; n-- {
+				if strings.HasSuffix(h.held, open[:n]) {
+					keep = n
+					break
+				}
+			}
+		}
+		for _, open := range fenceOpenings {
 			for n := min(len(open)-1, len(h.held)); n > keep; n-- {
 				if strings.HasSuffix(h.held, open[:n]) {
 					keep = n
