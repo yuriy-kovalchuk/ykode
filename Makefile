@@ -37,6 +37,14 @@ cover:
 fmt:
 	gofmt -w .
 
+# lint is not part of check, and that is deliberate: golangci-lint is not vendored, and a build gate
+# that fails because a machine lacks a third-party tool is a gate people stop trusting. It reports what
+# vet does not - a helper nobody calls, a Close whose error nobody looks at. Where it is missing it says
+# so and succeeds, so CI can call it either way and the difference stays visible.
+lint:
+	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; \
+	else echo "lint: golangci-lint is not installed; the findings it makes are unreported"; fi
+
 run: build
 	./$(BINARY) $(ARGS)
 

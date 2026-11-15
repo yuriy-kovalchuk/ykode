@@ -1,0 +1,19 @@
+# The checks this project runs beyond vet and gofmt. golangci-lint is not vendored: the lint target
+# says so and passes the gate on, so the gate never fails for a missing tool while still reporting
+# real findings when the tool is installed.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - unused    # a helper nobody calls is a helper nobody maintains
+    - errcheck  # a write to the terminal that failed is a line the user never saw
+  exclusions:
+    rules:
+      # a deferred Close in a test is cleanup, not a step whose failure means anything
+      - path: .*_test\.go
+        linters: [errcheck]
+
+formatters:
+  enable:
+    - gofmt
