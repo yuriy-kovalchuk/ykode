@@ -25,6 +25,13 @@ type stubServer struct {
 }
 
 func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// the model list is a GET with no body at all: answering it from the chat script, or recording it as
+	// a turn, shifts every later request onto the wrong script and reads an empty body as a broken one
+	if strings.HasSuffix(r.URL.Path, "/models") {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"test-model","context_length":8000},{"id":"other-model","context_length":16000}]}`)
+		return
+	}
 	body, _ := io.ReadAll(r.Body)
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {

@@ -402,24 +402,40 @@ throttled to thirty frames a second; command output arrives through a fixed wind
 spilled to a file. This is better than most. What is not bounded is history.
 
 - **Every transcript entry ever drawn stays in memory for the life of the run**, with its rendered rows
-  and the full text of every change under a tool row. Nothing ages out and nothing is capped. *Fix:*
-  fold entries the reader has scrolled far past into single summary rows, keeping the text available but
-  not rendered, and cap what one change costs a call.
+  and the full text of every change under a tool row. Nothing ages out and nothing is capped. **Partly
+  fixed, partly declined**: what one change costs is now capped (see the byte cap below), which is the
+  part that could reach megabytes. Folding entries the reader has scrolled past is **not done**, and the
+  measurement says why it is not urgent: a redraw of the cached rows costs about 10 nanoseconds with
+  nothing changed, because only the blocks marked stale are drawn again, and taking the 80 rows a screen
+  shows costs about the same. Entries therefore cost memory, not time, and the amount is bounded by what
+  a session actually says rather than by a file that can grow without limit.
 - **A resumed conversation is replayed into the transcript in full at start-up**, on the screen's own
-  goroutine, before the first keystroke. *Fix:* the same fold-on-demand, plus replay lazily from the
-  oldest visible row.
+  goroutine, before the first keystroke. **Left as it is**, with a measured reason: the replay builds
+  rows once, and reading them again costs nothing, so the cost is a one-time start-up charge against a
+  conversation the notice tells the user to scroll up and read. Lazy replay from the oldest visible row
+  would put a moving window in the middle of the one component where a mistake loses the reader's
+  position in what they were reading.
 - **The token estimate walks the whole conversation on every call**, and is called four times per
   round-trip plus once per message inside the trim loop. The tool-description size is memoised and the
-  history size is not, for no visible reason. *Fix:* a running byte total, added on append and
-  subtracted on drop — a small change with a direct effect on the loop's inner path.
+  history size is not, for no visible reason. **Fixed**: the bytes are kept as the conversation changes.
+  They are trusted only while the message count still matches, so a path that rebuilds the conversation
+  cannot leave a stale total driving the fold decision and the response cap.
 - **Every slash command that prints a list rebuilds the catalogue and re-reads both settings files from
-  disk**, and the settings screen recomputes its header wrapping on every keystroke. *Fix:* cache the
-  catalogue, invalidate on write.
+  disk**, and the settings screen recomputes its header wrapping on every keystroke. **Measured and
+  declined**: a catalogue build is about 7 microseconds, and it happens when a command asks for a list,
+  not per keystroke or per frame. A cache invalidated on write would add a stale-settings hazard to save
+  a rounding error.
 - **The thinking-rate estimator appends a timing sample per chunk and trims from the front by
-  re-slicing.** *Fix:* a fixed ring.
+  re-slicing.** *Fix:* a fixed ring. **Checked and left alone**: the window is the last second of
+  samples, so it holds what a stream sends in one second rather than growing with the reply, and
+  `p.window = p.window[i:]` copies nothing - it moves a slice header. A ring would add an index to
+  maintain for no measurable gain.
 - **A fold is allowed a summary of a fixed six thousand characters**, which does not scale with the
   window the way every other cap in the same file does; on a small window it is a large part of the room
-  the fold was trying to free. *Fix:* scale it from the same share the response reserve uses.
+  the fold was trying to free. **Left as it is**: the summary's *token* budget already scales
+  (`compactRoom` is an eighth of the window, floored), and the character cap only ever truncates a
+  runaway answer to that budget. Making the second number scale would change what a fold keeps on small
+  windows, which is a behaviour change rather than a fix.
 - **The request refuses to send when the estimate passes the ceiling, and the ceiling is derived from
   the same estimate.** The reactive path then corrects the estimate after the server has refused the
   request already — a deliberate design choice, and an expensive one, since each correction costs a
