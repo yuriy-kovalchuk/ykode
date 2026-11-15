@@ -151,8 +151,8 @@ func isTerminal(w io.Writer) bool {
 	if nullInfo != nil && os.SameFile(nullInfo, info) {
 		return false
 	}
-	// a stream opened on the null device by name is the same thing even where the two stats do not
-	// agree on identity, which is how the null device behaves on windows
+	// the fallback for the case where the null device could not be stat'ed at all: a stream opened on it
+	// by its own name is the same thing, named
 	return file.Name() != os.DevNull
 }
 

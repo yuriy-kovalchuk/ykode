@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -153,14 +154,26 @@ func execTimeout(seconds int, def time.Duration) (time.Duration, bool) {
 }
 
 // groupCommand runs the command in its own process group so cancelling kills children, not just sh.
-// The group and the kill are each the operating system's own business: see exec_unix.go and
-// exec_windows.go.
+// The group is what makes the kill reach a build's compiler processes and a test runner's subprocesses:
+// killing only the shell leaves them writing into pipes nobody reads.
 func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = waitDelay
 	cmd.SysProcAttr = groupAttributes()
 	cmd.Cancel = func() error { return killGroup(cmd) }
 	return cmd
+}
+
+// groupAttributes puts the command in a process group of its own. ykode runs on unix systems only, so
+// this is written once rather than split across a file per operating system.
+func groupAttributes() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{Setpgid: true}
+}
+
+// killGroup takes the whole group down. The leading minus on the pid is what says "the group", and
+// SIGKILL because a child that will not stop on request has had its chance.
+func killGroup(cmd *exec.Cmd) error {
+	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
 // fit is what the model sees of a command's output: its head, most of its tail, and where the whole

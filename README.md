@@ -10,6 +10,9 @@ confines file access to the project root it started in.
 
 ## Requirements
 
+- A unix system. ykode runs commands in their own process group so that
+  cancelling a command takes its children with it, which is a `setpgid` and
+  `kill(-pid)` thing; there is no port and none is planned.
 - Go 1.25 or newer.
 - A server speaking `/v1/chat/completions` with tool calling over SSE. For
   `llama-server`, tool calling needs `--jinja`.
