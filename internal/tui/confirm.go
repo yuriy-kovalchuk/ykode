@@ -7,8 +7,7 @@ import (
 )
 
 // confirm asks once before something that cannot be undone: /reset forgets the conversation the run has
-// been building, and /undo force writes a file back over what someone changed there since. It is the same
-// box the lists open, with two keys, because the question is one word long.
+// been building. It is the same box the lists open, with two keys, because the question is one word long.
 type confirm struct {
 	title, ask string
 	yes        func()

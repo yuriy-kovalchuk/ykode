@@ -3,7 +3,6 @@ package agent
 import (
 	"cmp"
 
-	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
@@ -21,17 +20,13 @@ type Options struct {
 	Thinking         llm.Sampling // sent while the model thinks
 	NoThink          llm.Sampling // sent with thinking off; Qwen's cards recommend different values
 	AssumeYes        bool
-	Instructions     string            // what the project's AGENTS.md / CLAUDE.md said
-	NoVerify         bool              // never push a text-only answer back into the tools
-	SendReasoning    bool              // repeat earlier thinking to templates that expect it back
-	MaxResult        int               // byte cap on one tool result; 0 means the tools' own default
-	Store            tools.ResultStore // where shortened command output is kept for the model to grep
-	Audit            *audit.Logger     // append-only record of every tool call; nil turns it off
-	Session          *session.Log      // append-only copy of the conversation, for --continue
-	Root             string            // the project root, recorded with every call
-	Allow            []string          // what never to ask about: a tool name, or "exec:go test"
-	Undo             Undoer            // the stack /undo reads; wired where the tools are built
-	Plan             *tools.Plan       // the steps of a long task: the model writes them, a front end shows them
+	Instructions     string       // what the project's AGENTS.md / CLAUDE.md said
+	SendReasoning    bool         // repeat earlier thinking to templates that expect it back
+	MaxResult        int          // byte cap on one tool result; 0 means the tools' own default
+	Session          *session.Log // append-only copy of the conversation, for --continue
+	Root             string       // the project root, recorded with every call
+	Allow            []string     // what never to ask about: a tool name, or "exec:go test"
+	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
 }
 
 // SetEndpoint points the next request at another server and model, with that model's window. It is called
@@ -80,7 +75,3 @@ func (a *Agent) SavedMessages() int { return a.opts.Session.Count() }
 // SessionFile names the conversation this run is writing, "" when it saves none; it moves when the run
 // comes back to another one, so a front end's "come back with" line cannot point at the wrong file.
 func (a *Agent) SessionFile() string { return a.opts.Session.Path() }
-
-// HasUndo says whether /undo has anything to put back, so a front end can ask about the change before
-// it offers the question, instead of asking about a change there is none of.
-func (a *Agent) HasUndo() bool { return a.opts.Undo != nil && !a.opts.Undo.Empty() }

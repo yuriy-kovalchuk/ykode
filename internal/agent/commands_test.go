@@ -30,36 +30,6 @@ func TestExitStopsTheSession(t *testing.T) {
 	}
 }
 
-// countingUndo stands in for tools.UndoStack, which its own tests cover.
-type countingUndo struct{ undone int }
-
-func (c *countingUndo) Undo(bool) (string, error) { c.undone++; return "put back src/a.go", nil }
-func (c *countingUndo) Empty() bool               { return c.undone > 0 }
-
-func TestUndoTravelsWithTheAgent(t *testing.T) {
-	undo := &countingUndo{}
-	a := New(nil, nil, "m", Options{Undo: undo}, nil)
-
-	text, _, err := a.Command(context.Background(), "/undo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if undo.undone != 1 {
-		t.Errorf("/undo reached the stack %d times", undo.undone)
-	}
-	if !strings.Contains(text, "put back src/a.go") {
-		t.Errorf("the undo said nothing useful: %q", text)
-	}
-
-	text, _, err = a.Command(context.Background(), "/undo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(text, "nothing to undo") {
-		t.Errorf("an empty stack should say so: %q", text)
-	}
-}
-
 func TestTheContextCommandSaysWhatTheWindowHolds(t *testing.T) {
 	a, done := newAgent(t, &stubServer{}, Options{MaxTurns: 2, CtxSize: 8000, MaxResult: 4096}, &captureSink{})
 	defer done()
@@ -84,7 +54,7 @@ func TestTheToolsCommandPricesEveryDescription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"find_files", "read_file", "write_file", "3 tools", "bytes in every request"} {
+	for _, want := range []string{"read_file", "write_file", "2 tools", "bytes in every request"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("%q missing from:\n%s", want, text)
 		}
@@ -140,12 +110,12 @@ func TestTheThinkCommandTakesALevel(t *testing.T) {
 
 func TestCommandsThatChangeTheRunWaitForTheTurn(t *testing.T) {
 	// a settings command waits even when it only looks: the turn in flight is its answer's context
-	for _, line := range []string{"/model x", "/model", "/think off", "/reset", "/compact", "/undo"} {
+	for _, line := range []string{"/model x", "/model", "/think off", "/reset", "/compact"} {
 		if CommandIsSafeDuringATurn(line) {
 			t.Errorf("%s would fight the turn in flight", line)
 		}
 	}
-	for _, line := range []string{"/ctx", "/tools", "/usage", "/history"} {
+	for _, line := range []string{"/ctx", "/tools", "/usage"} {
 		if !CommandIsSafeDuringATurn(line) {
 			t.Errorf("%s only reads and should answer at once", line)
 		}
@@ -184,7 +154,7 @@ func TestCompactStopsWhenTheCallerCancels(t *testing.T) {
 		return sse("", "", "read_file", []string{`{"path":"` + name + `"}`}, "tool_calls")
 	}
 	stub := &stubServer{scripts: []string{read(0), read(1), read(2), sse("", "all read", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
 	defer done()
 	if err := a.Ask(context.Background(), "read them"); err != nil {
 		t.Fatal(err)
@@ -230,7 +200,7 @@ func TestTheCommandListIsWhatHelpAndSafetyUse(t *testing.T) {
 		}
 	}
 	// nothing the model of the list hides: every command the switch answers is in it
-	for _, name := range []string{"/help", "/usage", "/reset", "/exit", "/quit", "/undo", "/history", "/compact",
+	for _, name := range []string{"/help", "/usage", "/reset", "/exit", "/quit", "/compact",
 		"/ctx", "/tools", "/model", "/think"} {
 		if !hasCommand(list, name) {
 			t.Errorf("%s is not in the command list", name)

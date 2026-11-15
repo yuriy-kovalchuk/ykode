@@ -90,7 +90,7 @@ func (a *Agent) allReadOnly(calls []llm.ToolCall) bool {
 	return true
 }
 
-// nextCallIDs takes the next n result ids, the same r1, r2... the summaries and the audit log share.
+// nextCallIDs takes the next n result ids, the same r1, r2... the summaries and the saved conversation use.
 func (a *Agent) nextCallIDs(n int) []string {
 	ids := make([]string, n)
 	for i := range ids {

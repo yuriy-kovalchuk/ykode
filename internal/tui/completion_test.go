@@ -101,7 +101,7 @@ func TestTheCommandListTakesTheRoomTheScreenHas(t *testing.T) {
 	if strings.Contains(out, "more, keep typing") {
 		t.Errorf("a screen this tall still hides commands:\n%s", out)
 	}
-	for _, want := range []string{"/help", "/sessions", "/undo [force]", "/reset"} {
+	for _, want := range []string{"/help", "/sessions", "/compact", "/reset"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%s is not on the list:\n%s", want, out)
 		}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 const (
@@ -49,10 +48,10 @@ func (a *Agent) Sessions(limit int) string {
 
 // ContinueFrom gives up the conversation this run is in and carries on with a saved one, for a front
 // end that lets it be picked out of the list. Everything that follows is written to that conversation's
-// file, measured with the byte ratio its own run learned, slotted in the server's cache under its id
-// and shortened into its results folder, so it reads as the conversation it was. The one this run was
-// in is left on disk whole: it can be come back to the same way.
-func (a *Agent) ContinueFrom(dir, id string, store tools.ResultStore) error {
+// file, measured with the byte ratio its own run learned and slotted in the server's cache under its
+// id, so it reads as the conversation it was. The one this run was in is left on disk whole: it can be
+// come back to the same way.
+func (a *Agent) ContinueFrom(dir, id string) error {
 	if dir == "" || id == "" {
 		return fmt.Errorf("no saved conversation to continue")
 	}
@@ -65,9 +64,7 @@ func (a *Agent) ContinueFrom(dir, id string, store tools.ResultStore) error {
 	}
 	a.startOver()
 	a.opts.Session = session.New(dir, id, a.opts.Root)
-	a.opts.Store = store
-	a.client.Session = id // the cache slot follows the conversation, or the next request pays for it again
-	a.opts.Audit.ContinueAs(id)
+	a.client.Session = id          // the cache slot follows the conversation, or the next request pays for it again
 	a.Learned(saved.BytesPerToken) // before the conversation is measured, so it is measured as it was
 	a.Resume(saved.Messages)
 	a.emit(Event{Kind: Cleared}) // what the server was doing describes the conversation that went

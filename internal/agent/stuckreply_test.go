@@ -102,7 +102,7 @@ func TestASecondLoopEndsWithAnAnswer(t *testing.T) {
 // an empty reply after some work is not an answer: the run asks once to go on
 func TestAnEmptyReplyAfterToolUseIsAskedToGoOn(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*.go"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "", "", nil, "stop"),
 		sse("", "done", "", nil, "stop"),
 	}}

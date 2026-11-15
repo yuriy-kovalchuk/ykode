@@ -23,11 +23,11 @@ func TestAWriteWithNoChangeDoesNotReportAnEarlierWrite(t *testing.T) {
 	}
 
 	write("two\n")
-	if tool.LastDetail().Diff == "" {
-		t.Fatal("a write that changed the file left no diff for the audit log")
+	if tool.LastDetail().Change == "" {
+		t.Fatal("a write that changed the file left no change to show the screen")
 	}
 	write("two\n") // same text: nothing changed, so nothing is worth logging
-	if tool.LastDetail().Diff != "" {
-		t.Errorf("the unchanged write reports an earlier write's diff:\n%s", tool.LastDetail().Diff)
+	if tool.LastDetail().Change != "" {
+		t.Errorf("the unchanged write reports an earlier write's change:\n%s", tool.LastDetail().Change)
 	}
 }

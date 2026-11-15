@@ -8,15 +8,6 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// Undoer puts the most recent file change back; tools.UndoStack is the real thing.
-type Undoer interface {
-	Undo(force bool) (string, error)
-	Empty() bool
-}
-
-// historyLimit caps how many logged calls one /history shows.
-const historyLimit = 20
-
 // CommandSpec is one slash command as a front end needs it: what to type, what may follow it,
 // what it does, and whether it waits for the turn in flight.
 type CommandSpec struct {
@@ -42,15 +33,14 @@ func Commands() []CommandSpec {
 		{Name: "/help", Note: "the commands, narrowed by typing; enter writes one in the prompt box"},
 		{Name: "/usage", Note: "what the conversation has cost the server, read from a panel of its own"},
 		{Name: "/compact", Note: "fold the older turns into a summary the model writes", Waits: true},
-		{Name: "/history", Args: "[what]", Note: "what this run did: a tool name, failed, outside, an id like r12, or --all for every run of this root; on the screen, enter reads one call in the box"},
-		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it"},
+		{Name: "/settings", Args: "[list | key] [value]", Note: "opens the server and model screen; list shows every knob, a key explains one, a key and a value change it: the project's .ykode/settings.yaml when it has one, the global file when it has not"},
+		{Name: "/create-local-setting", Note: "make .ykode/settings.yaml for this project; /settings then changes it instead of the global file", Waits: true},
 		{Name: "/sessions", Note: "the conversations saved for this project; on the screen, pick one and this run continues it"},
 		{Name: "/plan", Note: "the steps of the task the model is working through, as it last wrote them"},
 		{Name: "/ctx", Note: "how full the window is, and what the server is caching, read from a panel of its own"},
 		{Name: "/tools", Note: "what the model may call, and what each description costs"},
 		{Name: "/model", Args: "[id | number]", Note: "lists the models this server offers; an id or a number switches to it", Waits: true},
 		{Name: "/think", Args: "[level]", Note: "how deeply the model thinks: " + strings.Join(llm.ThinkingLevels(), ", "), Waits: true},
-		{Name: "/undo", Args: "[force]", Note: "put the most recent file change back; force also when it was edited since", Waits: true},
 		{Name: "/reset", Note: "forget the conversation; the screen asks first", Waits: true},
 		{Name: "/exit", Also: "/quit", Note: "quit (ctrl+c at the prompt too; mid-request it cancels the request)"},
 	}
@@ -93,8 +83,8 @@ func UsageLine(u Usage, ctxSize int) string {
 		u.Turns, u.PromptTok, u.CachedTok, u.GenTok, u.TotalPrompt, room, u.BytesPerTok)
 }
 
-// CommandIsSafeDuringATurn says whether a command only reads: /help, /usage and /history can
-// answer while a turn works; /reset, /compact and /undo would cut the ground from under it.
+// CommandIsSafeDuringATurn says whether a command only reads: /help and /usage can
+// answer while a turn works; /reset and /compact would cut the ground from under it.
 func CommandIsSafeDuringATurn(line string) bool {
 	name := commandName(line)
 	for _, c := range Commands() {
@@ -140,8 +130,6 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 		return UsageLine(a.Usage(), a.CtxSize()) + "\n", false, nil
 	case "/compact":
 		return CompactReport(a.Compact(ctx)), false, nil
-	case "/history":
-		return a.History(arg, historyLimit), false, nil
 	case "/sessions":
 		return a.Sessions(sessionsLimit), false, nil
 	case "/plan":
@@ -168,16 +156,6 @@ func (a *Agent) Command(ctx context.Context, line string) (text string, quit boo
 			return "thinking: off: the model answers straight away\n", false, nil
 		}
 		return fmt.Sprintf("thinking: %s (the next request asks the server for that depth)\n", level), false, nil
-	case "/undo":
-		if a.opts.Undo == nil || a.opts.Undo.Empty() {
-			return "nothing to undo: ykode has not changed a file yet\n", false, nil
-		}
-		said, err := a.opts.Undo.Undo(arg == "force")
-		if err != nil {
-			return "", false, err
-		}
-		a.repeats.changed() // a file just went back: an earlier search may no longer be the answer
-		return said + "\n", false, nil
 	default:
 		return fmt.Sprintf("unknown command %q; try /help, /reset or /exit\n", line), false, nil
 	}

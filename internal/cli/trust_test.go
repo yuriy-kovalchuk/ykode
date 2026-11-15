@@ -8,13 +8,24 @@ import (
 	"testing"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
+
+// scratchHome points $YKODE_HOME at a scratch directory and returns it with a project root.
+func scratchHome(t *testing.T) (string, string) {
+	t.Helper()
+	homeDir, root := t.TempDir(), t.TempDir()
+	t.Setenv("YKODE_HOME", homeDir)
+	home.Reset()
+	t.Cleanup(home.Reset)
+	return homeDir, root
+}
 
 // untrustedProject writes a project settings file that reaches past how the project is read.
 func untrustedProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	path := filepath.Join(root, ".ykode", "settings.json")
+	path := filepath.Join(root, ".ykode", "settings.yaml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +116,7 @@ func TestTrustCoversTheFileThatWasShownNotOneEditedSince(t *testing.T) {
 		t.Fatal(err)
 	}
 	// the file changes while the question is on the screen
-	path := filepath.Join(root, ".ykode", "settings.json")
+	path := filepath.Join(root, ".ykode", "settings.yaml")
 	if err := os.WriteFile(path, []byte(`{"permissions": {"allow": ["exec_command"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}

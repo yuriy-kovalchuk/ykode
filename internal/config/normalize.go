@@ -22,8 +22,8 @@ func (c *Config) normalize() error {
 	if c.MaxTokens < 0 {
 		return fmt.Errorf("--max-tokens must be 0 (no cap) or a positive token count, got %d", c.MaxTokens)
 	}
-	if c.JSON || c.Prompt != "" {
-		c.TUI = false // -p and --json write to stdout; a screen would be drawn over it
+	if c.Prompt != "" {
+		c.TUI = false // -p writes the answer to stdout; a screen would be drawn over it
 	}
 	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
 		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))
@@ -31,8 +31,8 @@ func (c *Config) normalize() error {
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)
 	}
-	if c.ReadLines < 1 || c.SearchLimit < 1 {
-		return fmt.Errorf("read_lines and search_limit must be at least 1, got %d and %d", c.ReadLines, c.SearchLimit)
+	if c.ReadLines < 1 {
+		return fmt.Errorf("read_lines must be at least 1, got %d", c.ReadLines)
 	}
 	root, err := filepath.Abs(c.Root)
 	if err != nil {
@@ -60,8 +60,6 @@ func (c *Config) normalize() error {
 	}
 	c.SessionDir = filepath.Join(home.Dir(), "sessions")
 	c.SessionFile = filepath.Join(c.SessionDir, c.Session+".jsonl")
-	c.ResultDir = filepath.Join(home.Dir(), "results", c.Session)
-	c.AuditDir = filepath.Join(home.Dir(), "audit")
 	return nil
 }
 

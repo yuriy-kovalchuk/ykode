@@ -22,8 +22,7 @@ func TestAResumedConversationIsStillTalkingToTheModel(t *testing.T) {
 		sse("", "it says 90", "", nil, "stop"),
 	}}
 	log := session.New(sessions, "s20260101-120000", "")
-	a, done, work, _ := newAuditedAgent(t, firstStub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
-	defer done()
+	a, work := newBuiltInAgent(t, firstStub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
 	writeLines(t, work, "note.txt", 3)
 	a.opts.Session = log
 	if err := a.Ask(context.Background(), "what does note.txt say"); err != nil {
@@ -36,8 +35,7 @@ func TestAResumedConversationIsStillTalkingToTheModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	secondStub := &stubServer{scripts: []string{sse("", "still 90", "", nil, "stop")}}
-	b, doneB, _, _ := newAuditedAgent(t, secondStub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
-	defer doneB()
+	b, _ := newBuiltInAgent(t, secondStub, Options{MaxTurns: 2, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
 	b.opts.Session = session.New(sessions, "s20260101-120000", "")
 	b.Resume(saved)
 	if err := b.Ask(context.Background(), "and again?"); err != nil {
@@ -65,8 +63,7 @@ func TestAResumeFixesWhatABadStopLeftBehind(t *testing.T) {
 		{Role: "tool", Content: "package main", ToolCallID: "c2", Name: "read_file"},
 	}
 	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, &captureSink{})
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, &captureSink{})
 	a.Resume(saved)
 	if err := a.Ask(context.Background(), "and again?"); err != nil {
 		t.Fatal(err)
@@ -92,8 +89,7 @@ func TestAResumeThatOverflowsTheWindowIsTrimmed(t *testing.T) {
 		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("b", 900)})
 	}
 	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 4000}, &captureSink{})
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 4000}, &captureSink{})
 	a.Resume(saved)
 	a.prepareTurn(context.Background(), 1) // the first ask is where the conversation is made to fit
 
@@ -125,7 +121,7 @@ func TestResumingAloneShedsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 4000, Session: log}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{CtxSize: 4000, Session: log}, &captureSink{}, dir)
 	defer done()
 	a.Resume(saved)
 
@@ -150,8 +146,7 @@ func TestTrimmingNeverEatsTheQuestionBeingAnswered(t *testing.T) {
 		saved = append(saved, llm.Message{Role: "assistant", Content: strings.Repeat("p", 1200)})
 	}
 	stub := &stubServer{scripts: []string{sse("", "ok", "", nil, "stop")}}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 2100}, &captureSink{})
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 2100}, &captureSink{})
 	a.Resume(saved)
 	if err := a.Ask(context.Background(), strings.Repeat("question ", 280)); err == nil {
 		t.Fatal("a conversation larger than the window should say so")
@@ -201,8 +196,7 @@ func TestACutOffToolCallIsStillSaved(t *testing.T) {
 		sse("", "stopped short", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
-	a, done, work, _ := newAuditedAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
+	a, work := newBuiltInAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, sink)
 	a.opts.Session = log
 
 	if err := a.Ask(context.Background(), "write a.go"); err != nil {

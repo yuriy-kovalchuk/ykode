@@ -34,11 +34,9 @@ func (s *rawStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *rawStub) agent(t *testing.T, dir string, log *session.Log) (*Agent, func()) {
 	srv := httptest.NewServer(s)
 	root, _ := os.OpenRoot(dir)
-	store := tools.NewResultStore(filepath.Join(dir, "saved"))
-	registry := tools.BuiltIn(root, dir, tools.Options{Store: store, MaxResultBytes: 4000})
+	registry := tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000})
 	a := New(llm.NewClient(srv.URL+"/v1", ""), registry, "test-model",
 		Options{MaxTurns: 6, MaxTokens: 256, CtxSize: 100000, Root: dir, Session: log, AssumeYes: true}, &captureSink{decision: Allow})
-	a.opts.Store = store
 	return a, func() { srv.Close(); root.Close() }
 }
 
@@ -100,7 +98,7 @@ func TestAResumedRequestRepeatsTheLiveOneByteForByte(t *testing.T) {
 }
 
 // crowded is a session whose window fills while it works: every read is a few kilobytes and the
-// window holds a few of them, so the run shortens what aged and trims what still does not fit.
+// window holds a few of them, so the run folds the older turns and drops what still does not fit.
 func crowded(t *testing.T, dir string, stub *rawStub, log *session.Log) (*Agent, func()) {
 	a, done := stub.agent(t, dir, log)
 	a.opts.CtxSize, a.opts.MaxTokens = 4000, 128
@@ -116,7 +114,7 @@ func asJSON(t *testing.T, v any) string {
 	return string(raw)
 }
 
-// what a run does to its conversation to make it fit - shortening an old result, dropping a call - is
+// what a run does to its conversation to make it fit - folding the older turns, dropping a call - is
 // in the saved conversation too: a run that comes back sends what the first one last sent, so the
 // server still has it, instead of the conversation as it was before any of that
 func TestAResumeOfACrowdedSessionSendsWhatTheSessionLastSent(t *testing.T) {
@@ -134,12 +132,8 @@ func TestAResumeOfACrowdedSessionSendsWhatTheSessionLastSent(t *testing.T) {
 	if err := a.Ask(context.Background(), "read the five files"); err != nil {
 		t.Fatal(err)
 	}
-	shortened := false
-	for _, m := range a.history {
-		shortened = shortened || strings.HasPrefix(m.Content, ShrinkMark)
-	}
-	if !shortened {
-		t.Fatal("the session never shortened anything, so it tests nothing")
+	if made := a.RoomMade(); !strings.HasPrefix(made, "dropped ") {
+		t.Fatalf("the session never had to shed a whole call (%q), so it tests nothing", made)
 	}
 
 	saved, err := session.LoadAll(filepath.Join(dir, "s1.jsonl"), dir)

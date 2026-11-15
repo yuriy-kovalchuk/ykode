@@ -167,14 +167,14 @@ func TestAFailedEditDoesNotReportAnEarlierEdit(t *testing.T) {
 	ctx := context.Background()
 
 	runTool(t, tool, `{"path":"target.txt","edits":[{"old_text":"two","new_text":"TWO"}]}`)
-	if tool.LastDetail().Diff == "" {
-		t.Fatal("the edit that ran left no diff for the audit log")
+	if tool.LastDetail().Change == "" {
+		t.Fatal("the edit that ran left no change to show the screen")
 	}
 	if _, err := tool.Run(ctx, json.RawMessage(`{"path":"target.txt","edits":[{"old_text":"absent","new_text":"x"}]}`)); err == nil {
 		t.Fatal("an edit that matches nothing should fail")
 	}
-	if tool.LastDetail().Diff != "" {
-		t.Errorf("the failed call still reports an earlier edit's diff:\n%s", tool.LastDetail().Diff)
+	if tool.LastDetail().Change != "" {
+		t.Errorf("the failed call still reports an earlier edit's change:\n%s", tool.LastDetail().Change)
 	}
 }
 

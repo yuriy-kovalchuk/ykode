@@ -19,10 +19,9 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	a.work.started()            // what the last ask had to do says nothing about this one
 	asked := a.withEnvironment(prompt)
 	a.add(llm.Message{Role: "user", Content: asked})
-	a.task = asked      // what the history holds, which is what compaction looks for
-	a.repeats.changed() // between prompts the user may have changed the files: nothing is a repeat yet
+	a.task = asked // what the history holds, which is what compaction looks for
 
-	usedTools, nudged, forceTool, textNudged, loops := false, false, false, false, 0
+	usedTools, textNudged, loops := false, false, 0
 	// a reply that ends the turn without finishing the work is asked to go on, a bounded number of
 	// times: the user should not have to type "continue" for a run that only lost its footing
 	emptyNudges, cutNudges, pausedNudged, overflowed := 0, 0, false, false
@@ -30,8 +29,7 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 		a.turn = turn
 		a.emit(Event{Kind: TurnStart, Turn: turn})
 		a.prepareTurn(ctx, turn)
-		req, err := a.request(forceTool)
-		forceTool = false
+		req, err := a.request()
 		if err != nil {
 			return err
 		}
@@ -60,7 +58,12 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 				overflowed = true
 				a.tell("the server says the conversation does not fit its window: making room and asking again")
 				a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
-				a.shrinkWhatAged(keepResults)
+				a.meter.anchorTokens = 0
+				if a.Compact(ctx) <= 0 {
+					for i := 0; i < 8 && a.dropOldestUnit() != nil; i++ {
+					}
+					a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
+				}
 				continue
 			}
 			return fmt.Errorf("chat turn %d: %w", turn, err)
@@ -127,25 +130,14 @@ func (a *Agent) Ask(ctx context.Context, prompt string) error {
 				a.modelNote("(you stopped before the work was finished. If you are waiting for the user, say what you need in one line. Otherwise carry on with the next tool call" + a.planReminderForPause() + ".)")
 				continue
 			}
-			if !nudged && !usedTools && !a.opts.NoVerify && !a.outOfRounds(turn) && looksLikeProjectWork(prompt) && !forbidsTools(prompt) {
-				nudged, forceTool = true, true
-				a.tell("nothing was read for this request; asking once to verify with a tool")
-				a.add(llm.Message{Role: "user", Content: verifyNote})
-				continue
-			}
 			return nil
 		}
 
 		usedTools = true
 		a.runToolCalls(ctx, msg.ToolCalls)
-		if a.repeats.isStuck() {
-			a.tell("the model kept asking for the same call: stopping the tools and asking for an answer")
-			return a.forceAnswer(ctx, "You keep asking for a result you already have. No tools now. Answer in text from what you have already read, and say what you could not confirm.")
-		}
 		if a.outOfRounds(turn) {
 			return a.outOfTurns(ctx)
 		}
-		a.warnNearLimit(turn)
 	}
 }
 
@@ -192,31 +184,23 @@ func (a *Agent) planReminderForPause() string {
 }
 
 // prepareTurn gets the conversation ready for the next round-trip: asks typed meanwhile join it, and
-// what no longer fits the window is shortened, then folded, then trimmed.
+// what no longer fits the window is folded into a summary, then - if that was not enough - dropped.
 func (a *Agent) prepareTurn(ctx context.Context, turn int) {
 	// an ask typed while this turn ran joins the conversation here: the round-trip in flight and
-	// the tools running are not interrupted, and a new instruction restarts what counts as a repeat
+	// the tools running are not interrupted
 	for _, ask := range a.takeWaiting() {
 		a.add(ask)
 		a.task = ask.Content
-		a.repeats.changed()
 		a.emit(Event{Kind: Steered, Turn: turn, Text: ask.Content})
 	}
-	// the fold goes first: it is the only stage that reads the results at their full length, and once a
-	// shortening has replaced a result with its own marker, the recap would be written from those markers
+	// a fold reads the results at their full length, so it goes first: whatever it cannot fold, the
+	// drop below sheds whole, and a message is never rewritten in place
 	if a.underPressure() && a.canCompact() && a.foldOverdue() {
 		a.tell("the conversation is out of room: asking the model to summarise the older turns")
 		a.work.made(roomFolding) // the clock is about to wait on a whole extra request: say what it waits on
 		a.Compact(ctx)
 	}
-	if a.underPressure() {
-		if freed, thought := a.shrinkWhatAged(keepResults); freed > 0 {
-			if line := shrinkNotice(freed, thought); line != "" {
-				a.tell(line)
-			}
-		}
-	}
-	a.trimHistory() // last resort: blank what is left, then drop whole calls
+	a.makeRoom()
 	// what a front end reads next is what this request is built from, not what the last reply cost
 	a.publishUsage()
 }

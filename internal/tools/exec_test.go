@@ -256,28 +256,6 @@ func TestASilentCommandThatSucceededSaysSo(t *testing.T) {
 	}
 }
 
-// the audit record names the file a cut command's whole output went to, so a week later it can
-// still be read
-func TestACutOutputNamesItsLogToTheAudit(t *testing.T) {
-	dir := t.TempDir()
-	tool := NewExec(dir)
-	tool.LogDir = t.TempDir()
-	out, err := tool.Run(context.Background(), json.RawMessage(`{"command":"seq 1 200000"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tool.last.LogPath == "" {
-		t.Fatalf("a cut output named no log to the audit: %s", cutUTF8(out, 200))
-	}
-	data, err := os.ReadFile(tool.last.LogPath)
-	if err != nil {
-		t.Fatalf("the log the audit names: %v", err)
-	}
-	if !strings.HasSuffix(string(data), "200000\n") {
-		t.Errorf("the log holds %d bytes, want the whole 1.3 MB output", len(data))
-	}
-}
-
 // what a command that prints far past its budget costs the run: a window, not the print
 func BenchmarkAChattyCommand(b *testing.B) {
 	ex := NewExec(b.TempDir())

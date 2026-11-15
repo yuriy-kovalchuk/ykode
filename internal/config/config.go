@@ -15,13 +15,11 @@ const (
 	defaultBaseURL       = "http://127.0.0.1:8080/v1"
 	defaultMaxTurns      = 100
 	defaultReadLines     = 2000
-	defaultSearchLimit   = 50
 	defaultExecTimeout   = 60 * time.Second
 	defaultStreamIdle    = 2 * time.Minute // silence before a stream counts as dead; a cold prompt may need more
 	defaultLogKeep       = 24 * time.Hour
-	defaultSessionKeep   = 30 * 24 * time.Hour  // a conversation, and the results recall can still name
-	defaultAuditKeep     = 180 * 24 * time.Hour // six months of tool calls
-	defaultSafety        = 4096                 // room left free for one reply when no cap was asked for
+	defaultSessionKeep   = 30 * 24 * time.Hour // a saved conversation lives this long
+	defaultSafety        = 4096                // room left free for one reply when no cap was asked for
 	defaultThinkingLevel = llm.DefaultThinkingLevel
 	sessionStamp         = "20060102-150405.000" // milliseconds, so two runs started together do not share one
 )
@@ -42,24 +40,16 @@ type Config struct {
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	AssumeYes       bool
 	Mouse           bool // the screen takes the mouse: the wheel scrolls, and the terminal cannot select text
-	Sandbox         bool // exec_command runs confined: writes only in the project, no network
-	NoVerify        bool // do not push a text-only answer back into the tools
 	SendReasoning   bool // repeat earlier thinking back to models whose template expects it
 	ReadLines       int  // read_file window when the model does not ask for one
-	SearchLimit     int  // search_text match limit when the model does not ask for one
 	ExecTimeout     time.Duration
 	StreamIdle      time.Duration // how long a stream may stay silent
 	CommandLogDir   string        // where a cut command's full output is saved
-	ResultDir       string        // one run's shortened tool results, kept so recall can hand them back
-	AuditDir        string        // append-only tool-call log, one file per month
-	LogAudit        bool          // write that log at all; off only by a setting
-	Session         string        // this run's id, shared by the results, the audit log and sessions
+	Session         string        // this run's id, shared by the results and the conversations
 	KeepCommandLogs time.Duration
 	KeepSessions    time.Duration              // how long a saved conversation survives, and its saved results
-	KeepAudit       time.Duration              // how long old audit files survive
-	Prompt          string                     // one task to answer and exit; empty runs the REPL
-	JSON            bool                       // print the event stream as JSON lines
-	TUI             bool                       // full-screen session instead of the line prompt
+	Prompt          string                     // one task to answer and exit; empty runs the screen
+	TUI             bool                       // full-screen session instead of one task on stdout
 	Allow           []string                   // never ask about these: a tool name, or "exec:go test"
 	Continue        string                     // resume a saved conversation: "last" or its id
 	SessionDir      string                     // where conversations are saved
@@ -80,9 +70,7 @@ func Load(args []string) (Config, error) {
 	var f flagValues
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--no-verify] [--send-reasoning] [--yes] [-p TASK] [--json] [--no-tui] [--continue ID] [--version]")
-		fmt.Fprintln(fs.Output(), "       ykode history [what] [--all] [--failed] [--since DUR] [--root DIR] [--json] - what the runs did, outside a session")
-		fmt.Fprintln(fs.Output(), "       ykode sessions [--limit N] - the conversations that can be resumed")
+		fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--send-reasoning] [--yes] [-p TASK] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -95,12 +83,9 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.ThinkingLevel, "thinking", "", "how deeply the model thinks: off, minimal, low, medium, high, xhigh, max")
 	fs.BoolVar(&f.NoThink, "no-think", false, "shorthand for --thinking off")
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
-	fs.BoolVar(&f.NoVerify, "no-verify", false, "do not ask the model to re-answer with a tool when it answered from memory")
 	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
-	fs.BoolVar(&f.JSON, "json", false, "with -p: print the event stream as JSON lines")
-	fs.BoolVar(&f.NoTUI, "no-tui", false, "a line prompt instead of the full-screen session")
-	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or its id (enough of the id to be unique works); ykode sessions lists them")
+	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or its id (enough of the id to be unique works); /sessions lists them")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -134,14 +119,11 @@ func defaults() Config {
 		SafetyMargin:    defaultSafety,
 		ThinkingLevel:   defaultThinkingLevel,
 		ReadLines:       defaultReadLines,
-		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		StreamIdle:      defaultStreamIdle,
 		KeepCommandLogs: defaultLogKeep,
 		KeepSessions:    defaultSessionKeep,
-		KeepAudit:       defaultAuditKeep,
-		LogAudit:        true,
-		TUI:             true, // --no-tui, -p and --json turn it off
+		TUI:             true, // -p answers one task on stdout instead
 		modelReasoning:  map[string]bool{},
 		modelSampling:   map[string][2]llm.Sampling{},
 	}

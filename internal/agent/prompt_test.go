@@ -158,7 +158,7 @@ func TestFirstRequestCarriesSystemPrompt(t *testing.T) {
 
 func TestThePrefixTheServerCachesStaysIdentical(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
@@ -197,18 +197,17 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 	}
 	defer root.Close()
 
-	store := tools.NewResultStore(filepath.Join(dir, "results"))
-	a := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, nil)
-	// 3815 bytes with the plan tool (495 of them), 3919 once exec_command said to filter in the
-	// command as pi's context-mode does: raise it on purpose, not by drift
-	if got := a.SpecBytes(); got > 3950 {
-		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 3950", got, got/3)
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
+	// 2435 bytes for the five tools the run offers; find_files and search_text went, and the model
+	// searches with exec_command: raise it on purpose, not by drift
+	if got := a.SpecBytes(); got > 2535 {
+		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 2535", got, got/3)
 	}
 
-	// a front end that can answer is offered the question as well: 4609 bytes with it
-	answered := New(nil, tools.BuiltIn(root, dir, tools.Options{Store: store}), "m", Options{Store: store}, &asksBack{})
-	if got := answered.SpecBytes(); got > 4650 {
-		t.Fatalf("with ask_user the specs cost %d bytes (about %d tokens) per request; the budget is 4650", got, got/3)
+	// a front end that can answer is offered the question as well: 3125 bytes with it
+	answered := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, &asksBack{})
+	if got := answered.SpecBytes(); got > 3225 {
+		t.Fatalf("with ask_user the specs cost %d bytes (about %d tokens) per request; the budget is 3225", got, got/3)
 	}
 }
 

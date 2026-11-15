@@ -76,9 +76,9 @@ func firstNonEmpty(values ...string) string {
 }
 
 func TestReadOnlyCallsInOneTurnRunTogether(t *testing.T) {
-	pair := newBarrier("read_file", "search_text")
+	pair := newBarrier("read_file", "lookup")
 	stub := &stubServer{scripts: []string{
-		twoCalls("read_file", `{"path":"a.go"}`, "search_text", `{"pattern":"needle"}`),
+		twoCalls("read_file", `{"path":"a.go"}`, "lookup", `{"pattern":"needle"}`),
 		sse("", "both read", "", nil, "stop"),
 	}}
 	server := httptest.NewServer(stub)

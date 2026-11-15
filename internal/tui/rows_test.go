@@ -108,8 +108,8 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 		log.user(fmt.Sprintf("task %d, with a question long enough to wrap over a row or two", i), time.Now())
 		log.thinking(strings.Repeat("considering how the pieces fit and what to read next. ", 30))
 		log.answer(strings.Repeat("the change goes in the status line, drawn per frame. ", 20))
-		log.toolStart("search_text", `{"pattern":"status","path":"internal"}`)
-		log.toolEnd("search_text", `{"pattern":"status","path":"internal"}`, "41 matches in 9 files")
+		log.toolStart("exec_command", `{"command":"grep -rn status internal"}`)
+		log.toolEnd("exec_command", `{"command":"grep -rn status internal"}`, "41 matches in 9 files")
 	}
 	log.answer("a few words of the answer so far ")
 	b.ResetTimer()

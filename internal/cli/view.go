@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -12,32 +11,19 @@ import (
 )
 
 // View is one consumer of the agent's events: thinking and tool progress go to the log,
-// answers to stdout, so redirecting stdout stays clean.
+// answers to stdout, so redirecting stdout stays clean. It answers nothing: a run with no screen
+// has nobody at the keyboard.
 type View struct {
 	mu       sync.Mutex // tools may report from several goroutines
 	out      io.Writer
 	log      io.Writer
 	colored  bool
-	confirm  *Confirmer
 	thinking bool
 	answered bool
 }
 
-func NewView(out, log io.Writer, confirm *Confirmer) *View {
-	return &View{out: out, log: log, colored: isTerminal(log), confirm: confirm}
-}
-
-// Ask puts the model's question to whoever is watching this terminal. A stream nobody is watching - a
-// -p run reading a pipe - answers nothing. The wait is on the person: stopping the run does not answer
-// for them, it only means whatever they then type changes nothing.
-func (v *View) Ask(_ context.Context, ev agent.Event) string {
-	if v.confirm == nil {
-		fmt.Fprintf(v.log, "ask_user: %s - nobody here to answer\n", ev.Text)
-		return ""
-	}
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.confirm.Answer(ev.Text, ev.Options)
+func NewView(out, log io.Writer) *View {
+	return &View{out: out, log: log, colored: isTerminal(log)}
 }
 
 // Emit renders one event; only a Confirm event cares about what comes back.
@@ -84,10 +70,8 @@ func (v *View) Emit(ev agent.Event) agent.Decision {
 	case agent.Notice:
 		fmt.Fprintf(v.log, "  .. %s\n", ev.Text)
 	case agent.Confirm:
-		if v.confirm == nil {
-			return agent.Refuse
-		}
-		return v.confirm.Ask(ev.Text)
+		fmt.Fprintf(v.log, "  !! %s needs a yes: run with --yes\n", ev.Tool)
+		return agent.Refuse
 	}
 	return agent.Allow
 }

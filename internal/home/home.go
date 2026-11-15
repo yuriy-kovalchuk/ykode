@@ -33,7 +33,7 @@ func Reset() { dir = "" }
 // Ensure creates a sub directory such as "logs" and returns its path.
 func Ensure(sub string) (string, error) {
 	full := filepath.Join(Dir(), sub)
-	// what lives under here is command output, saved results and the audit log
+	// what lives under here is command output and saved results
 	if err := os.MkdirAll(full, 0o700); err != nil {
 		return "", fmt.Errorf("create %s: %w", full, err)
 	}

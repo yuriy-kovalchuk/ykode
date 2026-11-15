@@ -37,12 +37,24 @@ type header struct {
 type record struct {
 	llm.Message
 	Thinking string `json:"thinking,omitempty"`
+	// Sent says the thinking also goes back to the model, so it is kept once, under thinking,
+	// instead of twice on every assistant line.
+	Sent bool `json:"sent,omitempty"`
 }
 
-func recordOf(m llm.Message) record { return record{Message: m, Thinking: m.Reasoning} }
+func recordOf(m llm.Message) record {
+	r := record{Message: m, Thinking: m.Reasoning}
+	if m.WireReasoning != "" && m.WireReasoning == m.Reasoning {
+		r.Message.WireReasoning, r.Sent = "", true
+	}
+	return r
+}
 
 func (r record) message() llm.Message {
 	r.Message.Reasoning = r.Thinking
+	if r.Sent { // an older file carries both fields and needs neither flag
+		r.Message.WireReasoning = r.Thinking
+	}
 	return r.Message
 }
 
@@ -151,18 +163,6 @@ func (l *Log) Rewritten(kept []llm.Message) error {
 		records[i] = recordOf(m)
 	}
 	return l.write(mustJSON(boundary{Boundary: boundaryRewritten, Kept: records}))
-}
-
-// Revise puts m in the place of the message at position at: the run shortened it, and what it sends
-// from now on is the short one.
-func (l *Log) Revise(at int, m llm.Message) error {
-	r := recordOf(m)
-	return l.write(mustJSON(change{Revised: &at, Message: &r}))
-}
-
-// Remove takes the messages in [from, to) out of the conversation.
-func (l *Log) Remove(from, to int) error {
-	return l.write(mustJSON(change{Removed: []int{from, to}}))
 }
 
 // Learned keeps how many bytes the server counted as one token. A run that comes back without it

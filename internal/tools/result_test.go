@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -118,25 +117,21 @@ func TestTheResultBudgetScalesWithTheWindow(t *testing.T) {
 }
 
 func TestTheConfiguredBudgetReachesTheTools(t *testing.T) {
-	files := map[string]string{}
-	for i := 0; i < 400; i++ {
-		files[fmt.Sprintf("dir/file%03d.txt", i)] = "x"
-	}
-	root, dir := treeFixture(t, files)
+	root, dir := treeFixture(t, map[string]string{"f.txt": numbered(3000, "line")})
 	registry := BuiltIn(root, dir, Options{MaxResultBytes: 4000})
 
-	find, ok := registry.Get("find_files")
+	read, ok := registry.Get("read_file")
 	if !ok {
-		t.Fatal("find_files is not registered")
+		t.Fatal("read_file is not registered")
 	}
-	out, err := find.Run(context.Background(), json.RawMessage(`{"pattern":"*.txt","limit":400}`))
+	out, err := read.Run(context.Background(), json.RawMessage(`{"path":"f.txt"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(out) > 4000 {
-		t.Fatalf("find_files returned %d bytes, want the configured 4000 cap: %s", len(out), cutUTF8(out, 120))
+		t.Fatalf("read_file returned %d bytes, want the configured 4000 cap: %s", len(out), cutUTF8(out, 120))
 	}
-	if !strings.Contains(out, "byte budget") {
-		t.Fatalf("no note about the budget:\n%s", cutUTF8(out, 200))
+	if !strings.Contains(out, "continue with offset=") {
+		t.Fatalf("no note about how to go on:\n%s", cutUTF8(out, 200))
 	}
 }

@@ -20,23 +20,21 @@ type Agent struct {
 	model         string
 	opts          Options
 	sink          Sink
-	callSeq       int          // numbers the r1, r2... ids that the summaries and the audit log share
+	callSeq       int          // numbers the r1, r2... ids the summaries share
 	prompt        string       // the system message, built once so the cached prefix never moves
 	branch        string       // the branch the prompt was built on, which the screen can show at once
 	task          string       // the prompt being answered, which compaction keeps word for word
 	environment   string       // the date and git state the last ask carried, so an ask that changes nothing repeats nothing
-	fold          foldNote     // what the fold in progress did, until the log has it
 	readFiles     []string     // files the folded turns read, oldest first
 	modifiedFiles []string     // and the ones they wrote or edited
 	compactedAt   int          // tool calls in the history when it was last folded; -1 = never
-	auditBroken   atomic.Bool  // the audit log failed once: say so once, not per call
 	perms         *permissions // what the user has already agreed to keep allowing
-	repeats       *loopGuard   // calls this run has already answered, so a repeat costs one line
 	sessionBroken atomic.Bool  // the session log failed once: say so once, not per message
 	turn          int          // the round-trip currently running, carried on every event
 	history       []llm.Message
 	seenThrough   int // how far the history has reached the model: a result past it was never read
 	meter         meter
+	specBytes     int         // what the tool list costs every request, counted once
 	savedRatio    float64     // the byte ratio the session log last heard of
 	sincePlan     int         // tool calls since the model last touched its plan
 	planReminded  bool        // the stale-plan line has been said for this plan already
@@ -63,7 +61,6 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	a.meter = newMeter()
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
-	a.repeats = newLoopGuard()
 	a.prompt, a.branch = withInstructions(withEnvironment(SystemPrompt, opts.Root), opts.Instructions), GitBranch(opts.Root)
 	a.Reset()
 	return a
@@ -89,8 +86,6 @@ func (a *Agent) startOver() {
 	a.environment = ""
 	a.opts.Plan.Clear() // the steps belong to the conversation that went
 	a.work.started()    // nothing has had to make room in the conversation that starts now
-	a.repeats.changed() // nothing the model saw before is in front of it any more
-	a.forgetAll()       // the tools forget what they handed over too: there is nothing in front of the model
 	a.dropWaiting()     // an ask typed into the old conversation does not steer the new one
 	a.publishUsage()
 }
@@ -110,20 +105,6 @@ func (a *Agent) add(m llm.Message) {
 	a.reportSave(a.opts.Session.Append(m))
 }
 
-// The saved conversation is kept the same as the one being sent, message for message: whatever
-// rewrites the history says so to the log through one of these. A run that comes back then sends the
-// bytes this one sent, and the server's cache still holds them.
-
-// revised says history[i] was changed in place.
-func (a *Agent) revised(i int) {
-	a.reportSave(a.opts.Session.Revise(i-1, storable(a.history[i]))) // the log does not hold the system prompt
-}
-
-// removed says history[from:to] is about to be, or has just been, taken out.
-func (a *Agent) removed(from, to int) {
-	a.reportSave(a.opts.Session.Remove(from-1, to-1))
-}
-
 // Learned hands a run that is coming back what the earlier one had learned about its server: the
 // same conversation is then measured the same way, and what fitted before is not trimmed now.
 func (a *Agent) Learned(bytesPerTok float64) {
@@ -141,6 +122,7 @@ func (a *Agent) Resume(messages []llm.Message) {
 	a.callSeq = highestCallID(a.history)
 	a.restoreFiles(a.history)
 	a.restorePlan(a.history)
+	a.meter.anchorTokens = 0 // the count the saved run had is not this run's
 	a.environment = lastEnvironment(a.history)
 	if hasRecap(a.history) {
 		// the conversation was folded before it was saved: the next fold waits for new work to pile up,

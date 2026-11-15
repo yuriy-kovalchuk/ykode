@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // sessionsScreen is /sessions: the conversations this project has saved, and putting one of them in this
@@ -155,12 +154,10 @@ func (s *sessionsScreen) pick(id string) (tea.Cmd, overlayNext) {
 // and what comes next is saved to its file. The conversation the run gave up is left whole, so it can be
 // picked out of the list again.
 func (m *model) continueWith(id string) error {
-	// the folder of shortened tool results is named for the conversation, as the run's is
-	where := filepath.Join(filepath.Dir(m.cfg.ResultDir), id)
-	if err := m.agent.ContinueFrom(m.cfg.SessionDir, id, tools.NewResultStore(where)); err != nil {
+	if err := m.agent.ContinueFrom(m.cfg.SessionDir, id); err != nil {
 		return err
 	}
-	m.cfg.Session, m.cfg.SessionFile, m.cfg.ResultDir = id, m.agent.SessionFile(), where
+	m.cfg.Session, m.cfg.SessionFile = id, m.agent.SessionFile()
 
 	// the screen holds the conversation that was given up, and the walk-back holds its asks
 	m.log.forget()

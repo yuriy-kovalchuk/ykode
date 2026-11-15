@@ -51,6 +51,18 @@ func specBytes(s llm.ToolSpec) int {
 	return len(raw)
 }
 
+// wireSpecBytes is what the tool list costs every request. The list is described to the model once
+// and never changes mid-session, so its size is counted once as well: the estimate that runs inside
+// the drop loop would otherwise rebuild every description and schema per message dropped.
+func (a *Agent) wireSpecBytes() int {
+	if a.specBytes == 0 {
+		for _, s := range a.specs() {
+			a.specBytes += len(s.Type) + len(s.Function.Name) + len(s.Function.Description) + len(s.Function.Parameters)
+		}
+	}
+	return a.specBytes
+}
+
 // specs describes the tools to the model, in registration order.
 func (a *Agent) specs() []llm.ToolSpec {
 	if a.tools == nil { // a history-only agent, as the budget tests build one

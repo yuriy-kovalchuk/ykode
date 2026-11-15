@@ -20,8 +20,6 @@ func TestEveryToolStatesItsClass(t *testing.T) {
 	registry := tools.BuiltIn(root, dir, tools.Options{})
 	registry.Add(tools.NewAskUser(nil)) // the agent adds it after the built-ins
 	want := map[string]tools.Class{
-		"find_files":   tools.ClassReads,
-		"search_text":  tools.ClassReads,
 		"read_file":    tools.ClassReads,
 		"write_file":   tools.ClassWrites,
 		"edit_file":    tools.ClassWrites,
@@ -42,24 +40,6 @@ func TestEveryToolStatesItsClass(t *testing.T) {
 	}
 	for name := range want {
 		t.Errorf("%s is not in the registry the run builds", name)
-	}
-}
-
-// a repeat of a read is answered from the result the model still has, unless the tool keeps its own
-// memory of what it showed - which is how read_file notices an edited file
-func TestOnlyReadsWithoutTheirOwnMemoryAreGuarded(t *testing.T) {
-	dir := t.TempDir()
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer root.Close()
-
-	for _, tool := range tools.BuiltIn(root, dir, tools.Options{}).All() {
-		guarded, want := worthGuarding(tool), tool.Class() == tools.ClassReads && tool.Name() != "read_file"
-		if guarded != want {
-			t.Errorf("%s guarded = %v, wanted %v", tool.Name(), guarded, want)
-		}
 	}
 }
 

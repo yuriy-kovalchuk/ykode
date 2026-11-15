@@ -62,19 +62,3 @@ func TestEscLeavesTheConversationAlone(t *testing.T) {
 		t.Errorf("esc forgot the conversation:\n%s", out)
 	}
 }
-
-// /undo force overwrites what is in the file now, so it asks too: but only when there is a change to put
-// back, which is what the command itself says when there is not
-func TestUndoForceAsksWhenThereIsSomethingToPutBack(t *testing.T) {
-	m := newTestModel()
-	m.Update(tea.WindowSizeMsg{Width: 92, Height: 24})
-	m.input.SetValue("/undo force")
-	m.submit()
-
-	if m.picker != nil {
-		t.Error("the screen asked about a change that was never made")
-	}
-	if out := m.log.render(92); !strings.Contains(out, "nothing to undo") {
-		t.Errorf("a command with nothing to undo did not say so:\n%s", out)
-	}
-}

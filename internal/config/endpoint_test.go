@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,7 +11,7 @@ import (
 // the first-run answer lands in a fresh home as the seeded file plus the server
 func TestSavingTheEndpointToAFreshHome(t *testing.T) {
 	fakeHome(t)
-	path, err := SaveEndpoint("http://gpu.local:8080/v1", "sk-1", "qwen")
+	path, _, err := SaveEndpoint(t.TempDir(), "http://gpu.local:8080/v1", "sk-1", "qwen")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +34,7 @@ func TestSavingTheEndpointToAFreshHome(t *testing.T) {
 func TestSavingTheEndpointKeepsWhatTheUserWrote(t *testing.T) {
 	fakeHome(t)
 	writeSettings(t, home.Settings(), "# my laptop setup\nbase_url: http://old:1/v1 # the old box\napi_key: sk-keep\nmax_turns: 40\n")
-	if _, err := SaveEndpoint("http://new:2/v1", "", "m2"); err != nil {
+	if _, _, err := SaveEndpoint(t.TempDir(), "http://new:2/v1", "", "m2"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(home.Settings())
@@ -50,26 +49,6 @@ func TestSavingTheEndpointKeepsWhatTheUserWrote(t *testing.T) {
 	}
 	if strings.Contains(text, "http://old:1/v1") {
 		t.Errorf("the old server is still there:\n%s", text)
-	}
-}
-
-// a home that only has the old settings.json keeps its settings when the answer is saved
-func TestSavingTheEndpointCarriesALegacyJSONFileOver(t *testing.T) {
-	fakeHome(t)
-	legacy := filepath.Join(filepath.Dir(home.Settings()), "settings.json")
-	writeSettings(t, legacy, `{"max_turns": 33, "thinking_level": "low"}`)
-	if _, err := SaveEndpoint("http://gpu:3/v1", "", ""); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.MaxTurns != 33 || cfg.ThinkingLevel != "low" || cfg.BaseURL != "http://gpu:3/v1" {
-		t.Errorf("the legacy settings were lost on the way to YAML: turns=%d level=%q base=%q", cfg.MaxTurns, cfg.ThinkingLevel, cfg.BaseURL)
-	}
-	if raw, _ := os.ReadFile(home.Settings()); strings.Contains(string(raw), "{") {
-		t.Errorf("the carried-over file still reads as JSON:\n%s", raw)
 	}
 }
 

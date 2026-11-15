@@ -16,8 +16,7 @@ func TestAnsweringOnceStopsTheAskingForThatTool(t *testing.T) {
 		sse("", "both written", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: AllowAlways}
-	a, done, dir, _ := newAuditedAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
+	a, dir := newBuiltInAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
 
 	if err := a.Ask(context.Background(), "write two files"); err != nil {
 		t.Fatal(err)
@@ -46,8 +45,7 @@ func TestACommandPrefixIsAllowedWithoutItsNeighbours(t *testing.T) {
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Refuse}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000, Allow: []string{"exec:go test"}}, sink)
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000, Allow: []string{"exec:go test"}}, sink)
 
 	if err := a.Ask(context.Background(), "run these"); err != nil {
 		t.Fatal(err)
@@ -81,8 +79,7 @@ func TestAnAlwaysNeverCoversAPathOutsideTheProject(t *testing.T) {
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: AllowAlways}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 128, CtxSize: 8000}, sink)
 
 	if err := a.Ask(context.Background(), "write two files then read outside"); err != nil {
 		t.Fatal(err)
@@ -157,8 +154,7 @@ func TestAnAlwaysAnsweredOnAnOutsideCallIsNotRemembered(t *testing.T) {
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: AllowAlways}
-	a, done, _, _ := newAuditedAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
-	defer done()
+	a, _ := newBuiltInAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 8000}, sink)
 
 	if err := a.Ask(context.Background(), "write outside then inside"); err != nil {
 		t.Fatal(err)

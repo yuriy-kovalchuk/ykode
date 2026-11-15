@@ -11,15 +11,15 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// SaveEndpoint edits settings.yaml in place, so the user's comments and other keys survive.
-func SaveEndpoint(baseURL, apiKey, model string) (string, error) {
-	path := home.Settings()
-	doc, err := readSettingsDoc()
+// SaveEndpoint edits the settings file this project uses in place, so the user's comments and other
+// keys survive. It answers the file it wrote and whether that was the project's own.
+func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
+	path, local := SettingsTarget(root)
+	doc, err := readSettingsDoc(path)
 	if err != nil {
-		return path, err
+		return path, local, err
 	}
 	top := doc.Content[0]
-	blockStyle(top) // a file that started as JSON reads as YAML from now on
 	setKey(top, "base_url", text(baseURL))
 	if apiKey != "" {
 		setKey(top, "api_key", text(apiKey))
@@ -27,15 +27,26 @@ func SaveEndpoint(baseURL, apiKey, model string) (string, error) {
 	if model != "" {
 		setKey(top, "model", text(model))
 	}
-	return path, writeSettingsDoc(doc)
+	if err := writeSettingsDoc(path, doc); err != nil {
+		return path, local, err
+	}
+	if local {
+		if err := trustWritten(root); err != nil {
+			return path, local, err
+		}
+	}
+	return path, local, nil
 }
 
-// readSettingsDoc opens settings.yaml as a document - or the built-in defaults when nothing is
-// there yet - so an edit keeps the comments and the keys nobody asked about.
-func readSettingsDoc() (*yaml.Node, error) {
-	path := home.Settings()
-	raw, err := os.ReadFile(settingsIn(home.Dir())) // the YAML file, or a legacy JSON one
+// readSettingsDoc opens one settings file as a document - or the built-in defaults when the user's own
+// file is not there yet - so an edit keeps the comments and the keys nobody asked about. A project
+// file that is missing is an error: there is nothing to edit.
+func readSettingsDoc(path string) (*yaml.Node, error) {
+	raw, err := os.ReadFile(settingsIn(filepath.Dir(path)))
 	if errors.Is(err, os.ErrNotExist) {
+		if filepath.Dir(path) != home.Dir() {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
 		raw, err = yaml.Marshal(builtinSettings())
 	}
 	if err != nil {
@@ -55,8 +66,7 @@ func readSettingsDoc() (*yaml.Node, error) {
 }
 
 // writeSettingsDoc saves a document back, readable only by you, because it may hold a token.
-func writeSettingsDoc(doc *yaml.Node) error {
-	path := home.Settings()
+func writeSettingsDoc(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {
 		return err
@@ -68,12 +78,4 @@ func writeSettingsDoc(doc *yaml.Node) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return os.Chmod(path, 0o600)
-}
-
-// blockStyle undoes JSON's braces and quotes, so a carried-over file reads like the others.
-func blockStyle(n *yaml.Node) {
-	n.Style = 0
-	for _, c := range n.Content {
-		blockStyle(c)
-	}
 }

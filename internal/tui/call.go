@@ -67,9 +67,6 @@ func noteFor(tool, args, result string, failed bool, root string) string {
 		return oneLine(what+" · "+oneLine(how, execNoteTail), noticeChars)
 	case tool == "plan" && what != "":
 		return what // how far the plan got and what it is on now: the pinned panel has the steps
-	case tool == "search_text" || tool == "find_files":
-		// what a locate found is counted, not printed
-		return what + " · " + countSaid(result, foundWord(tool))
 	case said == "":
 		return what
 	case tool == "read_file" || tool == "edit_file" || tool == "write_file":
@@ -101,28 +98,6 @@ func namedFile(args, root string) string {
 		return ""
 	}
 	return shorten(in.Path, root)
-}
-
-// foundWord is what a locate counts: files it named, or lines where a pattern turned up.
-func foundWord(tool string) string {
-	if tool == "find_files" {
-		return "files"
-	}
-	return "matches"
-}
-
-// countSaid counts what a locate returned. Its result is one line per thing it found, so the row can
-// say how much came back without putting any of it on the screen.
-func countSaid(result, word string) string {
-	if strings.HasPrefix(result, "(no matches") {
-		return "no matches"
-	}
-	n := len(strings.Split(strings.TrimRight(result, "\n"), "\n"))
-	at := ""
-	if strings.Contains(result, "[stopped at the ") {
-		at = " · its limit"
-	}
-	return fmt.Sprintf("%d %s%s", n, word, at)
 }
 
 // exitSaid is how a command ended, read from the note the tool leaves at the end of its output. An

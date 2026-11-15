@@ -8,7 +8,6 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // /sessions names the conversations that can be resumed, marking this project's and this run's,
@@ -29,7 +28,7 @@ func TestSessionsNamesWhatCanBeResumed(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a, done := newStoringAgent(t, &stubServer{}, Options{Session: here, Root: dir}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: here, Root: dir}, &captureSink{}, dir)
 	defer done()
 	a.add(llm.Message{Role: "user", Content: "what this run is doing"})
 
@@ -57,7 +56,7 @@ func TestSessionsNamesWhatCanBeResumed(t *testing.T) {
 // a run that saves nothing says so instead of an empty list
 func TestSessionsWithoutASavedConversation(t *testing.T) {
 	dir := t.TempDir()
-	a, done := newStoringAgent(t, &stubServer{}, Options{}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{}, &captureSink{}, dir)
 	defer done()
 
 	text, _, err := a.Command(context.Background(), "/sessions")
@@ -85,10 +84,10 @@ func TestContinueFromTakesTheRunOver(t *testing.T) {
 	sessions := filepath.Join(dir, "sessions")
 	own := saveConversation(t, sessions, "s20260101-120000.000", dir, "what this run is doing", "and its answer")
 	back := saveConversation(t, sessions, "s20260101-110000.000", dir, "the ask that was saved", "what it got")
-	a, done := newStoringAgent(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
 	defer done()
 
-	if err := a.ContinueFrom(sessions, "s20260101-110000.000", tools.NewResultStore(filepath.Join(dir, "later"))); err != nil {
+	if err := a.ContinueFrom(sessions, "s20260101-110000.000"); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.Conversation(); len(got) != 3 || got[1].Content != "the ask that was saved" {
@@ -113,11 +112,11 @@ func TestContinueFromRefusesAnotherProjectsConversation(t *testing.T) {
 	sessions := filepath.Join(dir, "sessions")
 	saveConversation(t, sessions, "s20260101-110000.000", "/somewhere/else", "theirs", "their answer")
 	own := session.New(sessions, "s20260101-120000.000", dir)
-	a, done := newStoringAgent(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
 	defer done()
 	a.add(llm.Message{Role: "user", Content: "ours"})
 
-	err := a.ContinueFrom(sessions, "s20260101-110000.000", tools.ResultStore{})
+	err := a.ContinueFrom(sessions, "s20260101-110000.000")
 	if err == nil || !strings.Contains(err.Error(), "/somewhere/else") {
 		t.Errorf("another project's conversation was accepted: %v", err)
 	}
@@ -138,11 +137,11 @@ func TestContinueFromRefusesAnEmptyConversation(t *testing.T) {
 	if err := empty.Cleared(); err != nil { // a conversation someone cleared: its file stands, holding nothing
 		t.Fatal(err)
 	}
-	a, done := newStoringAgent(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: own, Root: dir}, &captureSink{}, dir)
 	defer done()
 	a.add(llm.Message{Role: "user", Content: "ours"})
 
-	if err := a.ContinueFrom(sessions, "s20260101-110000.000", tools.ResultStore{}); err == nil {
+	if err := a.ContinueFrom(sessions, "s20260101-110000.000"); err == nil {
 		t.Error("an empty conversation was continued")
 	}
 	if got := a.Conversation(); len(got) != 2 || got[1].Content != "ours" {

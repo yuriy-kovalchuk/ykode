@@ -13,7 +13,7 @@ func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
 	path := filepath.Join(user, "settings.yaml")
 	writeSettings(t, path, "# mine\nmodel: qwen3-coder\nmax_turns: 9\n")
 
-	if _, err := Set("mouse", "true"); err != nil {
+	if _, _, err := Set(t.TempDir(), "mouse", "true"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(path)
@@ -40,10 +40,10 @@ func TestASettingIsWrittenAndTheRestOfTheFileSurvives(t *testing.T) {
 // a number and a switch are written as the file spells them, not as words in quotes
 func TestANumberIsWrittenAsANumberAndASwitchAsASwitch(t *testing.T) {
 	fakeHome(t)
-	if _, err := Set("max_turns", "40"); err != nil {
+	if _, _, err := Set(t.TempDir(), "max_turns", "40"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Set("sandbox", "on"); err != nil {
+	if _, _, err := Set(t.TempDir(), "mouse", "on"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(os.Getenv("YKODE_HOME"), "settings.yaml"))
@@ -51,22 +51,22 @@ func TestANumberIsWrittenAsANumberAndASwitchAsASwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	if !strings.Contains(body, "max_turns: 40") || !strings.Contains(body, "sandbox: true") {
+	if !strings.Contains(body, "max_turns: 40") || !strings.Contains(body, "mouse: true") {
 		t.Errorf("written as:\n%s", body)
 	}
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MaxTurns != 40 || !cfg.Sandbox {
-		t.Errorf("read back as max_turns=%d sandbox=%v", cfg.MaxTurns, cfg.Sandbox)
+	if cfg.MaxTurns != 40 || !cfg.Mouse {
+		t.Errorf("read back as max_turns=%d mouse=%v", cfg.MaxTurns, cfg.Mouse)
 	}
 }
 
 // a key inside a section is written inside that section
 func TestASectionKeyIsWrittenInsideItsSection(t *testing.T) {
 	fakeHome(t)
-	if _, err := Set("tools.read_lines", "40"); err != nil {
+	if _, _, err := Set(t.TempDir(), "tools.read_lines", "40"); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(nil)
@@ -92,7 +92,7 @@ func TestAValueThatWouldNotWorkIsRefused(t *testing.T) {
 		{"keep_sessions", "a week"},
 		{"no_such_thing", "1"},
 	} {
-		if _, err := Set(ask.key, ask.value); err == nil {
+		if _, _, err := Set(t.TempDir(), ask.key, ask.value); err == nil {
 			t.Errorf("%s %s was accepted", ask.key, ask.value)
 		}
 	}
@@ -108,10 +108,10 @@ func TestAValueThatWouldNotWorkIsRefused(t *testing.T) {
 // the never-ask list grows one item at a time, and says so when the item is already there
 func TestTheNeverAskListGrowsOneAtATime(t *testing.T) {
 	fakeHome(t)
-	if _, err := Set("permissions.allow", "exec:go test"); err != nil {
+	if _, _, err := Set(t.TempDir(), "permissions.allow", "exec:go test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Set("permissions.allow", "exec:go test"); err == nil {
+	if _, _, err := Set(t.TempDir(), "permissions.allow", "exec:go test"); err == nil {
 		t.Error("the same item was added twice")
 	}
 	cfg, err := Load(nil)
@@ -126,7 +126,7 @@ func TestTheNeverAskListGrowsOneAtATime(t *testing.T) {
 // a change lands in the file that holds a token, and that file stays readable only by you
 func TestTheFileWrittenStaysPrivate(t *testing.T) {
 	user := fakeHome(t)
-	if _, err := Set("model", "qwen3-coder"); err != nil {
+	if _, _, err := Set(t.TempDir(), "model", "qwen3-coder"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(user, "settings.yaml"))
@@ -135,5 +135,13 @@ func TestTheFileWrittenStaysPrivate(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("settings.yaml is mode %o, want 600", info.Mode().Perm())
+	}
+}
+
+// an empty entry would stand for every request, so it never goes on the list
+func TestAnEmptyEntryIsNotAddedToTheList(t *testing.T) {
+	fakeHome(t)
+	if _, _, err := Set(t.TempDir(), "permissions.allow", ""); err == nil {
+		t.Error("an empty name was accepted for permissions.allow")
 	}
 }

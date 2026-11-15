@@ -33,7 +33,7 @@ func TestACallWrittenAsTextRuns(t *testing.T) {
 		sse("", "It is written.", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 256, NoVerify: true, AssumeYes: true}, sink)
+	a, done := newAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 256, AssumeYes: true}, sink)
 	defer done()
 	if err := a.Ask(context.Background(), "write the note"); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestAReplyCutOffCarriesOn(t *testing.T) {
 		sse("", "The first half of the", "", nil, "length"),
 		sse("", " answer.", "", nil, "stop"),
 	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64, NoVerify: true}, &captureSink{})
+	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64}, &captureSink{})
 	defer done()
 	if err := a.Ask(context.Background(), "explain it"); err != nil {
 		t.Fatal(err)
@@ -133,11 +133,11 @@ func TestAReplyThatStopsHalfwayIsAskedToCarryOn(t *testing.T) {
 
 func TestStoppingHalfwayCostsOneNudge(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "The files are listed.\n\nNow let me read the first one", "", nil, "stop"),
 		sse("", "Still about to.\n\nLet me read it", "", nil, "stop"),
 	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64, NoVerify: true}, &captureSink{})
+	a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64}, &captureSink{})
 	defer done()
 	if err := a.Ask(context.Background(), "look around"); err != nil {
 		t.Fatal(err)
@@ -152,11 +152,11 @@ func TestAStalePlanIsRemindedOf(t *testing.T) {
 	plan := tools.NewPlan()
 	scripts := []string{sse("", "", "plan", []string{`{"steps":[{"text":"look","status":"active"},{"text":"answer"}]}`}, "tool_calls")}
 	for i := 0; i < planStaleCalls; i++ {
-		scripts = append(scripts, sse("", "", "find_files", []string{`{"pattern":"*","depth":` + string(rune('1'+i)) + `}`}, "tool_calls"))
+		scripts = append(scripts, sse("", "", "read_file", []string{`{"path":"f` + string(rune('a'+i)) + `.go"}`}, "tool_calls"))
 	}
 	scripts = append(scripts, sse("", "Do you want more?", "", nil, "stop"))
 	stub := &stubServer{scripts: scripts}
-	a, done := newAgent(t, stub, Options{MaxTurns: 20, MaxTokens: 64, NoVerify: true, Plan: plan}, &captureSink{})
+	a, done := newAgent(t, stub, Options{MaxTurns: 20, MaxTokens: 64, Plan: plan}, &captureSink{})
 	defer done()
 	a.tools = tools.NewRegistry(append(a.tools.All(), plan)...)
 	if err := a.Ask(context.Background(), "look around"); err != nil {
@@ -180,11 +180,11 @@ func TestAStalePlanIsRemindedOf(t *testing.T) {
 // and calls it writes anyway are not kept as its answer
 func TestOutOfRoundsAsksWhereTheWorkStands(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
-		sse("", "Done so far: the listing.\n<tool_call>\n<function=find_files>\n</function>\n</tool_call>", "", nil, "stop"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
+		sse("", "Done so far: the listing.\n<tool_call>\n<function=read_file>\n</function>\n</tool_call>", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
-	a, done := newAgent(t, stub, Options{MaxTurns: 1, MaxTokens: 64, NoVerify: true}, sink)
+	a, done := newAgent(t, stub, Options{MaxTurns: 1, MaxTokens: 64}, sink)
 	defer done()
 	if err := a.Ask(context.Background(), "look around"); err != nil {
 		t.Fatal(err)
@@ -206,36 +206,11 @@ func TestOutOfRoundsAsksWhereTheWorkStands(t *testing.T) {
 	}
 }
 
-// a write that was interrupted before it ran keeps its text when old writes are shortened: the file
-// is not on disk, and the model must not be told it is
-func TestAnInterruptedWriteKeepsItsArguments(t *testing.T) {
-	a := writesRun(t)
-	args := `{"path":"big.txt","content":"` + strings.Repeat("a line of the file\\n", 100) + `"}`
-	call := func(id string) llm.Message {
-		return llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",
-			Function: llm.FunctionCall{Name: "write_file", Arguments: json.RawMessage(args)}}}}
-	}
-	a.history = append(a.history, llm.Message{Role: "user", Content: "write it"},
-		call("c1"), // interrupted: no reply was ever written
-		call("c2"), llm.Message{Role: "tool", ToolCallID: "c2", Name: "write_file", Content: "created big.txt"})
-	a.sanitizeHistory()
-	if a.history[3].Content != neverRan {
-		t.Fatalf("the interrupted call was answered with %q", a.history[3].Content)
-	}
-	a.shrinkOldEdits(0)
-	if got := string(a.history[2].ToolCalls[0].Function.Arguments); got != args {
-		t.Errorf("a write that never ran lost its text: %.80s", got)
-	}
-	if got := string(a.history[4].ToolCalls[0].Function.Arguments); !strings.Contains(got, "_ykode") {
-		t.Errorf("a write that happened kept its text: %.80s", got)
-	}
-}
-
 // a server started with no flags has a window of four thousand tokens and ykode's default margin is
 // as many: the reserve gives way, and a turn still completes
 func TestATurnCompletesInASmallWindow(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{CtxSize: 4096, SafetyMargin: 4096, MaxTurns: 4, NoVerify: true}, &captureSink{})
+	a, done := newAgent(t, stub, Options{CtxSize: 4096, SafetyMargin: 4096, MaxTurns: 4}, &captureSink{})
 	defer done()
 	if err := a.Ask(context.Background(), "say something"); err != nil {
 		t.Fatalf("a window of 4096 with a margin of 4096 cannot answer: %v", err)
@@ -245,9 +220,9 @@ func TestATurnCompletesInASmallWindow(t *testing.T) {
 	}
 }
 
-// whatever trimming leaves, the request that follows it can go: the marks it trims to and the check
-// a request makes are one rule
-func TestWhatTrimmingLeavesCanBeSent(t *testing.T) {
+// whatever the drop leaves, the request that follows it can go: the mark it drops to and the check a
+// request makes are one rule
+func TestWhatDroppingLeavesCanBeSent(t *testing.T) {
 	for _, window := range []int{2048, 4096, 8192, 32768} {
 		a := New(nil, nil, "test-model", Options{CtxSize: window, SafetyMargin: 4096}, nil)
 		a.history = append(a.history, llm.Message{Role: "user", Content: "read everything"})
@@ -257,9 +232,9 @@ func TestWhatTrimmingLeavesCanBeSent(t *testing.T) {
 				llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.go"}`)}}}},
 				llm.Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("a line of the file that was read\n", 60)})
 		}
-		a.trimHistory()
-		if _, err := a.request(false); err != nil {
-			t.Errorf("window %d: trimmed, then refused: %v", window, err)
+		a.makeRoom()
+		if _, err := a.request(); err != nil {
+			t.Errorf("window %d: dropped to, then refused: %v", window, err)
 		}
 	}
 }
@@ -278,7 +253,7 @@ func TestAnOverflowIsRecoveredFromOnce(t *testing.T) {
 	}))
 	defer server.Close()
 	sink := &captureSink{}
-	a := New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model", Options{CtxSize: 8000, MaxTurns: 4, NoVerify: true}, sink)
+	a := New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model", Options{CtxSize: 8000, MaxTurns: 4}, sink)
 	before := a.meter.bytesPerTok
 	if err := a.Ask(context.Background(), "say something"); err != nil {
 		t.Fatalf("the overflow ended the turn: %v", err)

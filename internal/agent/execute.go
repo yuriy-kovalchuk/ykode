@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
@@ -17,9 +16,7 @@ import (
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) string {
 	name := call.Function.Name
 	args := a.normalizedArgs(name, call.Function.Arguments)
-	argsText := string(args) // the log holds the call as the model wrote it: a cut fragment is neither readable nor JSON
 	a.emit(Event{Kind: ToolStart, Tool: name, Args: string(args)})
-	start := time.Now()
 	if ctx.Err() != nil {
 		return a.failTool(name, string(args), "cancelled before this tool ran")
 	}
@@ -33,53 +30,21 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) strin
 	}
 	targets, err := tool.Targets(args)
 	if err != nil {
-		a.record(id, name, argsText, nil, nil, "auto", "error", "", tools.Detail{}, start)
 		return a.failTool(name, string(args), err.Error())
 	}
 	outside := outsidePaths(targets)
-	decision, allowed := a.permit(tool, name, string(args), outside)
-	if !allowed {
-		a.record(id, name, argsText, targets, outside, decision, "refused", "", tools.Detail{}, start)
+	if !a.permit(tool, name, string(args), outside) {
 		return a.failTool(name, string(args), "the user refused this tool call")
 	}
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)
 	}
-	// a repeated search is answered from the first result instead of running again
-	if worthGuarding(tool) {
-		if earlier, times := a.repeats.claim(repeatKey(call), id, a.turn); earlier != nil {
-			a.tell(fmt.Sprintf("the model asked for the same %s again (attempt %d)", name, times))
-			reply := a.repeats.reply(name, *earlier, times)
-			a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: reply})
-			return reply
-		}
-	}
-	a.record(id, name, argsText, targets, outside, decision, "started", "", tools.Detail{}, start)
-
 	out, err := tool.Run(ctx, args)
 	if err != nil {
-		if worthGuarding(tool) {
-			a.repeats.release(repeatKey(call)) // it answered nothing, so trying again is not a repeat
-		}
-		if a.changesProject(name) {
-			a.repeats.changed() // a command that failed may still have changed files on the way
-		}
-		a.record(id, name, argsText, targets, outside, decision, "error", "", tools.Detail{}, start)
 		return a.failTool(name, string(args), err.Error())
 	}
 	result := tools.FormatResult(out, a.opts.MaxResult)
-	status := "ok"
-	switch {
-	case ctx.Err() != nil:
-		status = "cancelled"
-	case detailOf(tool).TimedOut:
-		status = "timeout"
-	}
-	a.record(id, name, argsText, targets, outside, decision, status, result, detailOf(tool), start)
 	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result, Change: detailOf(tool).Change})
-	if a.changesProject(name) {
-		a.repeats.changed() // the project changed: what was read before is no longer the answer
-	}
 	return result
 }
 
@@ -89,30 +54,25 @@ func (a *Agent) failTool(name, args, why string) string {
 	return "error: " + why
 }
 
-// permit decides whether a call may run, asking the user when nothing already covers it, and names how
-// it was decided for the audit log. An outside-root path is asked about even under --yes and an
-// "always" never covers it, so remembering one would only spread it over the same tool inside the
-// project, where nobody was asked.
-func (a *Agent) permit(tool tools.Tool, name, args string, outside []string) (decision string, allowed bool) {
+// permit decides whether a call may run, asking the user when nothing already covers it. An
+// outside-root path is asked about even under --yes and an "always" never covers it, so remembering
+// one would only spread it over the same tool inside the project, where nobody was asked.
+func (a *Agent) permit(tool tools.Tool, name, args string, outside []string) bool {
 	needsAsk := tool.NeedsConfirm() && !a.opts.AssumeYes
 	switch {
 	case len(outside) == 0 && !needsAsk:
-		if a.opts.AssumeYes && tool.NeedsConfirm() {
-			return "yes_flag", true
-		}
-		return "auto", true
+		return true
 	case len(outside) == 0 && a.perms.allows(name, args):
-		return "allowlist", true // an "always" from earlier in this run, or an entry from settings.yaml
+		return true // an "always" from earlier in this run, or an entry from settings.yaml
 	}
 	verdict := a.emit(Event{Kind: Confirm, Tool: name, Args: args, Text: describe(name, args, outside), Target: outside})
-	switch {
-	case verdict == Refuse:
-		return "user_no", false
-	case verdict == AllowAlways && len(outside) == 0:
-		a.perms.add(name, args)
-		return "allowlist", true
+	if verdict == Refuse {
+		return false
 	}
-	return "user_yes", true
+	if verdict == AllowAlways && len(outside) == 0 {
+		a.perms.add(name, args)
+	}
+	return true
 }
 
 func outsidePaths(targets []tools.Target) []string {

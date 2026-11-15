@@ -7,7 +7,7 @@ import (
 
 func TestSamplingIsSetPerModelAndThinkingMode(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"models": {"qwen": {
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"models": {"qwen": {
 		"thinking": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0, "presence_penalty": 1.5},
 		"no_think": {"temperature": 0.7, "top_p": 0.8}
 	}}}`)

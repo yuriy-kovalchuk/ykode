@@ -9,19 +9,6 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// the few words a front end puts beside its working prompt, so a long round-trip is not a mystery
-func TestTrimmingSaysWhichItDid(t *testing.T) {
-	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture)})
-	a.history = sizedFixture()
-	if made := a.RoomMade(); made != "" {
-		t.Fatalf("nothing has run, yet it already says %q", made)
-	}
-	a.trimHistory()
-	if made := a.RoomMade(); made != "trimmed 1 tool result" {
-		t.Errorf("RoomMade = %q, want the one result that was blanked", made)
-	}
-}
-
 // losing a whole call is worth knowing about more than losing the middle of a result
 func TestDroppingWholeCallsNamesTheDrops(t *testing.T) {
 	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
@@ -33,7 +20,7 @@ func TestDroppingWholeCallsNamesTheDrops(t *testing.T) {
 	a := newForHistory(Options{CtxSize: (len(SystemPrompt) + 900) / 4})
 	a.history = history
 
-	a.trimHistory()
+	a.makeRoom()
 
 	if made := a.RoomMade(); !strings.HasPrefix(made, "dropped ") {
 		t.Errorf("RoomMade = %q, want the whole calls that went", made)
@@ -55,7 +42,7 @@ func TestAFoldSaysWhatItFoldedUntilTheNextAsk(t *testing.T) {
 		sse("", "all read", "", nil, "stop"),
 		sse("", "Goal: rename the helper. Files: file0.go. Decisions: none. Next: run the tests", "", nil, "stop"),
 	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read them all"); err != nil {

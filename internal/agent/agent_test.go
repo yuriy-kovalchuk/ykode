@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -135,8 +136,10 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "seeded.txt"), []byte("one line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	registry := tools.NewRegistry(
-		tools.NewFindFiles(root, dir),
 		tools.NewReadFile(root, dir),
 		tools.NewWriteFile(root, dir),
 	)
@@ -144,8 +147,53 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 	return a, func() { server.Close(); root.Close() }
 }
 
+// newAgentIn is newBuiltInAgent over a directory the test made, so the test can put files in it
+// before the run reads them; the fold tests build on it.
+func newAgentIn(t *testing.T, stub *stubServer, opts Options, sink Sink, dir string) (*Agent, func()) {
+	t.Helper()
+	server := httptest.NewServer(stub)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(llm.NewClient(server.URL+"/v1", ""), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
+		"test-model", opts, sink)
+	return a, func() { server.Close(); root.Close() }
+}
+
+// writeLines makes a text file of n lines, each long enough that reading it costs real bytes.
+func writeLines(t *testing.T, dir, name string, n int) string {
+	t.Helper()
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		b.WriteString("line " + strconv.Itoa(i) + " of " + name + " carrying enough text to matter\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+// newBuiltInAgent is an agent over every built-in tool, its project root a scratch dir it also
+// returns; the repair and permission tests build on it.
+func newBuiltInAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, string) {
+	t.Helper()
+	server := httptest.NewServer(stub)
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close() })
+	a := New(llm.NewClient(server.URL+"/v1", ""), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
+		"test-model", opts, sink)
+	a.opts.Root = dir
+	return a, dir
+}
+
 func TestMaxTurnsStopsTheLoop(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls")}}
+	stub := &stubServer{scripts: []string{sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls")}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 512}, &captureSink{})
 	defer done()
 
@@ -158,35 +206,9 @@ func TestMaxTurnsStopsTheLoop(t *testing.T) {
 	}
 }
 
-func TestAnswerWithNoToolCallIsVerifiedOnce(t *testing.T) {
-	stub := &stubServer{scripts: []string{
-		sse("", "the file is fine", "", nil, "stop"),
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
-		sse("", "checked: the file is fine", "", nil, "stop"),
-	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
-	defer done()
-
-	if err := a.Ask(context.Background(), "why does main.go fail to build?"); err != nil {
-		t.Fatal(err)
-	}
-	if len(stub.requests) != 3 {
-		t.Fatalf("%d requests, want: answer, verification retry with a tool, final answer", len(stub.requests))
-	}
-	if got := stub.requests[0]["tool_choice"]; got != "auto" {
-		t.Fatalf("first request tool_choice = %v, want auto", got)
-	}
-	if got := stub.requests[1]["tool_choice"]; got != "required" {
-		t.Fatalf("verification request tool_choice = %v, want required", got)
-	}
-	if !hasUserNote(stub.requests[1], "without calling any tool") {
-		t.Fatalf("verification request has no nudge:\n%v", stub.requests[1]["messages"])
-	}
-}
-
 func TestToolUsingRequestIsNotNudged(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "one directory", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512}, &captureSink{})
@@ -202,58 +224,9 @@ func TestToolUsingRequestIsNotNudged(t *testing.T) {
 
 // hasUserNote looks for text in the user messages of a recorded request.
 
-func hasUserNote(req map[string]any, want string) bool {
-	messages, _ := req["messages"].([]any)
-	for _, m := range messages {
-		entry, _ := m.(map[string]any)
-		if entry["role"] == "user" && strings.Contains(fmt.Sprint(entry["content"]), want) {
-			return true
-		}
-	}
-	return false
-}
-
-func TestAMemoryAnswerIsCheckedAgainAtMostOnce(t *testing.T) {
-	cases := []struct {
-		name, prompt string
-		noVerify     bool
-		requests     int
-	}{
-		{"a question about the agent is not nudged", "what model are you and how fast are you?", false, 1},
-		{"the verification retry does not loop", "fix the failing test", false, 2},
-		{"--no-verify turns the nudge off", "why does main.go fail to build?", true, 1},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			stub := &stubServer{scripts: []string{sse("", "answered from memory", "", nil, "stop")}}
-			a, done := newAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 512, NoVerify: c.noVerify}, &captureSink{})
-			defer done()
-			if err := a.Ask(context.Background(), c.prompt); err != nil {
-				t.Fatal(err)
-			}
-			if len(stub.requests) != c.requests {
-				t.Errorf("%d requests, want %d", len(stub.requests), c.requests)
-			}
-		})
-	}
-}
-
-func TestTheNudgeMatchesWholeWordsOnly(t *testing.T) {
-	for _, ask := range []string{"fix the bug in main.go", "add a test", "why does this fail", "review this file"} {
-		if !looksLikeProjectWork(ask) {
-			t.Errorf("%q should read as project work", ask)
-		}
-	}
-	for _, ask := range []string{"address the feedback", "update my profile", "what model are you?", "how do I use you?"} {
-		if looksLikeProjectWork(ask) {
-			t.Errorf("%q is not project work", ask)
-		}
-	}
-}
-
 func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("thinking first", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("thinking first", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, SendReasoning: true}, &captureSink{})
@@ -269,7 +242,7 @@ func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
 
 func TestThinkingIsNotSentBackUnasked(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("thinking first", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("thinking first", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, &captureSink{})
@@ -301,7 +274,7 @@ func assistantReasoning(t *testing.T, request map[string]any) string {
 func TestStartingOverClearsTheSavedConversation(t *testing.T) {
 	dir := t.TempDir()
 	saved := session.New(dir, "s20260101-120000", dir)
-	a, done := newStoringAgent(t, &stubServer{}, Options{Session: saved}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{Session: saved}, &captureSink{}, dir)
 	defer done()
 
 	a.add(llm.Message{Role: "user", Content: "an ask that will be cleared"})

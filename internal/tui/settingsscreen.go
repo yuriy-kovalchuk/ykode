@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -37,7 +36,7 @@ var handled = map[string]bool{"base_url": true, "model": true, "api_key": true}
 
 // liveKnobs are the settings a running session takes up at once; the others are read when ykode starts.
 var liveKnobs = map[string]bool{
-	"thinking_level": true, "verify": true, "assume_yes": true, "mouse": true,
+	"thinking_level": true, "assume_yes": true, "mouse": true,
 	"max_turns": true, "max_tokens": true, "context.safety_margin": true,
 }
 
@@ -185,11 +184,17 @@ func (s *settingsScreen) view(width, height int, cfg config.Config, model string
 		keyW = max(keyW, len(set.Key))
 	}
 	// the title, a blank, the server row, the detail (four rows), the hint, and the box's own edges
-	room := max(height-detailRows-10, 4)
+	where, local := config.SettingsTarget(cfg.Root)
+	head, said := setupDim.Render("   this project · .ykode/settings.yaml"), "this project · .ykode/settings.yaml"
+	if !local {
+		said = "⚠ global · " + shortenHome(where) + " — every project is changed · /create-local-setting makes one for this project"
+		head = styleWarn.Render("   " + said)
+	}
+	room := max(height-detailRows-10-(len(wrap(said, inner))-1), 4)
 	first := min(max(s.at-room/2, 0), max(len(s.rows)+1-room, 0))
 
 	var b strings.Builder
-	b.WriteString(setupTitle.Render("ykode · settings") + setupDim.Render("   everything settings.yaml can set") + "\n\n")
+	b.WriteString(setupTitle.Render("ykode · settings") + head + "\n\n")
 	for i := first; i < min(first+room, len(s.rows)+1); i++ {
 		b.WriteString(s.row(i, keyW, inner, cfg, model) + "\n")
 	}
@@ -334,11 +339,12 @@ func (m *model) screenMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// writeSetting writes one knob to settings.yaml, reads the settings again, and applies what a running
-// session can take up. A value the settings package refuses never reaches the file.
+// writeSetting writes one knob to the settings file this project uses, reads the settings again, and
+// applies what a running session can take up. A value the settings package refuses never reaches the
+// file.
 func (m *model) writeSetting(key, value string) error {
 	before := m.cfg
-	path, err := config.Set(key, value)
+	path, local, err := config.Set(m.cfg.Root, key, value)
 	if err != nil {
 		return err
 	}
@@ -348,7 +354,7 @@ func (m *model) writeSetting(key, value string) error {
 	}
 	m.cfg = fresh
 	m.screen.load(fresh)
-	m.screen.note = fmt.Sprintf("%s saved to %s", key, filepath.Base(path))
+	m.screen.note = savedTo(key, path, local)
 	if liveKnobs[key] {
 		m.applyLive(before, fresh)
 	}
@@ -363,7 +369,7 @@ func (m *model) applyLive(before, now config.Config) {
 		m.agent.SetThinkingLevel(now.ThinkingLevel)
 	}
 	m.agent.Tune(func(o *agent.Options) {
-		o.NoVerify, o.AssumeYes = now.NoVerify, now.AssumeYes
+		o.AssumeYes = now.AssumeYes
 		o.MaxTurns, o.MaxTokens, o.SafetyMargin = now.MaxTurns, now.MaxTokens, now.SafetyMargin
 	})
 	if now.Mouse != before.Mouse {

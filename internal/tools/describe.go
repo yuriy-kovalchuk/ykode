@@ -24,9 +24,6 @@ func Describe(name, args string) string {
 					where += fmt.Sprintf("-%d", in.Offset+in.Limit-1)
 				}
 			}
-			if in.Outline {
-				where += " (outline)"
-			}
 			return where
 		})
 	case "write_file":
@@ -40,14 +37,6 @@ func Describe(name, args string) string {
 			Command string `json:"command"`
 		}) string {
 			return oneLine(strings.Join(strings.Fields(in.Command), " "), describeChars)
-		})
-	case "search_text":
-		return describeWith(args, func(in searchInput) string {
-			return quote(in.Pattern) + joined(" in ", in.Path) + joined(" ", in.Glob)
-		})
-	case "find_files":
-		return describeWith(args, func(in findInput) string {
-			return quote(in.Pattern) + joined(" under ", in.Path)
 		})
 	case "plan":
 		return describeWith(args, planShape)

@@ -120,3 +120,22 @@ func TestEveryRequestAsksForLiveTimings(t *testing.T) {
 		t.Errorf("timings_per_token = %v, want true", got)
 	}
 }
+
+// the fold mark is the last moment a fold still fits, not a share of the window: a fixed share folded
+// a large window's whole results away while a fifth of it was still unused
+func TestTheFoldMarkIsTheLastMomentAFoldFits(t *testing.T) {
+	for _, tc := range []struct{ ctx, margin int }{{4096, 1024}, {32768, 4096}, {131072, 4096}} {
+		a := newForHistory(Options{CtxSize: tc.ctx, SafetyMargin: tc.margin})
+		if asked := a.pressureMark(); asked > a.usable()-a.compactRoom() {
+			t.Errorf("at a %d window the fold is asked at %d, past the last request that fits (%d)",
+				tc.ctx, asked, a.usable()-a.compactRoom())
+		}
+		if asked := a.pressureMark(); asked > a.ceiling() {
+			t.Errorf("at a %d window the fold waits until after the drop mark (%d)", tc.ctx, a.ceiling())
+		}
+		if tc.ctx >= 32768 && a.pressureMark() <= tc.ctx*3/4 {
+			t.Errorf("at a %d window the fold asks at %d, no later than the old three quarters of the window",
+				tc.ctx, a.pressureMark())
+		}
+	}
+}

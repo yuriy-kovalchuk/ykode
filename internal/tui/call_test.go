@@ -117,35 +117,6 @@ func TestACommandThatFailedSaysWhy(t *testing.T) {
 	}
 }
 
-// a locate says what it looked for and how much it found, without printing what it found
-func TestALocateCountsWhatItFound(t *testing.T) {
-	var log transcript
-	log.root = "/work"
-	args := `{"pattern":"build_vocab"}`
-	log.toolStart("search_text", args)
-	log.toolEnd("search_text", args, "src/a.go:12: def build_vocab():\nsrc/b.go:4: build_vocab()\nsrc/c.go:9: build_vocab()\n")
-	view := stripCodes(strings.Join(log.rows(100), "\n"))
-	if !strings.Contains(view, "build_vocab") || !strings.Contains(view, "3") {
-		t.Errorf("the row does not say what was searched and how much came back: %q", view)
-	}
-	if strings.Contains(view, "src/a.go:12") {
-		t.Errorf("the matches are printed into the session: %q", view)
-	}
-}
-
-// a locate that found nothing says so rather than a bare row
-func TestALocateThatFoundNothingSaysSo(t *testing.T) {
-	var log transcript
-	log.root = "/work"
-	args := `{"pattern":"nothing here"}`
-	log.toolStart("find_files", args)
-	log.toolEnd("find_files", args, "(no matches)")
-	view := stripCodes(strings.Join(log.rows(100), "\n"))
-	if !strings.Contains(view, "no matches") {
-		t.Errorf("an empty locate reads as a silent row: %q", view)
-	}
-}
-
 // a call whose arguments could not be read still says what it did, in the tool's own words
 func TestACallWithUnreadableArgumentsStillReadsWell(t *testing.T) {
 	var log transcript

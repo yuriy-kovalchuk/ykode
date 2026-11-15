@@ -36,14 +36,12 @@ func commandEnv() []string {
 	return env
 }
 
-// Exec runs sh -c in the project root: confined by the working directory, not by the file sandbox.
+// Exec runs sh -c in the project root: confined by the working directory, not by the file tools' rules.
 type Exec struct {
 	dir      string
-	last     Detail        // what the last command exited with and where its full output went
 	Timeout  time.Duration // kill after this when the model does not ask; 0 means defaultExecTimeout
 	LogDir   string        // where a cut command's full output is saved; empty means os.TempDir()
 	MaxBytes int           // bytes the result may use; 0 means defaultResultBytes
-	Sandbox  bool          // run inside sandbox-exec or bwrap: writes only in the project, no network
 }
 
 func (t Exec) timeout() time.Duration {
@@ -77,18 +75,6 @@ func (Exec) Description() string {
 
 func (Exec) NeedsConfirm() bool { return true }
 
-// LastDetail reports the exit code and saved log of the command that just ran.
-func (t *Exec) LastDetail() Detail { return t.last }
-
-// exitCode reads the exit status of a finished command, if it reports one.
-func exitCode(err error) (int, bool) {
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), true
-	}
-	return 0, false
-}
-
 // Targets reports no paths: a shell command has no single path to confirm.
 func (Exec) Targets(json.RawMessage) ([]Target, error) { return nil, nil }
 
@@ -119,13 +105,6 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	defer cancel()
 
 	argv := []string{"sh", "-c", in.Command}
-	if t.Sandbox {
-		sandboxed, err := sandboxArgs(t.dir, in.Command)
-		if err != nil {
-			return "", err
-		}
-		argv = sandboxed
-	}
 	cmd := groupCommand(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.dir
 	cmd.Env = commandEnv()
@@ -135,11 +114,7 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	cmd.Stdout, cmd.Stderr = window, window
 	err := cmd.Run()
 	window.close()
-	t.last = Detail{}
 	result := t.fit(window)
-	if code, ok := exitCode(err); ok {
-		t.last.ExitCode = &code
-	}
 	if err == nil {
 		if strings.TrimSpace(result) == "" {
 			return "exit 0, no output: the command succeeded", nil // silence reads as "unknown" and invites a re-run
@@ -149,7 +124,6 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	// a non-zero exit is a normal result: the model needs the command's own output to fix it
 	switch {
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
-		t.last.TimedOut = true
 		result += fmt.Sprintf("\n[command killed after its %s timeout; pass a larger timeout if this is expected work]", timeout)
 	case runCtx.Err() != nil:
 		result += "\n[cancelled]"
@@ -201,7 +175,6 @@ func (t *Exec) fit(w *outWindow) string {
 	if w.why != nil {
 		fmt.Fprintf(&b, " (could not save the full output: %v]", w.why)
 	} else {
-		t.last.LogPath = w.path
 		fmt.Fprintf(&b, " full output: %s (read it with exec_command, e.g. sed -n '1,80p' FILE)]", w.path)
 	}
 	b.WriteString("\n\n")

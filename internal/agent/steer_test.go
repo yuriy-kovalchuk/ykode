@@ -29,7 +29,7 @@ func (s *steerSink) Emit(ev Event) Decision {
 // turn: the round-trip already in flight and the tools already running are not interrupted
 func TestASteeredAskJoinsTheNextRoundTrip(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"seeded.txt"}`}, "tool_calls"),
 		sse("", "both files are there", "", nil, "stop"),
 	}}
 	sink := &steerSink{wait: ToolEnd, ask: "and the tests too"}
@@ -84,7 +84,7 @@ func TestStartingOverDropsWhatWasWaiting(t *testing.T) {
 // two asks typed in a row arrive in the order they were typed
 func TestAsksAreTakenInTheOrderTheyWereTyped(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"seeded.txt"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &steerSink{wait: ToolEnd, ask: "first", agent: nil}

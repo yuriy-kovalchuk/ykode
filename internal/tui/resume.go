@@ -64,17 +64,8 @@ func (t *transcript) replay(messages []llm.Message) []string {
 			open = open[1:]
 			args := string(call.Function.Arguments)
 			t.toolStart(call.Function.Name, args) // the call row says what it touched, as a live one would
-			t.toolEnd(call.Function.Name, args, replayed(m.Content))
+			t.toolEnd(call.Function.Name, args, m.Content)
 		}
 	}
 	return asks
-}
-
-// replayed leaves out what the run itself wrote into a result: the shortening note says the text is gone,
-// and whoever reads the saved conversation has the call without being shown the note.
-func replayed(content string) string {
-	if strings.HasPrefix(content, agent.ShrinkMark) {
-		return ""
-	}
-	return content
 }

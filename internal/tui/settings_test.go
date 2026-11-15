@@ -43,11 +43,11 @@ func settingsModel(t *testing.T) *model {
 	m := newTestModel()
 	m.cfg = config.Config{
 		BaseURL: "http://127.0.0.1:8080/v1", ThinkingLevel: "medium", MaxTurns: 25,
-		ReadLines: 150, SearchLimit: 50, SafetyMargin: 4096,
+		ReadLines: 150, SafetyMargin: 4096,
 		ExecTimeout: time.Minute, StreamIdle: 2 * time.Minute,
-		KeepSessions: 720 * time.Hour, KeepCommandLogs: 24 * time.Hour, KeepAudit: 4320 * time.Hour,
+		KeepSessions: 720 * time.Hour, KeepCommandLogs: 24 * time.Hour,
 		// as a run that read the file below resolved it: the mouse was asked for there
-		LogAudit: true, Mouse: true, Allow: []string{"exec:go test"},
+		Mouse: true, Allow: []string{"exec:go test"},
 	}
 	return m
 }
@@ -58,7 +58,7 @@ func TestSettingsListsEveryKnobAndWhatWasChanged(t *testing.T) {
 	m := settingsModel(t)
 
 	out := stripCodes(m.settings("/settings"))
-	for _, want := range []string{"base_url", "tools.read_lines", "audit_retention_days", "what this run reads"} {
+	for _, want := range []string{"base_url", "tools.read_lines", "keep_sessions", "what this run reads"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}
@@ -173,7 +173,7 @@ func TestSettingsOpensTheListOfEverySetting(t *testing.T) {
 		t.Fatal("/settings did not open the screen")
 	}
 	view := stripCodes(m.View())
-	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "sandbox", "esc closes"} {
+	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "mouse", "esc closes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the list lacks %q:\n%s", want, view)
 		}
@@ -302,7 +302,7 @@ func TestAListTakesAnEntryAndStartupSettingsSaySo(t *testing.T) {
 	if !fileHas(t, dir, "exec:go test") {
 		t.Error("the entry was not added")
 	}
-	openRow(t, m, "sandbox")
+	openRow(t, m, "stream_idle_sec")
 	if view := stripCodes(m.View()); !strings.Contains(view, "read when ykode starts") {
 		t.Errorf("a startup-only setting does not say so:\n%s", view)
 	}
@@ -428,6 +428,54 @@ func TestTheSettingsBoxDoesNotChangeHeightWithTheCursor(t *testing.T) {
 	without := strings.Count(stripCodes(m.View()), "\n")
 	if with != without {
 		t.Errorf("the screen is %d rows on the thinking level and %d elsewhere", with, without)
+	}
+}
+
+// the screen names the file it writes: the project's own when it has one, and a warning before it
+// changes the file every project reads
+func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
+	settingsHome(t, "mouse: true\n")
+	m := settingsModel(t)
+	m.cfg.Root = t.TempDir()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.openSettings()
+
+	out := stripCodes(m.View())
+	if !strings.Contains(out, "⚠ global ·") || !strings.Contains(out, "/create-local-setting") {
+		t.Errorf("nothing warned that the global file is the one being changed:\n%s", out)
+	}
+
+	if _, err := config.CreateLocal(m.cfg.Root, "http://127.0.0.1:8080/v1", "test-model"); err != nil {
+		t.Fatal(err)
+	}
+	if out = stripCodes(m.View()); strings.Contains(out, "⚠ global ·") {
+		t.Errorf("the warning stayed though the project has a file of its own:\n%s", out)
+	}
+	if !strings.Contains(out, "this project · .ykode/settings.yaml") {
+		t.Errorf("the screen does not say it writes the project's file:\n%s", out)
+	}
+}
+
+// /create-local-setting gives the project a file of its own and says where a change lands now
+func TestCreateLocalSettingLeavesTheProjectAFile(t *testing.T) {
+	settingsHome(t, "mouse: true\n")
+	m := settingsModel(t)
+	root := t.TempDir()
+	// the flags this run was started with, so reading the settings again keeps the same root
+	m.cfg.Root, m.cfg.Args, m.cfg.BaseURL = root, []string{"--root", root}, "http://127.0.0.1:8080/v1"
+
+	m.input.SetValue("/create-local-setting")
+	m.submit()
+
+	raw, err := os.ReadFile(filepath.Join(root, ".ykode", "settings.yaml"))
+	if err != nil {
+		t.Fatalf("the project got no settings file: %v", err)
+	}
+	if !strings.Contains(string(raw), "base_url: http://127.0.0.1:8080/v1") {
+		t.Errorf("the project file does not start from this run's server:\n%s", raw)
+	}
+	if notice := stripCodes(m.log.render(100)); !strings.Contains(notice, "/settings now changes this project only") {
+		t.Errorf("no notice about where changes land now:\n%s", notice)
 	}
 }
 

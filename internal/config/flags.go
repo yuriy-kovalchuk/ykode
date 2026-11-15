@@ -18,11 +18,8 @@ type flagValues struct {
 	ThinkingLevel string
 	NoThink       bool
 	Yes           bool
-	NoVerify      bool
 	SendReasoning bool
 	Prompt        string
-	JSON          bool
-	NoTUI         bool
 	Continue      string
 	Version       bool
 }
@@ -48,11 +45,8 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 		"ctx":            func() { c.CtxSize = f.CtxSize },
 		"thinking":       func() { c.ThinkingLevel = f.ThinkingLevel },
 		"yes":            func() { c.AssumeYes = c.AssumeYes || f.Yes },
-		"no-verify":      func() { c.NoVerify = c.NoVerify || f.NoVerify },
 		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
 		"p":              func() { c.Prompt = f.Prompt },
-		"json":           func() { c.JSON = c.JSON || f.JSON },
-		"no-tui":         func() { c.TUI = c.TUI && !f.NoTUI },
 		"continue":       func() { c.Continue = f.Continue },
 		"version":        func() { c.Version = f.Version },
 	}

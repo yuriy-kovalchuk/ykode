@@ -8,13 +8,6 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// foldNote is what the fold in progress did, held until it is written to the session log.
-type foldNote struct {
-	summary string
-	dropped int
-	before  int
-}
-
 const (
 	readFilesOpen     = "<read-files>"
 	readFilesClose    = "</read-files>"

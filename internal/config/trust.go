@@ -14,8 +14,34 @@ import (
 // trustRecord is where the acceptances live, under the per-user directory.
 const trustRecord = "trusted.json"
 
-// projectSettingsPath is where a project keeps its own ykode settings.
-func projectSettingsPath(root string) string { return settingsIn(filepath.Join(root, ".ykode")) }
+// LocalSettings is where a project keeps its own ykode settings: <root>/.ykode/settings.yaml.
+func LocalSettings(root string) string { return settingsIn(filepath.Join(root, ".ykode")) }
+
+// HasLocal says the project has a settings file of its own.
+func HasLocal(root string) bool {
+	_, err := os.Stat(LocalSettings(root))
+	return err == nil
+}
+
+// SettingsTarget is the file a change is written to: the project's when it has one, else the user's
+// own. The bool says it is the project's.
+func SettingsTarget(root string) (path string, local bool) {
+	if HasLocal(root) {
+		return LocalSettings(root), true
+	}
+	return home.Settings(), false
+}
+
+// trustWritten records the project file as it now stands as accepted: ykode wrote it, so the next
+// start has nothing to ask about.
+func trustWritten(root string) error {
+	raw, err := os.ReadFile(LocalSettings(root))
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	return TrustProject(root, hex.EncodeToString(sum[:]))
+}
 
 // acceptedProject says whether the project's settings file is still the one that was accepted:
 // any edit changes the hash, and the run asks about it again.

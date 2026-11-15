@@ -27,7 +27,7 @@ var errNoForcedAnswer = fmt.Errorf("the model gave no answer when asked for one 
 func (a *Agent) forceAnswer(ctx context.Context, instruction string) error {
 	// an assistant message would be continued by the server as prefill, so this goes in the user's voice
 	a.modelNote(instruction)
-	req, err := a.request(false)
+	req, err := a.request()
 	if err != nil {
 		return err
 	}

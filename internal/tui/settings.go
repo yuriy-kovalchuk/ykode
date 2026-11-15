@@ -62,19 +62,54 @@ func (m *model) settingsOne(key string) string {
 	return strings.Join(append(rows, fmt.Sprintf("  change it: /settings %s VALUE", s.Key)), "\n")
 }
 
-// settingsChange writes one knob and says what moved. The value is checked by the settings package
-// before the file is touched, so a bad one leaves the file as it was.
+// settingsChange writes one knob and says what moved, naming the file that took it. The value is
+// checked by the settings package before the file is touched, so a bad one leaves the file as it was.
 func (m *model) settingsChange(key, value string) string {
 	before, known := find(m.cfg.Catalogue(), key)
-	path, err := config.Set(key, value)
+	path, local, err := config.Set(m.cfg.Root, key, value)
 	if err != nil {
 		return "not changed: " + err.Error()
 	}
 	if !known {
-		return fmt.Sprintf("%s set to %s · %s · the next run reads it", key, value, shortenHome(path))
+		return savedTo(key, path, local) + " · the next run reads it"
 	}
-	return fmt.Sprintf("%s: %s → %s\n  %s · the next run reads it",
-		key, orUnset(before.Value), orUnset(value), shortenHome(path))
+	line := fmt.Sprintf("%s: %s → %s\n  %s · the next run reads it",
+		key, orUnset(before.Value), orUnset(value), savedTo(key, path, local))
+	if !local {
+		line = noLocalFile + "\n  " + line
+	}
+	return line
+}
+
+// noLocalFile warns that a project without its own settings file is having the file every project
+// reads changed.
+const noLocalFile = "no .ykode/settings.yaml in this project: this changes the global settings"
+
+// createLocal gives the project a settings file of its own, starting from the server and model this
+// run is using, and reads the settings again so the screen shows where each value comes from.
+func (m *model) createLocal() {
+	if m.running {
+		m.log.notice("that waits for the turn to finish: press esc to stop this one first")
+		return
+	}
+	path, err := config.CreateLocal(m.cfg.Root, m.cfg.BaseURL, m.agent.Model())
+	if err != nil {
+		m.err = err.Error()
+		return
+	}
+	if fresh, err := m.cfg.Reload(); err == nil {
+		m.cfg = fresh
+	}
+	m.log.notice("created " + shortenHome(path) + ": /settings now changes this project only. " +
+		"Add .ykode/ to the project's .gitignore if it holds a key.")
+}
+
+// savedTo names the file a change landed in: the project's own, or the global one by its full path.
+func savedTo(key, path string, local bool) string {
+	if local {
+		return key + " saved to .ykode/settings.yaml (this project)"
+	}
+	return key + " saved globally to " + shortenHome(path)
 }
 
 // noSuchSetting names the key that was asked for and lists the ones there are.
@@ -123,10 +158,10 @@ func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// applyEndpoint saves the choice to settings.yaml and switches the running session to it, so the next
-// request goes to the new server with the new model and its window.
+// applyEndpoint saves the choice to the settings file this project uses and switches the running
+// session to it, so the next request goes to the new server with the new model and its window.
 func (m *model) applyEndpoint(res SetupResult) {
-	path, err := config.SaveEndpoint(res.BaseURL, res.APIKey, res.Model)
+	path, local, err := config.SaveEndpoint(m.cfg.Root, res.BaseURL, res.APIKey, res.Model)
 	if err != nil {
 		m.err = err.Error()
 		return
@@ -138,7 +173,11 @@ func (m *model) applyEndpoint(res SetupResult) {
 	client := llm.NewClient(res.BaseURL, m.cfg.APIKey)
 	client.Session, client.Idle = m.cfg.Session, m.cfg.StreamIdle
 	m.agent.SetEndpoint(client, res.Model, cmp.Or(m.cfg.CtxSize, res.CtxSize))
-	m.log.notice(fmt.Sprintf("now using %s at %s · saved to %s", res.Model, res.BaseURL, shortenHome(path)))
+	where := shortenHome(path)
+	if !local {
+		where = "globally in " + where + ": " + noLocalFile
+	}
+	m.log.notice(fmt.Sprintf("now using %s at %s · saved to %s", res.Model, res.BaseURL, where))
 }
 
 // mouseCmd tells the terminal about a mouse setting that changed on the settings screen.

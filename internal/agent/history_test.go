@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,172 +12,10 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// twoReads is a conversation with two read results of the given sizes, the oldest first.
-func twoReads(older, newer int) []llm.Message {
-	return []llm.Message{
-		{Role: "system", Content: SystemPrompt},
-		{Role: "user", Content: "fix the bug"},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c1", Name: "read_file", Content: strings.Repeat("o", older)},
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c2", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"b.go"}`)}}}},
-		{Role: "tool", ToolCallID: "c2", Name: "read_file", Content: strings.Repeat("n", newer)},
-		{Role: "assistant", Content: "done"},
-	}
-}
-
-// historyFixture has two large results, of which only the oldest may go.
-func historyFixture() []llm.Message { return twoReads(2000, 2000) }
-
+// newForHistory is an agent with no tools and no server, for walking a conversation through what the
+// window rules do to it.
 func newForHistory(opts Options) *Agent {
 	return New(nil, nil, "test-model", opts, nullSink{})
-}
-
-// sizedFixture has one huge old result and one small recent one, so trimming has an obvious first victim.
-func sizedFixture() []llm.Message { return twoReads(4000, 800) }
-
-// windowBelow returns a context window that the untrimmed history has passed 3/4 of,
-// and that one trim of history[3] already brings under half.
-func windowBelow(t *testing.T, history func() []llm.Message) int {
-	t.Helper()
-	trimmed := newForHistory(Options{})
-	trimmed.history = history()
-	trimmed.history[3].Content = trimMarker
-	ctx := 2*trimmed.estimateTokens() + 400 // twice what is left after the trim, and the reserve a window always keeps
-
-	full := newForHistory(Options{})
-	full.history = history()
-	if got := full.estimateTokens(); got <= ctx*3/4 {
-		t.Fatalf("fixture estimate %d has not passed 3/4 of %d: the trim would never run", got, ctx)
-	}
-	return ctx
-}
-
-func TestTrimHistorySacrificesTheOldestBigResultFirst(t *testing.T) {
-	history := sizedFixture()
-	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture)})
-	a.history = history
-
-	a.trimHistory()
-
-	if a.history[0].Content != SystemPrompt {
-		t.Fatal("the system prompt must never be trimmed")
-	}
-	if a.history[3].Content != trimMarker {
-		t.Fatalf("oldest tool result was not trimmed: %.60q", a.history[3].Content)
-	}
-	if a.history[5].Content == trimMarker {
-		t.Fatal("the newest tool result was trimmed while an older one still had room")
-	}
-	for _, m := range a.history {
-		if m.Role == "tool" && (m.ToolCallID == "" || m.Name == "") {
-			t.Fatal("trimming must not remove the pairing fields")
-		}
-	}
-	for _, m := range a.history {
-		for _, c := range m.ToolCalls {
-			if !hasToolAnswer(a.history, c.ID) {
-				t.Fatalf("tool call %s lost its answer", c.ID)
-			}
-		}
-	}
-}
-
-// Two equally huge results: one trim lands under 3/4 but still above half, so the trim must keep going.
-func TestTrimOncePastTheThresholdKeepsGoingToHalfTheWindow(t *testing.T) {
-	heavy := func() []llm.Message { return twoReads(6000, 6000) }
-	oneTrim := newForHistory(Options{})
-	oneTrim.history = heavy()
-	oneTrim.history[3].Content = trimMarker
-	ctx := oneTrim.estimateTokens()*4/3 + 1 // one trim lands just under the 3/4 line
-
-	a := newForHistory(Options{CtxSize: ctx})
-	a.history = heavy()
-	a.trimHistory()
-
-	if trimmed := trimCount(a.history); trimmed < 2 {
-		t.Errorf("trimmed %d results, want both: stopping at the threshold breaks the prompt cache again next turn", trimmed)
-	}
-	if got := a.estimateTokens(); got > ctx/2 {
-		t.Errorf("estimate %d is above half of the %d window the trim was aiming at", got, ctx)
-	}
-}
-
-func TestTrimHistoryDoesNothingBelowTheThreshold(t *testing.T) {
-	history := sizedFixture()
-	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture) * 4})
-	a.history = history
-
-	a.trimHistory()
-
-	if trimmed := trimCount(a.history); trimmed != 0 {
-		t.Fatalf("trimmed %d results below the 3/4 threshold; it must not touch a roomy conversation", trimmed)
-	}
-}
-
-func TestTrimHistoryLeavesSmallResultsAndNoContextAlone(t *testing.T) {
-	// this context forces the trimmer to walk the history; short results must still be left alone
-	a := newForHistory(Options{CtxSize: 400})
-	a.history = historyFixture()
-	a.history[3].Content = "short answer"
-	a.history[5].Content = "short answer"
-
-	a.trimHistory()
-
-	if trimmed := trimCount(a.history); trimmed != 0 {
-		t.Fatalf("trimmed %d results, want none: a 400 byte floor protects them", trimmed)
-	}
-
-	off := newForHistory(Options{})
-	off.history = historyFixture()
-	off.trimHistory()
-	if trimmed := trimCount(off.history); trimmed != 0 {
-		t.Fatalf("trimming ran without --ctx (%d trimmed); it must be off", trimmed)
-	}
-}
-
-func TestTrimNeverBlanksAResultTheModelHasNotSeen(t *testing.T) {
-	unseen := func() []llm.Message { return sizedFixture()[:6] } // ends on a tool reply: no answer yet
-	a := newForHistory(Options{CtxSize: windowBelow(t, unseen)}) // trimming the old result is enough
-	a.history = unseen()
-
-	a.trimHistory()
-
-	for _, m := range a.history {
-		if m.ToolCallID == "c2" && m.Content == trimMarker {
-			t.Error("the reply the model is about to read was blanked before it ever saw it")
-		}
-	}
-}
-
-// a command is slow to run again, so its trimmed output is kept in a file to grep
-func TestATrimmedCommandOutputIsKeptInAFile(t *testing.T) {
-	store := tools.NewResultStore(t.TempDir())
-	a := newForHistory(Options{CtxSize: windowBelow(t, sizedFixture), Store: store})
-	a.history = sizedFixture()
-	a.history[3].Name, a.history[3].CallID = "exec_command", "r1"
-	full := a.history[3].Content
-
-	a.trimHistory()
-
-	if !strings.Contains(a.history[3].Content, "r1.txt") || !strings.Contains(a.history[3].Content, "sed -n") {
-		t.Fatalf("the trimmed result names no way back: %q", a.history[3].Content)
-	}
-	if saved, err := store.Load("r1"); err != nil || saved != full {
-		t.Errorf("the trimmed text was not kept: %v", err)
-	}
-}
-
-func TestHistoryBytesCountsToolArguments(t *testing.T) {
-	one := []llm.Message{{Role: "user", Content: strings.Repeat("a", 30)}}
-	bigger := []llm.Message{{Role: "assistant", ToolCalls: []llm.ToolCall{
-		{ID: "c1", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(strings.Repeat("b", 30))}},
-	}}}
-	if got, want := historyBytes(one), 30; got != want {
-		t.Fatalf("plain message = %d bytes, want %d", got, want)
-	}
-	if historyBytes(bigger) <= historyBytes(one) {
-		t.Fatal("tool call bytes must count toward the estimate")
-	}
 }
 
 func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
@@ -191,25 +31,6 @@ func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
 	if withTools.estimateTokens() <= without.estimateTokens() {
 		t.Fatal("tool specs must count toward the context estimate")
 	}
-}
-
-func hasToolAnswer(history []llm.Message, id string) bool {
-	for _, m := range history {
-		if m.Role == "tool" && m.ToolCallID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func trimCount(history []llm.Message) int {
-	n := 0
-	for _, m := range history {
-		if m.Role == "tool" && m.Content == trimMarker {
-			n++
-		}
-	}
-	return n
 }
 
 // paired says the history is something a server accepts: every tool reply has the call it answers,
@@ -248,7 +69,7 @@ func TestASmallWindowDropsTheOldestToolCallWhole(t *testing.T) {
 	}
 	a := newForHistory(Options{CtxSize: (len(SystemPrompt) + 900) / 4})
 	a.history = history
-	a.trimHistory()
+	a.makeRoom()
 
 	if !paired(a.history) {
 		t.Fatalf("a tool reply was left without its call:\n%s", dump(a.history))
@@ -273,7 +94,50 @@ func TestASmallWindowDropsTheOldestToolCallWhole(t *testing.T) {
 	}
 }
 
-func TestTrimNeverSendsAnOrphanToolReply(t *testing.T) {
+// the drop keeps what it must: a fold's recap, the ask being answered and the newest call, and it
+// stops as soon as the estimate is under the ceiling
+func TestADropKeepsTheRecapTheTaskAndTheNewestCall(t *testing.T) {
+	history := []llm.Message{{Role: "system", Content: SystemPrompt},
+		{Role: "user", Content: FoldMark + "\nGoal: the work so far"},
+		{Role: "user", Content: "read them all"}}
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("c%d", i)
+		history = append(history,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f.go"}`)}}}},
+			llm.Message{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("x", 400)})
+	}
+	a := newForHistory(Options{CtxSize: 900})
+	a.task = "read them all"
+	a.history = history
+	a.makeRoom()
+
+	var recap, task bool
+	for _, m := range a.history {
+		if _, ok := recapOf(m); ok {
+			recap = true
+		}
+		if m.Role == "user" && m.Content == a.task {
+			task = true
+		}
+	}
+	if !recap {
+		t.Error("a fold's recap was dropped: the model lost the memory of everything before it")
+	}
+	if !task {
+		t.Error("the ask being answered was dropped")
+	}
+	if blocks := callBlocks(a.history); blocks == 0 {
+		t.Error("the newest call was dropped; the model still needs what it just read")
+	}
+	if !paired(a.history) {
+		t.Errorf("the drop broke call pairing:\n%s", dump(a.history))
+	}
+	if got := a.estimateTokens(); got > a.ceiling() {
+		t.Errorf("after dropping, %d tokens still, over the ceiling of %d", got, a.ceiling())
+	}
+}
+
+func TestTheDropNeverSendsAnOrphanToolReply(t *testing.T) {
 	for _, ctx := range []int{200, 400, 800, 1600, 6000} {
 		history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "go"}}
 		for i := range 4 {
@@ -285,7 +149,7 @@ func TestTrimNeverSendsAnOrphanToolReply(t *testing.T) {
 		}
 		a := newForHistory(Options{CtxSize: ctx})
 		a.history = history
-		a.trimHistory()
+		a.makeRoom()
 		if !paired(a.history) {
 			t.Errorf("ctx %d left an orphan tool reply", ctx)
 		}
@@ -311,7 +175,7 @@ func TestACallStillOwedItsRepliesIsNeverDropped(t *testing.T) {
 	a := newForHistory(Options{CtxSize: 120})
 	a.history = history
 	a.sanitizeHistory()
-	a.trimHistory()
+	a.makeRoom()
 	a.sanitizeHistory()
 
 	for _, m := range a.history {
@@ -320,7 +184,7 @@ func TestACallStillOwedItsRepliesIsNeverDropped(t *testing.T) {
 		}
 	}
 	if !paired(a.history) {
-		t.Fatalf("trimming an interrupted turn left a call without replies:\n%s", dump(a.history))
+		t.Fatalf("dropping in an interrupted turn left a call without replies:\n%s", dump(a.history))
 	}
 }
 
@@ -352,7 +216,7 @@ func TestACallThatNeverRanIsAnsweredBeforeTheServerSeesIt(t *testing.T) {
 
 // the screen asks what the model is being sent, so a run that came back can show what it came back with
 func TestTheConversationIsReadableBack(t *testing.T) {
-	a, done := newStoringAgent(t, &stubServer{}, Options{}, &captureSink{}, t.TempDir())
+	a, done := newAgentIn(t, &stubServer{}, Options{}, &captureSink{}, t.TempDir())
 	defer done()
 	a.add(llm.Message{Role: "user", Content: "an ask from before"})
 
@@ -373,7 +237,7 @@ func TestTheConversationIsReadableBack(t *testing.T) {
 // again from a byte ratio throws that number away every turn, and the error grows with the conversation.
 func TestTheWindowIsMeasuredFromWhatTheServerCounted(t *testing.T) {
 	dir := t.TempDir()
-	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 4000}, &captureSink{}, dir)
+	a, done := newAgentIn(t, &stubServer{}, Options{CtxSize: 4000}, &captureSink{}, dir)
 	defer done()
 	a.add(llm.Message{Role: "user", Content: strings.Repeat("a", 500)})
 
@@ -389,37 +253,114 @@ func TestTheWindowIsMeasuredFromWhatTheServerCounted(t *testing.T) {
 	}
 }
 
-// Trimming walks the conversation oldest first and stops at the goal, so the work the model is doing now
-// is the last thing touched: an emergency trim must not blank the newest result because it happened to be
-// the biggest.
-func TestTrimmingLeavesTheNewestResultStanding(t *testing.T) {
-	dir := t.TempDir()
-	a, done := newStoringAgent(t, &stubServer{}, Options{CtxSize: 3000}, &captureSink{}, dir)
+// the marks exist so a summary, not a deletion, is what pays for room: a long run at a real window
+// size must never lose a whole call that a fold could still have written down
+func TestALongRunPaysForRoomWithFoldsNotDeletions(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe reading goes on\n", "", nil, "stop")}}
+	sink := &captureSink{}
+	a, done := newAgentIn(t, stub, Options{CtxSize: 32768, KeepRecentTokens: 32768 / 5}, sink, t.TempDir())
 	defer done()
-	a.add(llm.Message{Role: "user", Content: "read them"})
-	for _, id := range []string{"old1", "old2", "old3", "new"} {
-		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{
-			ID: id, Type: "function", Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}})
-		a.add(llm.Message{Role: "tool", CallID: id, Name: "read_file", Content: strings.Repeat("x", 3000)})
-	}
-	a.seenThrough = len(a.history) - 2 // the newest call has not been read by a model yet
 
-	a.trimHistory()
-	shortened, whole := 0, 0
-	for _, m := range a.history {
-		if m.Role != "tool" {
-			continue
-		}
-		if len(m.Content) < 3000 {
-			shortened++
-			if m.CallID == "new" {
-				t.Errorf("the newest result was trimmed while older ones stood: %q", m.Content)
-			}
-		} else {
-			whole++
+	const ask = "read the file until the window fills"
+	a.task = ask
+	a.add(llm.Message{Role: "user", Content: ask})
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("c%d", i)
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"big.txt"}`)}}}})
+		a.add(llm.Message{Role: "tool", ToolCallID: id, CallID: id, Name: "read_file", Content: strings.Repeat("r", 8000)})
+		a.prepareTurn(context.Background(), i+1)
+	}
+
+	var folds int
+	var dropped []string
+	for _, ev := range sink.events {
+		switch {
+		case ev.Kind == Summary:
+			folds++
+		case ev.Kind == Notice && strings.HasPrefix(ev.Text, "dropped"):
+			dropped = append(dropped, ev.Text)
 		}
 	}
-	if shortened == 0 {
-		t.Fatal("nothing was trimmed, so the test proved nothing")
+	if folds == 0 {
+		t.Fatal("a run 20 calls long never folded")
 	}
+	if len(dropped) > 0 {
+		t.Errorf("a fold could still have written this down, so nothing should have been deleted: %v", dropped)
+	}
+	if a.estimateTokens() > a.ceiling() {
+		t.Errorf("after 20 calls the conversation is %d tokens, over the ceiling of %d", a.estimateTokens(), a.ceiling())
+	}
+}
+
+// a dropped call is only survivable if the model is told what went: it can redo that call on purpose
+// instead of finding a hole in its memory and guessing at it
+func TestTheDropNamesWhatItTookAway(t *testing.T) {
+	sink := &captureSink{}
+	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
+	for _, call := range []struct{ id, name, args string }{
+		{"c1", "read_file", `{"path":"src/parser.go"}`},
+		{"c2", "exec_command", `{"command":"go test ./..."}`},
+		{"c3", "read_file", `{"path":"keep.go"}`},
+	} {
+		history = append(history,
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: call.id,
+				Function: llm.FunctionCall{Name: call.name, Arguments: []byte(call.args)}}}},
+			llm.Message{Role: "tool", ToolCallID: call.id, Name: call.name, Content: strings.Repeat("x", 400)})
+	}
+	a := New(nil, nil, "test-model", Options{CtxSize: (len(SystemPrompt) + 900) / 4}, sink)
+	a.task = "read them all"
+	a.history = history
+
+	a.makeRoom()
+
+	var said string
+	for _, ev := range sink.events {
+		if ev.Kind == Notice && strings.HasPrefix(ev.Text, "dropped") {
+			said = ev.Text
+		}
+	}
+	if said == "" {
+		t.Fatal("the drop happened without a word about it")
+	}
+	for _, want := range []string{"read_file src/parser.go", "exec_command"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("%q is missing from what the drop reported:\n%s", want, said)
+		}
+	}
+}
+
+// the estimate runs inside the loop that drops messages, so the tool list is described to the agent
+// once and its size kept: rebuilding five descriptions per message dropped is work nobody reads
+func TestTheEstimateNeverRedescribesTheToolList(t *testing.T) {
+	described := 0
+	a := New(nil, tools.NewRegistry(&countingTool{described: &described}), "m", Options{}, nullSink{})
+	a.history = []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "go"}}
+
+	a.estimateTokens()
+	a.estimateTokens()
+
+	if a.wireSpecBytes() == 0 {
+		t.Error("the tool list counts for nothing in the estimate")
+	}
+	if described != 1 {
+		t.Errorf("the tool list was described %d times for two estimates, want once", described)
+	}
+}
+
+type countingTool struct{ described *int }
+
+func (c *countingTool) Name() string       { return "read_file" }
+func (c *countingTool) Class() tools.Class { return tools.ClassReads }
+func (c *countingTool) Description() string {
+	*c.described++
+	return "counts how often it was described"
+}
+func (c *countingTool) Schema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`)
+}
+func (c *countingTool) NeedsConfirm() bool                              { return false }
+func (c *countingTool) Targets(json.RawMessage) ([]tools.Target, error) { return nil, nil }
+func (c *countingTool) Run(_ context.Context, _ json.RawMessage) (string, error) {
+	return "read", nil
 }

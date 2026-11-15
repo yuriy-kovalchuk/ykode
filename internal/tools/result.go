@@ -19,7 +19,7 @@ const (
 
 // ResultBytesFor scales one tool result with the window it shares: about a tenth of it in tokens,
 // clamped so a small window still gets a usable result. The ceiling is pi's 50 KB, reached at a 128k
-// window: a whole source file fits in one result, and old results are shortened when room runs short.
+// window: a whole source file fits in one result, and the whole call goes when room runs short.
 func ResultBytesFor(ctxTokens int) int {
 	if ctxTokens <= 0 {
 		return defaultResultBytes
@@ -79,4 +79,13 @@ func clampLimit(limit, def, upper int) int {
 		return def
 	}
 	return clamp(limit, 1, upper)
+}
+
+// oneLine trims the end of a line and cuts it when long, keeping output scannable.
+func oneLine(s string, maxChars int) string {
+	s = strings.TrimRight(s, " \t\r") // leading tabs stay: a line copied from here becomes edit_file's old_text
+	if len(s) > maxChars {
+		return cutUTF8(s, maxChars) + " […cut]"
+	}
+	return s
 }

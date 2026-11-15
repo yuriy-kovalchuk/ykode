@@ -10,7 +10,6 @@ import (
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"testing"
-	"time"
 )
 
 // TestMain keeps the package away from the developer's own ~/.ykode: a settings file that is
@@ -45,18 +44,13 @@ func TestLoadDefaults(t *testing.T) {
 		SafetyMargin:    defaultSafety,
 		ThinkingLevel:   defaultThinkingLevel,
 		ReadLines:       defaultReadLines,
-		SearchLimit:     defaultSearchLimit,
 		ExecTimeout:     defaultExecTimeout,
 		StreamIdle:      defaultStreamIdle,
 		KeepCommandLogs: defaultLogKeep,
 		KeepSessions:    defaultSessionKeep,
-		KeepAudit:       defaultAuditKeep,
-		LogAudit:        true,
 		TUI:             true,
 	}
 	cfg.CommandLogDir = "" // derived from $YKODE_HOME, checked separately
-	cfg.ResultDir = ""     // derived from $YKODE_HOME and stamped with the run time
-	cfg.AuditDir = ""      // derived from $YKODE_HOME
 	cfg.SessionDir = ""    // derived from $YKODE_HOME
 	cfg.SessionFile = ""   // derived from $YKODE_HOME and the run time
 	cfg.Session = ""       // derived from the run time
@@ -205,39 +199,36 @@ func TestTheApiKeyComesFromTheEnvOrTheFlag(t *testing.T) {
 	}
 }
 
-func TestTheVerifyAndReasoningSwitches(t *testing.T) {
+func TestTheReasoningSwitch(t *testing.T) {
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.NoVerify {
-		t.Fatal("the verify nudge is on by default")
-	}
 	if cfg.SendReasoning {
 		t.Fatal("thinking is not sent back unless asked")
 	}
-	cfg, err = Load([]string{"--no-verify", "--send-reasoning"})
+	cfg, err = Load([]string{"--send-reasoning"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.NoVerify || !cfg.SendReasoning {
-		t.Fatalf("NoVerify=%v SendReasoning=%v, want both switches to flip", cfg.NoVerify, cfg.SendReasoning)
+	if !cfg.SendReasoning {
+		t.Fatal("--send-reasoning did not flip the switch")
 	}
 }
 
 func TestTheOneShotFlags(t *testing.T) {
-	cfg, err := Load([]string{"-p", "fix the flaky test", "--json"})
+	cfg, err := Load([]string{"-p", "fix the flaky test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Prompt != "fix the flaky test" || !cfg.JSON {
-		t.Fatalf("Prompt=%q JSON=%v", cfg.Prompt, cfg.JSON)
+	if cfg.Prompt != "fix the flaky test" || cfg.TUI {
+		t.Fatalf("Prompt=%q TUI=%v", cfg.Prompt, cfg.TUI)
 	}
 	cfg, err = Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Prompt != "" || cfg.JSON {
+	if cfg.Prompt != "" || !cfg.TUI {
 		t.Fatal("without -p ykode opens a session")
 	}
 }
@@ -253,7 +244,7 @@ func TestTheDefaultReadWindowIsPis(t *testing.T) {
 	}
 }
 
-func TestResultsLiveUnderTheHomeDirForThisRun(t *testing.T) {
+func TestTheRunFileIsNamedForThisRun(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("YKODE_HOME", homeDir)
 	home.Reset()
@@ -262,12 +253,8 @@ func TestResultsLiveUnderTheHomeDirForThisRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir := filepath.Dir(cfg.ResultDir); dir != filepath.Join(homeDir, "results") {
-		t.Fatalf("results sit in %s, want %s", dir, filepath.Join(homeDir, "results"))
-	}
-	name := filepath.Base(cfg.ResultDir)
-	if !sessionIDPattern.MatchString(name) {
-		t.Fatalf("run dir %q is not stamped like s20060102-150405.000", name)
+	if !sessionIDPattern.MatchString(strings.TrimSuffix(filepath.Base(cfg.SessionFile), ".jsonl")) {
+		t.Fatalf("run file %q is not stamped like s20060102-150405.000", cfg.SessionFile)
 	}
 }
 
@@ -300,9 +287,6 @@ func TestContinueLastPicksTheNewestConversation(t *testing.T) {
 	}
 	if cfg.SessionFile != filepath.Join(sessions, "s20260103-090000.jsonl") {
 		t.Errorf("session file is %q", cfg.SessionFile)
-	}
-	if filepath.Base(cfg.ResultDir) != "s20260103-090000" {
-		t.Errorf("a resumed run should reuse its results dir, got %q", cfg.ResultDir)
 	}
 }
 
@@ -349,14 +333,14 @@ func TestTwoRunsInTheSameSecondGetTheirOwnConversation(t *testing.T) {
 func TestEveryFlagReachesItsSetting(t *testing.T) {
 	tempHome(t)
 	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
-		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--no-verify", "--send-reasoning",
-		"-p", "task", "--json", "--version", "--no-tui"})
+		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--send-reasoning",
+		"-p", "task", "--version"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
-		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes || !cfg.NoVerify ||
-		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.JSON || !cfg.Version {
+		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes ||
+		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.Version {
 		t.Errorf("flags did not all land: %+v", cfg)
 	}
 	off, err := Load([]string{"--yes=false", "--no-think=false"})
@@ -389,10 +373,10 @@ func TestNoThinkIsShorthandForTheOffLevel(t *testing.T) {
 	}
 }
 
-// the full-screen session is the default; --no-tui, -p and --json each ask for the line instead
+// the full-screen session is the default; -p asks for one task on stdout instead
 func TestTheFullScreenSessionIsTheDefault(t *testing.T) {
 	tempHome(t)
-	for args, want := range map[string]bool{"": true, "--no-tui": false, "-p task": false, "--json -p task": false} {
+	for args, want := range map[string]bool{"": true, "-p task": false} {
 		cfg, err := Load(strings.Fields(args))
 		if err != nil {
 			t.Fatalf("%q: %v", args, err)
@@ -406,7 +390,7 @@ func TestTheFullScreenSessionIsTheDefault(t *testing.T) {
 	}
 }
 
-func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
+func TestTheDefaultsKeepThinkingOn(t *testing.T) {
 	fakeHome(t)
 	if err := SeedSettings(); err != nil {
 		t.Fatal(err)
@@ -418,31 +402,14 @@ func TestTheDefaultsKeepThinkingAndTheNudgeOn(t *testing.T) {
 	if cfg.ThinkingLevel != defaultThinkingLevel {
 		t.Errorf("the written defaults set thinking to %q, want %q", cfg.ThinkingLevel, defaultThinkingLevel)
 	}
-	if cfg.NoVerify {
-		t.Error("the written defaults turned the tool nudge off")
-	}
 
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"thinking_level": "off", "verify": false}`)
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{"thinking_level": "off", "verify": false}`)
 	cfg, err = Load([]string{"--root", root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
-		t.Errorf("turning both off in a file did not take: thinking=%q no-verify=%v", cfg.ThinkingLevel, cfg.NoVerify)
-	}
-}
-
-func TestTheAuditLogIsOnAndKeptForSixMonthsByDefault(t *testing.T) {
-	fakeHome(t)
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.LogAudit {
-		t.Error("the audit log should be on unless a setting says otherwise")
-	}
-	if cfg.KeepAudit != 180*24*time.Hour {
-		t.Errorf("default keep: want 180 days, got %s", cfg.KeepAudit)
+	if cfg.ThinkingLevel != "off" {
+		t.Errorf("a file turning thinking off did not take: %q", cfg.ThinkingLevel)
 	}
 }

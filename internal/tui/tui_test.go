@@ -226,7 +226,7 @@ func (s *stubPaused) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if first {
 		<-s.release
 		fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1",`+
-			`"function":{"name":"find_files","arguments":"{}"}}]}}],"finish_reason":"tool_calls"}`+"\n\ndata: [DONE]\n\n")
+			`"function":{"name":"read_file","arguments":"{}"}}]}}],"finish_reason":"tool_calls"}`+"\n\ndata: [DONE]\n\n")
 		return
 	}
 	fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"content":"answered while you waited"},`+

@@ -15,7 +15,7 @@ const (
 )
 
 // request builds the chat body and leaves the response the room the context window still has.
-func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
+func (a *Agent) request() (llm.ChatRequest, error) {
 	a.sanitizeHistory()
 	req := llm.ChatRequest{
 		Model:      a.model,
@@ -25,10 +25,6 @@ func (a *Agent) request(forceTool bool) (llm.ChatRequest, error) {
 		MaxTokens:  a.opts.MaxTokens,
 		// the screen shows the speed while the reply streams; servers that do not know the field ignore it
 		TimingsPerToken: true,
-	}
-	if forceTool {
-		// servers that ignore "required" just keep answering, so the guard costs one turn
-		req.ToolChoice = "required"
 	}
 	req.Sampling = a.opts.Thinking
 	if level := a.ThinkingLevel(); level == llm.ThinkingOff {
@@ -72,17 +68,27 @@ func (a *Agent) reserve() int {
 // usable is the window less the reserve: what a request may fill, reply included.
 func (a *Agent) usable() int { return a.opts.CtxSize - a.reserve() }
 
-// The conversation is kept under three marks, each a share of the one before. The ceiling is where
-// whole calls start being dropped: nine tenths of the window, or less when the reserve asks for
-// more than that tenth - so what trimming leaves always passes the check a request makes, and a run
-// never shortens, folds, trims and then refuses to send. Pressure, where old results are shortened
-// and turns folded, is five sixths of the ceiling (three quarters of the window when the reserve is
-// small), and a trim aims for five ninths of it (half the window).
+// The conversation is kept under two marks. The ceiling is where the oldest messages start being
+// dropped whole: nine tenths of the window, or less when the reserve asks for more than that tenth -
+// so what a drop leaves always passes the check a request makes, and a run never folds, drops and
+// then refuses to send.
 func (a *Agent) ceiling() int {
 	return min(a.opts.CtxSize*9/10, a.usable()-minResponseTok)
 }
-func (a *Agent) pressureMark() int { return a.ceiling() * 5 / 6 }
-func (a *Agent) trimGoal() int     { return a.ceiling() * 5 / 9 }
+
+// pressureMark, where the older turns are folded into a summary, is the last moment a fold is still
+// possible: the fold's request carries the older turns and pays for the summary they become, so the
+// ask belongs where the window can still hold both. Folding earlier throws away whole results that
+// the model was still using; folding later leaves the drop layer to delete what a summary would have
+// written down.
+func (a *Agent) pressureMark() int {
+	return min(a.ceiling(), a.usable()-a.compactRoom())
+}
+
+// underPressure says the conversation passed the mark where context starts being worth money.
+func (a *Agent) underPressure() bool {
+	return a.opts.CtxSize > 0 && a.estimateTokens() > a.pressureMark()
+}
 
 // neverRan is the reply written for a call that was interrupted before it answered.
 const neverRan = "this call never ran: the request was interrupted before it finished"

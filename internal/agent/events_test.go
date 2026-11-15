@@ -8,7 +8,7 @@ import (
 
 func TestARunIsAStreamOfTypedEvents(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("pondering", "", "find_files", []string{`{"pattern":"*","depth":1}`}, "tool_calls"),
+		sse("pondering", "", "read_file", []string{`{"path":"seeded.txt"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
@@ -28,10 +28,10 @@ func TestARunIsAStreamOfTypedEvents(t *testing.T) {
 			t.Fatalf("event %d = %v, want %v (%v)", i, got[i], k, kindsText(got))
 		}
 	}
-	if draft := sink.events[2]; draft.Tool != "find_files" || draft.Text != `{"pattern":"*","depth":1}` {
+	if draft := sink.events[2]; draft.Tool != "read_file" || draft.Text != `{"path":"seeded.txt"}` {
 		t.Fatalf("tool_draft event = %+v, want the call being written", draft)
 	}
-	if sink.events[5].Tool != "find_files" || sink.events[5].Text == "" {
+	if sink.events[5].Tool != "read_file" || !strings.Contains(sink.events[5].Text, "one line") {
 		t.Fatalf("tool_end event = %+v, want the tool name and its result", sink.events[5])
 	}
 	for _, ev := range sink.events {
@@ -105,7 +105,7 @@ func TestACallWrittenAsTextIsStrippedAndTheModelAskedOnce(t *testing.T) {
 		sse("", "It is in ops.go.", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
-	a, done := newAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 64, NoVerify: true}, sink)
+	a, done := newAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 64}, sink)
 	defer done()
 	if err := a.Ask(context.Background(), "where is it?"); err != nil {
 		t.Fatal(err)

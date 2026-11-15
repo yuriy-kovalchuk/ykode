@@ -22,34 +22,27 @@ func scratchHome(t *testing.T) (string, string) {
 }
 
 func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
-	homeDir, root := scratchHome(t)
+	_, root := scratchHome(t)
 	cfg, err := config.Load([]string{"--root", root})
 	if err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-400 * 24 * time.Hour)
-	stale := filepath.Join(cfg.AuditDir, "2000-01.jsonl")
-	if err := os.MkdirAll(cfg.AuditDir, 0o700); err != nil {
+	spill := filepath.Join(cfg.CommandLogDir, "ykode-exec-old-run")
+	if err := os.MkdirAll(spill, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stale, []byte("{}\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(spill, "output.txt"), []byte("output an old run cut off"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	results := filepath.Join(homeDir, "results", "s20000101-000000")
-	if err := os.MkdirAll(results, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(results, old, old); err != nil {
+	if err := os.Chtimes(spill, old, old); err != nil {
 		t.Fatal(err)
 	}
 
 	PrepareHome(cfg)
 
-	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("an audit file past retention survived startup: %v", err)
-	}
-	if _, err := os.Stat(results); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("a finished run's result dir survived startup: %v", err)
+	if _, err := os.Stat(spill); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a finished run's cut command log survived startup: %v", err)
 	}
 
 	if _, err := os.Stat(home.Settings()); err != nil {
@@ -74,18 +67,11 @@ func TestAnOldConversationTakesItsSavedResultsWithIt(t *testing.T) {
 	if err := os.WriteFile(session, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	results := filepath.Join(filepath.Dir(cfg.ResultDir), "s20000101-000000")
-	if err := os.MkdirAll(results, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(results, "r1.txt"), []byte("output"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	young := filepath.Join(cfg.SessionDir, "s20260101-000000.jsonl")
 	if err := os.WriteFile(young, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{session, results} {
+	for _, path := range []string{session} {
 		if err := os.Chtimes(path, old, old); err != nil {
 			t.Fatal(err)
 		}
@@ -95,9 +81,6 @@ func TestAnOldConversationTakesItsSavedResultsWithIt(t *testing.T) {
 
 	if _, err := os.Stat(session); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a conversation past its keep survived: %v", err)
-	}
-	if _, err := os.Stat(results); !errors.Is(err, os.ErrNotExist) {
-		t.Error("its saved results outlived the conversation that could name them")
 	}
 	if _, err := os.Stat(young); err != nil {
 		t.Errorf("a conversation still inside its keep was removed: %v", err)

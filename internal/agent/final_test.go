@@ -9,8 +9,8 @@ import (
 // a run that spent its turn budget still owes the user an answer
 func TestARunOutOfTurnsIsForcedToAnswer(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
 		sse("", "8443", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
@@ -35,9 +35,9 @@ func TestARunOutOfTurnsIsForcedToAnswer(t *testing.T) {
 // the last request can still come back empty: then the max-turns error is the honest report
 func TestAnEmptyForcedAnswerStillReportsTheTurnLimit(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 512, CtxSize: 8000}, &captureSink{})
 	defer done()
@@ -51,7 +51,7 @@ func TestAnEmptyForcedAnswerStillReportsTheTurnLimit(t *testing.T) {
 // a reply cut off by max_tokens, every time, must still stop at the turn limit
 func TestCutOffCallsStillStopAtMaxTurns(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*.ya`}, "length"),
+		sse("", "", "read_file", []string{`{"path":"a.ya`}, "length"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, CtxSize: 8000}, &captureSink{})
 	defer done()
@@ -68,8 +68,8 @@ func TestCutOffCallsStillStopAtMaxTurns(t *testing.T) {
 // a call nobody runs must not stay in the history without a reply
 func TestAForcedAnswerKeepsNoToolCall(t *testing.T) {
 	stub := &stubServer{scripts: []string{
-		sse("", "", "find_files", []string{`{"pattern":"*.yaml"}`}, "tool_calls"),
-		sse("", "8443", "find_files", []string{`{"pattern":"*.yaml"}`}, "stop"),
+		sse("", "", "read_file", []string{`{"path":"a.yaml"}`}, "tool_calls"),
+		sse("", "8443", "read_file", []string{`{"path":"a.yaml"}`}, "stop"),
 	}}
 	a, done := newAgent(t, stub, Options{MaxTurns: 1, MaxTokens: 512, CtxSize: 8000}, &captureSink{})
 	defer done()

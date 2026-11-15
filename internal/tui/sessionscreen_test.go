@@ -38,7 +38,6 @@ func pickerModel(t *testing.T) (*model, string) {
 		agent.Options{Session: own, Root: dir}, nil)
 	m := newModel(context.Background(), a, NewHub(), config.Config{
 		Root: dir, Session: ownID, SessionDir: sessions, SessionFile: own.Path(),
-		ResultDir: filepath.Join(dir, "results", ownID),
 	})
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	return m, sessions
@@ -144,9 +143,8 @@ func TestEnterContinuesTheConversationUnderTheCursor(t *testing.T) {
 	if strings.Contains(view, "what this run is doing") {
 		t.Errorf("the conversation that was given up is still on the screen:\n%s", view)
 	}
-	if m.cfg.Session != pickedID || filepath.Base(m.cfg.SessionFile) != pickedID+".jsonl" ||
-		filepath.Base(m.cfg.ResultDir) != pickedID {
-		t.Errorf("the run still belongs to %s: file %s, results %s", m.cfg.Session, m.cfg.SessionFile, m.cfg.ResultDir)
+	if m.cfg.Session != pickedID || filepath.Base(m.cfg.SessionFile) != pickedID+".jsonl" {
+		t.Errorf("the run still belongs to %s: file %s", m.cfg.Session, m.cfg.SessionFile)
 	}
 	if len(m.history) != 1 || m.history[0] != "fix the flaky timer test" {
 		t.Errorf("ctrl+p walks %q, not the asks of the conversation now being read", m.history)

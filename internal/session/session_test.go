@@ -315,22 +315,26 @@ func TestChangesToTheConversationAreReadBack(t *testing.T) {
 		}
 		return strings.Join(texts, " | ")
 	}
-	if err := log.Revise(1, llm.Message{Role: "user", Content: "shortened"}); err != nil {
-		t.Fatal(err)
+	// a run that rewrote the conversation in place wrote these lines; nothing writes them now,
+	// and an older file still reads back the same way
+	old := func(v any) {
+		t.Helper()
+		if err := log.write(mustJSON(v)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := log.Remove(2, 4); err != nil {
-		t.Fatal(err)
-	}
+	at := 1
+	shortened := recordOf(llm.Message{Role: "user", Content: "shortened"})
+	old(change{Revised: &at, Message: &shortened})
+	old(change{Removed: []int{2, 4}})
 	if got, want := read(), "message 0 | shortened | message 4"; got != want {
 		t.Fatalf("read back %q, want %q", got, want)
 	}
 	// a change that points outside the conversation is left out, by the reader and by the listing alike
-	if err := log.Remove(2, 9); err != nil {
-		t.Fatal(err)
-	}
-	if err := log.Revise(7, said(7)); err != nil {
-		t.Fatal(err)
-	}
+	outside := 7
+	old(change{Removed: []int{2, 9}})
+	seventh := recordOf(said(7))
+	old(change{Revised: &outside, Message: &seventh})
 	if got, want := read(), "message 0 | shortened | message 4"; got != want {
 		t.Fatalf("a change that fits nothing moved the conversation: %q", got)
 	}
@@ -346,5 +350,90 @@ func TestChangesToTheConversationAreReadBack(t *testing.T) {
 	}
 	if got, want := read(), "message 8 | message 9 | message 10"; got != want {
 		t.Fatalf("read back %q, want %q", got, want)
+	}
+}
+
+// reading a conversation to resume it must not touch the file: the bytes it holds are what the
+// next run's fold will be asked about, and rewriting them is how a resume loses an ask
+func TestReadingASavedConversationWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-000000.jsonl")
+	log := New(dir, "s20260101-000000", "/work")
+	for i := 0; i < 4; i++ {
+		if err := log.Append(llm.Message{Role: "user", Content: fmt.Sprintf("message %d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path, "/work"); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("reading the conversation changed the file:\n%s\nwant\n%s", after, before)
+	}
+}
+
+// thinking that goes back to the model is one text, not two: it is written once and put back in
+// both places when the conversation is read again
+func TestThinkingSentBackToTheModelIsStoredOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-000000.jsonl")
+	log := New(dir, "s20260101-000000", "/work")
+	if err := log.Append(llm.Message{Role: "assistant", Content: "answer",
+		Reasoning: "thought it through", WireReasoning: "thought it through"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Append(llm.Message{Role: "assistant", Content: "next",
+		Reasoning: "kept off the wire"}); err != nil {
+		t.Fatal(err)
+	}
+
+	line, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(line), `"thought it through"`) != 1 {
+		t.Errorf("the same thinking is written twice on one line:\n%s", line)
+	}
+
+	back, err := Load(path, "/work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 2 {
+		t.Fatalf("%d messages loaded, want 2", len(back))
+	}
+	if back[0].Reasoning != "thought it through" || back[0].WireReasoning != "thought it through" {
+		t.Errorf("the thinking the model was sent is missing after a resume: %+v", back[0])
+	}
+	if back[1].Reasoning != "kept off the wire" || back[1].WireReasoning != "" {
+		t.Errorf("thinking that never went out came back on the wire: %+v", back[1])
+	}
+}
+
+// a file written before that change holds the thinking twice and still reads back whole
+func TestThinkingStoredTwiceByAnOlderRunStillLoads(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s20260101-000000.jsonl")
+	line := `{"role":"assistant","content":"answer","reasoning_content":"thought it through","thinking":"thought it through"}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := Load(path, "/work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 1 || back[0].Reasoning != "thought it through" || back[0].WireReasoning != "thought it through" {
+		t.Fatalf("an older file did not read back: %+v", back)
 	}
 }

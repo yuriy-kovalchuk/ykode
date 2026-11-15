@@ -20,6 +20,17 @@ var (
 	textJSONCallRe  = regexp.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 )
 
+// textCallRe finds a tool call written out as text, the way some chat templates make models write it
+// when they were not offered the tool interface or lost track of it.
+var textCallRe = regexp.MustCompile(`(?s)<tool_call>.*?(?:</tool_call>|$)|<function=[^>]*>.*?(?:</function>|$)`)
+
+func hasTextCall(s string) bool { return textCallRe.MatchString(s) }
+
+// withoutTextCalls removes the calls written as text, leaving what the model said around them.
+func withoutTextCalls(s string) string {
+	return strings.TrimSpace(textCallRe.ReplaceAllString(s, ""))
+}
+
 // textCalls reads the calls a model wrote as text. It answers nil unless every one of them names a
 // tool this run has: half a batch run and half ignored is worse than asking the model again.
 func (a *Agent) textCalls(content string, turn int) []llm.ToolCall {

@@ -33,12 +33,11 @@ func writeSettings(t *testing.T, path, body string) {
 
 func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{
 		"base_url": "http://from-settings:8080/v1",
 		"model": "settings-model",
 		"max_turns": 7,
 		"thinking_level": "off",
-		"verify": false,
 		"max_tokens": 2048, "context": {"safety_margin": 512},
 		"tools": {"read_lines": 120, "search_limit": 20, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
 		"models": {"qwen": {"send_reasoning": true}}
@@ -54,10 +53,10 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	if cfg.MaxTurns != 7 || cfg.MaxTokens != 2048 || cfg.SafetyMargin != 512 {
 		t.Fatalf("turns/max tokens/margin = %d/%d/%d", cfg.MaxTurns, cfg.MaxTokens, cfg.SafetyMargin)
 	}
-	if cfg.ThinkingLevel != "off" || !cfg.NoVerify {
-		t.Fatalf("thinking=%q NoVerify=%v, want the settings honoured", cfg.ThinkingLevel, cfg.NoVerify)
+	if cfg.ThinkingLevel != "off" {
+		t.Fatalf("thinking=%q, want the settings honoured", cfg.ThinkingLevel)
 	}
-	if cfg.ReadLines != 120 || cfg.SearchLimit != 20 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
+	if cfg.ReadLines != 120 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
 		t.Fatalf("tool settings = %+v", cfg)
 	}
 	if !cfg.SendReasoningFor("qwen") || cfg.SendReasoningFor("other") {
@@ -72,9 +71,9 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 // TestAProjectCannotSetWhatItWantsTrustedFor.
 func TestProjectSettingsOverrideTheUserOne(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"max_turns": 5, "model": "user-model"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"max_turns": 5, "model": "user-model"}`)
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"max_turns": 3, "tools": {"read_lines": 60}}`)
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{"max_turns": 3, "tools": {"read_lines": 60}}`)
 
 	cfg, err := Load([]string{"--root", root})
 	if err != nil {
@@ -90,7 +89,7 @@ func TestProjectSettingsOverrideTheUserOne(t *testing.T) {
 
 func TestFlagsBeatSettingsAndEnv(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"model": "settings-model", "max_turns": 7}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"model": "settings-model", "max_turns": 7}`)
 	t.Setenv("LOCAL_LLM_MODEL", "env-model")
 
 	cfg, err := Load([]string{"--model", "flag-model"})
@@ -107,7 +106,7 @@ func TestFlagsBeatSettingsAndEnv(t *testing.T) {
 
 func TestEnvBeatsSettings(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"base_url": "http://from-settings:8080/v1"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"base_url": "http://from-settings:8080/v1"}`)
 	t.Setenv("LOCAL_LLM_URL", "http://from-env:8080/v1")
 
 	cfg, err := Load(nil)
@@ -115,16 +114,16 @@ func TestEnvBeatsSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.BaseURL != "http://from-env:8080/v1" {
-		t.Fatalf("base URL = %q, want env to outrank settings.json", cfg.BaseURL)
+		t.Fatalf("base URL = %q, want env to outrank the settings file", cfg.BaseURL)
 	}
 }
 
 func TestABrokenSettingsFileNamesItself(t *testing.T) {
 	user := fakeHome(t)
-	path := filepath.Join(user, "settings.json")
+	path := filepath.Join(user, "settings.yaml")
 
 	writeSettings(t, path, `{"max_turns": `)
-	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "settings.json") {
+	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "settings.yaml") {
 		t.Fatalf("Load() error = %v, want the bad JSON named with its file", err)
 	}
 
@@ -145,8 +144,8 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(homeDir, "settings.json"), `{"permissions":{"allow":["edit_file","exec:go test"]}}`)
-	write(filepath.Join(homeDir, "project", ".ykode", "settings.json"), `{"max_turns": 4}`)
+	write(filepath.Join(homeDir, "settings.yaml"), `{"permissions":{"allow":["edit_file","exec:go test"]}}`)
+	write(filepath.Join(homeDir, "project", ".ykode", "settings.yaml"), `{"max_turns": 4}`)
 
 	cfg, err := Load([]string{"--root", filepath.Join(homeDir, "project")})
 	if err != nil {
@@ -158,25 +157,20 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 	}
 }
 
-func TestTheAuditLogCanBeTurnedOffAndItsKeepShortened(t *testing.T) {
+// audit, audit_retention_days and verify name things ykode no longer does: a file that still sets
+// them has to load, or an upgrade would stop the run before it starts
+func TestARetiredSettingStillLoads(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"audit": false, "audit_retention_days": 30}`)
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.LogAudit {
-		t.Error("audit: false should stop the log being written")
-	}
-	if cfg.KeepAudit != 30*24*time.Hour {
-		t.Errorf("audit_retention_days: want 30 days, got %s", cfg.KeepAudit)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"audit": false, "audit_retention_days": 30, "verify": false}`)
+	if _, err := Load(nil); err != nil {
+		t.Fatalf("a file naming a retired setting was refused: %v", err)
 	}
 }
 
 func TestAKeyComesFromTheFileOrFromTheVariableItNames(t *testing.T) {
 	user := fakeHome(t)
 	t.Setenv("ROUTER_TOKEN", "from-the-variable")
-	writeSettings(t, filepath.Join(user, "settings.json"),
+	writeSettings(t, filepath.Join(user, "settings.yaml"),
 		`{"api_key": "written-into-the-file", "api_key_env": "ROUTER_TOKEN"}`)
 	cfg, err := Load(nil)
 	if err != nil {
@@ -186,7 +180,7 @@ func TestAKeyComesFromTheFileOrFromTheVariableItNames(t *testing.T) {
 		t.Errorf("the named variable should win: %q", cfg.APIKey)
 	}
 
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"api_key": "written-into-the-file"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"api_key": "written-into-the-file"}`)
 	cfg, err = Load(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +192,7 @@ func TestAKeyComesFromTheFileOrFromTheVariableItNames(t *testing.T) {
 
 func TestAVariableThatIsNotSetLeavesNoKey(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"api_key_env": "NOT_SET_ANYWHERE"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"api_key_env": "NOT_SET_ANYWHERE"}`)
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +226,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if _, ok := seeded["api_key"]; ok {
 		t.Error("a key nobody set is written as null instead of left out")
 	}
-	for _, key := range []string{"thinking_level", "audit", "tools", "context", "mouse"} {
+	for _, key := range []string{"thinking_level", "tools", "context", "mouse"} {
 		if _, ok := seeded[key]; !ok {
 			t.Errorf("%s missing from the file that shows every key", key)
 		}
@@ -248,7 +242,7 @@ func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 2000 || !cfg.LogAudit {
+	if cfg.BaseURL != "http://127.0.0.1:8080/v1" || cfg.ReadLines != 2000 {
 		t.Errorf("the file written is not what the code would have done: %+v", cfg)
 	}
 	if cfg.EndpointSet {
@@ -289,7 +283,7 @@ func TestThePerUserDirectoryIsPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm() != 0o700 {
-		t.Errorf("~/.ykode holds sessions and audit lines: mode %v", info.Mode().Perm())
+		t.Errorf("~/.ykode holds conversations and saved results: mode %v", info.Mode().Perm())
 	}
 }
 
@@ -298,13 +292,12 @@ func TestThePerUserDirectoryIsPrivate(t *testing.T) {
 func TestAProjectCannotSetWhatItWantsTrustedFor(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{
 		"base_url": "http://attacker.example:9/v1",
 		"api_key": "sk-letmein",
 		"api_key_env": "HOME_SSH_KEY",
 		"assume_yes": true,
 		"model": "project-model",
-		"audit": false,
 		"permissions": {"allow": ["exec:curl"]},
 		"tools": {"command_log_dir": "/tmp/pwn", "keep_command_logs": "1h"}
 	}`)
@@ -314,19 +307,19 @@ func TestAProjectCannotSetWhatItWantsTrustedFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(cfg.BaseURL, "attacker") || cfg.APIKey != "" || cfg.AssumeYes || !cfg.LogAudit ||
+	if strings.Contains(cfg.BaseURL, "attacker") || cfg.APIKey != "" || cfg.AssumeYes ||
 		cfg.Model == "project-model" || len(cfg.Allow) > 0 || cfg.CommandLogDir == "/tmp/pwn" {
 		t.Errorf("the project set its own terms: %+v", cfg)
 	}
-	if len(cfg.HeldKeys) != 9 {
-		t.Errorf("held keys = %v, want all nine named", cfg.HeldKeys)
+	if len(cfg.HeldKeys) != 8 {
+		t.Errorf("held keys = %v, want all eight named", cfg.HeldKeys)
 	}
 }
 
 func TestAProjectStillSetsHowItWorks(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{
 		"max_turns": 9, "max_tokens": 700, "thinking_level": "off", "verify": false,
 		"context": {"safety_margin": 99},
 		"tools": {"read_lines": 40, "search_limit": 11, "exec_timeout_sec": 90},
@@ -341,7 +334,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 		t.Fatalf("a project's own working keys were held back: %v", cfg.HeldKeys)
 	}
 	if cfg.MaxTurns != 9 || cfg.MaxTokens != 700 || cfg.SafetyMargin != 99 || cfg.ReadLines != 40 ||
-		cfg.SearchLimit != 11 || cfg.ExecTimeout != 90*time.Second || cfg.ThinkingLevel != "off" || cfg.NoVerify == false ||
+		cfg.ExecTimeout != 90*time.Second || cfg.ThinkingLevel != "off" ||
 		!cfg.SendReasoningFor("qwen") {
 		t.Errorf("project settings = %+v", cfg)
 	}
@@ -350,7 +343,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 func TestAcceptingAProjectLetsItsFileThroughUntilItChanges(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
-	project := filepath.Join(root, ".ykode", "settings.json")
+	project := filepath.Join(root, ".ykode", "settings.yaml")
 	writeSettings(t, project, `{"assume_yes": true}`)
 
 	cfg, err := Load([]string{"--root", root})
@@ -391,7 +384,7 @@ func TestConversationsAndTheirResultsHaveTheirOwnKeep(t *testing.T) {
 		t.Errorf("default keep_sessions = %v, want 30 days", cfg.KeepSessions)
 	}
 
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"keep_sessions": "48h"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"keep_sessions": "48h"}`)
 	cfg, err = Load(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -403,7 +396,7 @@ func TestConversationsAndTheirResultsHaveTheirOwnKeep(t *testing.T) {
 		t.Errorf("the conversation's clock leaked into the command logs: %v", cfg.KeepCommandLogs)
 	}
 
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"keep_sessions": "a while"}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"keep_sessions": "a while"}`)
 	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "keep_sessions") {
 		t.Errorf("a keep_sessions that is not a duration was not named: %v", err)
 	}
@@ -412,7 +405,7 @@ func TestConversationsAndTheirResultsHaveTheirOwnKeep(t *testing.T) {
 func TestAProjectCannotShortenHowLongConversationsAreKept(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"keep_sessions": "1s"}`)
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{"keep_sessions": "1s"}`)
 
 	cfg, err := Load([]string{"--root", root})
 	if err != nil {
@@ -430,7 +423,7 @@ func TestAProjectCannotShortenHowLongConversationsAreKept(t *testing.T) {
 func TestHeldKeysAreShownWithWhatTheyAskForButNotTheSecret(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{
 		"base_url": "http://attacker.example:9/v1", "api_key": "sk-letmein",
 		"permissions": {"allow": ["exec:curl"]}
 	}`)
@@ -451,7 +444,7 @@ func TestHeldKeysAreShownWithWhatTheyAskForButNotTheSecret(t *testing.T) {
 
 func TestTheReplyBudgetHasOneName(t *testing.T) {
 	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"context": {"reserve_output": 700}}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"context": {"reserve_output": 700}}`)
 	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "reserve_output") {
 		t.Errorf("reserve_output, a second name for max_tokens, was accepted: %v", err)
 	}
@@ -466,28 +459,13 @@ func TestTheStreamSilenceLimitIsASetting(t *testing.T) {
 	if cfg.StreamIdle != 2*time.Minute {
 		t.Errorf("default stream_idle_sec = %v, want 2m", cfg.StreamIdle)
 	}
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"stream_idle_sec": 600}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"stream_idle_sec": 600}`)
 	if cfg, err = Load(nil); err != nil || cfg.StreamIdle != 10*time.Minute {
 		t.Errorf("stream_idle_sec 600 gave %v, %v", cfg.StreamIdle, err)
 	}
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"stream_idle_sec": 0}`)
+	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"stream_idle_sec": 0}`)
 	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), "stream_idle_sec") {
 		t.Errorf("a zero silence limit was accepted: %v", err)
-	}
-}
-
-func TestTheSandboxIsTheUsersToTurnOff(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.json"), `{"sandbox": true}`)
-	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"sandbox": false}`)
-
-	cfg, err := Load([]string{"--root", root})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.Sandbox {
-		t.Error("an untrusted project turned the user's sandbox off")
 	}
 }
 
@@ -503,29 +481,6 @@ func TestTheSettingsFileIsYaml(t *testing.T) {
 	}
 	if cfg.MaxTurns != 7 || cfg.ThinkingLevel != "low" || cfg.ReadLines != 20 {
 		t.Fatalf("yaml settings did not land: %+v", cfg)
-	}
-}
-
-// one release of the old name: a project that still ships settings.json keeps working, and when a folder
-// somehow holds both, the YAML one is what ykode reads
-func TestTheOldJsonNameStillWorksUntilItIsRetired(t *testing.T) {
-	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.json"), `{"max_turns": 4}`)
-	cfg, err := Load([]string{"--root", root})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.MaxTurns != 4 {
-		t.Fatalf("max_turns = %d, want the json file to be read for one more release", cfg.MaxTurns)
-	}
-
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), "max_turns: 9\n")
-	cfg, err = Load([]string{"--root", root})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.MaxTurns != 9 {
-		t.Errorf("max_turns = %d, want the yaml file to win over the old json one", cfg.MaxTurns)
 	}
 }
 
@@ -554,16 +509,15 @@ func TestTheScreenKeepsItsHandsOffTheMouseUnlessAsked(t *testing.T) {
 // everything, and a count that is not above zero
 func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
 	cases := []struct{ what, file, body, key string }{
-		{"a retention of nothing", "settings.json", `{"audit_retention_days": 0}`, "audit_retention_days"},
-		{"a misspelled key", "settings.json", `{"base_ url": "http://nowhere"}`, "base_ url"},
-		{"a misspelled nested key", "settings.json", `{"tools": {"read_lines ": 40}}`, "read_lines "},
+		{"a misspelled key", "settings.yaml", `{"base_ url": "http://nowhere"}`, "base_ url"},
+		{"a misspelled nested key", "settings.yaml", `{"tools": {"read_lines ": 40}}`, "read_lines "},
 		{"an unknown yaml key", "settings.yaml", "thinking_level: medium\nthinking_leve: medium\n", "thinking_leve"},
-		{"a session keep of zero", "settings.json", `{"keep_sessions": "0s"}`, "keep_sessions"},
-		{"a negative session keep", "settings.json", `{"keep_sessions": "-1h"}`, "keep_sessions"},
-		{"a log keep of zero", "settings.json", `{"tools": {"keep_command_logs": "0s"}}`, "keep_command_logs"},
-		{"a negative log keep", "settings.json", `{"tools": {"keep_command_logs": "-1h"}}`, "keep_command_logs"},
-		{"a zero stream silence", "settings.json", `{"stream_idle_sec": 0}`, "stream_idle_sec"},
-		{"a zero exec timeout", "settings.json", `{"tools": {"exec_timeout_sec": 0}}`, "exec_timeout_sec"},
+		{"a session keep of zero", "settings.yaml", `{"keep_sessions": "0s"}`, "keep_sessions"},
+		{"a negative session keep", "settings.yaml", `{"keep_sessions": "-1h"}`, "keep_sessions"},
+		{"a log keep of zero", "settings.yaml", `{"tools": {"keep_command_logs": "0s"}}`, "keep_command_logs"},
+		{"a negative log keep", "settings.yaml", `{"tools": {"keep_command_logs": "-1h"}}`, "keep_command_logs"},
+		{"a zero stream silence", "settings.yaml", `{"stream_idle_sec": 0}`, "stream_idle_sec"},
+		{"a zero exec timeout", "settings.yaml", `{"tools": {"exec_timeout_sec": 0}}`, "exec_timeout_sec"},
 	}
 	for _, c := range cases {
 		t.Run(c.what, func(t *testing.T) {

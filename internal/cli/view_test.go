@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -11,7 +10,7 @@ import (
 
 func TestThinkingAndAnswerGoToDifferentStreams(t *testing.T) {
 	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
+	v := NewView(&out, &log)
 
 	v.Emit(agent.Event{Kind: agent.Thinking, Text: "pondering "})
 	v.Emit(agent.Event{Kind: agent.Thinking, Text: "the problem"})
@@ -43,7 +42,7 @@ func TestThinkingAndAnswerGoToDifferentStreams(t *testing.T) {
 
 func TestColoredThinkingIsClosedOnEveryTurn(t *testing.T) {
 	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
+	v := NewView(&out, &log)
 	v.colored = true
 
 	v.Emit(agent.Event{Kind: agent.Thinking, Text: "half a thought"})
@@ -62,7 +61,7 @@ func TestColoredThinkingIsClosedOnEveryTurn(t *testing.T) {
 
 func TestNoFooterWhenServerGivesNoTimings(t *testing.T) {
 	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
+	v := NewView(&out, &log)
 	v.Emit(agent.Event{Kind: agent.Answer, Text: "answer"})
 	v.Emit(agent.Event{Kind: agent.TurnEnd})
 
@@ -76,7 +75,7 @@ func TestNoFooterWhenServerGivesNoTimings(t *testing.T) {
 
 func TestToolEventsLandInTheLog(t *testing.T) {
 	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
+	v := NewView(&out, &log)
 
 	v.Emit(agent.Event{Kind: agent.ToolStart, Tool: "read_file", Args: `{"path":"a.go"}`})
 	v.Emit(agent.Event{Kind: agent.ToolEnd, Tool: "read_file", Text: "1 package main"})
@@ -93,61 +92,16 @@ func TestToolEventsLandInTheLog(t *testing.T) {
 	}
 }
 
-func TestAConfirmationShowsTheQuestionAndReadsTheAnswer(t *testing.T) {
-	for typed, want := range map[string]agent.Decision{"y\n": agent.Allow, "a\n": agent.AllowAlways} {
-		var out, log bytes.Buffer
-		v := NewView(&out, &log, NewConfirmer(NewLineSource(strings.NewReader(typed)), &out))
-
-		if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "exec_command", Text: "exec_command rm -rf build"}); got != want {
-			t.Errorf("typed %q: decision = %v, want %v", typed, got, want)
-		}
-		if !strings.Contains(out.String(), "exec_command rm -rf build [y/N/a]") {
-			t.Errorf("typed %q: stdout = %q, want the question with its three answers", typed, out.String())
-		}
-	}
-}
-
+// a run with no screen has nobody at the keyboard, so the tool is refused and the way to let it
+// through is named
 func TestNobodyToAskMeansRefusal(t *testing.T) {
 	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
+	v := NewView(&out, &log)
 
 	if got := v.Emit(agent.Event{Kind: agent.Confirm, Tool: "exec_command"}); got != agent.Refuse {
 		t.Fatalf("decision = %v, want refusal when no one can answer", got)
 	}
-}
-
-// The line front end asks in the terminal it prints to: a number picks the choice it names, typed
-// words answer as they were typed, and an empty line says there is none.
-func TestTheQuestionOnTheLineIsAnsweredByWhatIsTyped(t *testing.T) {
-	var out, log bytes.Buffer
-	lines := NewLineSource(strings.NewReader("2\nin three files, not two\n\n"))
-	v := NewView(&out, &log, NewConfirmer(lines, &out))
-
-	asked := agent.Event{Kind: agent.Ask, Text: "which of these?", Options: []string{"the stat poll", "fsnotify"}}
-	if got := v.Ask(context.Background(), asked); got != "fsnotify" {
-		t.Errorf("the model was told %q, not the choice the number pointed at", got)
-	}
-	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "and how?"}); got != "in three files, not two" {
-		t.Errorf("the model was told %q", got)
-	}
-	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "anything else?"}); got != "" {
-		t.Errorf("an empty line answered %q", got)
-	}
-	for _, want := range []string{"which of these?", "1. the stat poll", "2. fsnotify", "your answer"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("the terminal never saw %q:\n%s", want, out.String())
-		}
-	}
-}
-
-// a run reading a pipe has nobody at the keyboard: the question is said, and nothing is waited for
-func TestNobodyIsWatchingThePipeToAnswer(t *testing.T) {
-	var out, log bytes.Buffer
-	v := NewView(&out, &log, nil)
-	if got := v.Ask(context.Background(), agent.Event{Kind: agent.Ask, Text: "which of these?"}); got != "" {
-		t.Errorf("a run nobody is watching answered %q", got)
-	}
-	if !strings.Contains(log.String(), "nobody here to answer") {
-		t.Errorf("the question went unsaid: %q", log.String())
+	if !strings.Contains(log.String(), "exec_command needs a yes: run with --yes") {
+		t.Errorf("log = %q, want the refusal to name --yes", log.String())
 	}
 }

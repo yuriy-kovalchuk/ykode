@@ -32,15 +32,13 @@ func (w *contextWork) since() string {
 
 // The labels each operation leaves behind, in the order they get their turn.
 const (
-	roomShortened = "shortened old output"
-	roomFolding   = "summarising older turns" // set before the fold's request, which is what the clock waits on
+	roomFolding = "summarising older turns" // set before the fold's request, which is what the clock waits on
 )
 
 func roomFolded(turns int) string { return "folded " + counted(turns, "older turn", "older turns") }
-func roomTrimmed(results int) string {
-	return "trimmed " + counted(results, "tool result", "tool results")
+func roomDropped(messages int) string {
+	return "dropped " + counted(messages, "older message", "older messages")
 }
-func roomDropped(turns int) string { return "dropped " + counted(turns, "older turn", "older turns") }
 
 // counted is a count and the thing it counts, as a footer reads them.
 func counted(n int, one, several string) string {
@@ -50,6 +48,6 @@ func counted(n int, one, several string) string {
 	return strconv.Itoa(n) + " " + several
 }
 
-// RoomMade is what this ask has had to do to fit the conversation into the window - "shortened old
-// output", "folded 12 older turns" - and "" when nothing has had to.
+// RoomMade is what this ask has had to do to fit the conversation into the window - "summarising
+// older turns", "folded 12 older turns" - and "" when nothing has had to.
 func (a *Agent) RoomMade() string { return a.work.since() }

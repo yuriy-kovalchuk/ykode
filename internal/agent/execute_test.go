@@ -25,9 +25,8 @@ func TestTruncatedToolCallIsNotRun(t *testing.T) {
 	if err := a.Ask(context.Background(), "read it"); err != nil {
 		t.Fatal(err)
 	}
-	if len(stub.requests) != 3 {
-		// turn 1 truncated, turn 2 answered without a tool, turn 3 is the verification retry
-		t.Fatalf("requests = %d, want the truncated turn, the answer, and the verification retry", len(stub.requests))
+	if len(stub.requests) != 2 {
+		t.Fatalf("requests = %d, want the truncated turn and the answer", len(stub.requests))
 	}
 	next := stub.requests[1]["messages"].([]any)
 	last := next[len(next)-1].(map[string]any)
@@ -89,7 +88,7 @@ func TestARequestAfterACutOffTurnDoesNotEndWithAnAssistantLine(t *testing.T) {
 		sse("", "", "read_file", []string{`{"path":`}, "length"),
 		sse("", "recovered", "", nil, "stop"),
 	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, NoVerify: true}, &captureSink{})
+	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, &captureSink{})
 	defer done()
 
 	if err := a.Ask(context.Background(), "read it"); err != nil {
@@ -131,8 +130,8 @@ func TestACDIntoTheProjectRootIsDropped(t *testing.T) {
 	}
 }
 
-// the rewrite happens to the arguments the rest of the run sees, so the row, the audit log and the
-// allow list all read the command without the cd
+// the rewrite happens to the arguments the rest of the run sees, so the row on the screen and the
+// allow list both read the command without the cd
 func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
 	a := &Agent{opts: Options{Root: "/work/proj"}}
 	args := a.normalizedArgs("exec_command", []byte(`{"command":"cd /work/proj && go test ./...","timeout":30}`))

@@ -7,39 +7,42 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// Set writes one knob into settings.yaml, keeping the comments and every other key, and names the
-// file it wrote. The value is checked before anything is touched: a knob only takes what it can use.
-func Set(key, value string) (string, error) {
+// Set writes one knob into the settings file this project uses, keeping the comments and every other
+// key, and names the file it wrote and whether that was the project's own. The value is checked
+// before anything is touched: a knob only takes what it can use.
+func Set(root, key, value string) (string, bool, error) {
 	k, ok := knobFor(key)
 	if !ok {
-		return "", fmt.Errorf("%s is not a setting: settings lists what there is", key)
+		return "", false, fmt.Errorf("%s is not a setting: settings lists what there is", key)
 	}
-	path := home.Settings()
-	doc, err := readSettingsDoc()
+	path, local := SettingsTarget(root)
+	doc, err := readSettingsDoc(path)
 	if err != nil {
-		return path, err
+		return path, local, err
 	}
 	top := doc.Content[0]
-	blockStyle(top)
 	if k.kind == kindList {
-		if err := addToList(top, k.key, value); err != nil {
-			return "", err
+		if err := addToList(top, path, k.key, value); err != nil {
+			return path, local, err
 		}
 	} else {
 		scalar, err := scalarFor(k, value)
 		if err != nil {
-			return "", err
+			return path, local, err
 		}
 		setPath(top, k.key, scalar)
 	}
-	if err := writeSettingsDoc(doc); err != nil {
-		return path, err
+	if err := writeSettingsDoc(path, doc); err != nil {
+		return path, local, err
 	}
-	return path, nil
+	if local {
+		if err := trustWritten(root); err != nil {
+			return path, local, err
+		}
+	}
+	return path, local, nil
 }
 
 // scalarFor checks a value against the kind of its knob and returns the node to write.
@@ -82,10 +85,13 @@ func scalarFor(k knob, value string) (*yaml.Node, error) {
 }
 
 // addToList puts one more item on a list setting, which is how the never-ask list grows.
-func addToList(top *yaml.Node, key, value string) error {
+func addToList(top *yaml.Node, path, key, value string) error {
+	if value == "" {
+		return fmt.Errorf("what goes on %s cannot be empty", key)
+	}
 	list := listNode(top, key)
 	if list.Kind != yaml.SequenceNode {
-		return fmt.Errorf("%s is not a list in %s", key, home.Settings())
+		return fmt.Errorf("%s is not a list in %s", key, path)
 	}
 	for _, item := range list.Content {
 		if item.Value == value {

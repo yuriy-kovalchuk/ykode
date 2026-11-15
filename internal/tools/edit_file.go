@@ -13,7 +13,7 @@ import (
 // EditFile replaces exact text, checking every edit against the original before anything is written.
 type EditFile struct {
 	scope
-	last Detail // the diff of the edit that just ran, for the audit log
+	last Detail // the whole change of the edit that just ran, for the diff view
 }
 
 type editInput struct {
@@ -53,7 +53,7 @@ func (*EditFile) Name() string { return "edit_file" }
 func (*EditFile) Class() Class { return ClassWrites }
 
 func (*EditFile) Description() string {
-	return "Replace exact text in a file: edits is a list of {old_text, new_text}. Each old_text is copied from read_file or search_text output and occurs once in the file. All edits apply or none."
+	return "Replace exact text in a file: edits is a list of {old_text, new_text}. Each old_text is copied from read_file output and occurs once in the file. All edits apply or none."
 }
 
 func (*EditFile) NeedsConfirm() bool { return true }
@@ -89,7 +89,7 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	// LastDetail describes this call, so an old diff must not be logged against a new one
+	// LastDetail describes this call, so an old change is never reported against a new one
 	t.last = Detail{}
 	var in editInput
 	if err := decodeArgs(args, &in); err != nil {
@@ -158,7 +158,6 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 	if err := h.root.WriteFile(h.name, []byte(updated), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
-	t.pushUndo(h, []byte(current), []byte(updated), true) // only a change that happened is undone
 	note := ""
 	if fuzzyUsed > 0 {
 		note = fmt.Sprintf("; %d matched ignoring extra whitespace, so re-read the file to check the indentation", fuzzyUsed)
@@ -167,13 +166,12 @@ func (t *EditFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		h.shown(), len(current), len(updated), len(planned), plural(len(planned)), note)
 	t.last.Change = wholeChange(current, updated)
 	if diff := diffText(current, updated); diff != "" {
-		t.last.Diff = diff
 		result += "\n" + diff
 	}
 	return result, nil
 }
 
-// LastDetail returns the diff of the edit that just ran.
+// LastDetail returns the change the edit that just ran made.
 func (t *EditFile) LastDetail() Detail { return t.last }
 
 // editPairs accepts the shapes models actually send: an array, one object, a JSON string, or flat keys.

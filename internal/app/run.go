@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
-	"github.com/yuriy-kovalchuk/ykode/internal/audit"
 	"github.com/yuriy-kovalchuk/ykode/internal/cli"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
@@ -26,18 +25,15 @@ const startupProbeTimeout = 10 * time.Second
 
 // Run is one ykode invocation, args without the program name: settings, the server, the tools and agent, then a front end.
 func Run(args []string, version string) error {
-	if len(args) > 0 && args[0] == "history" {
-		return cli.History(args[1:], os.Stdout)
-	}
-	if len(args) > 0 && args[0] == "sessions" {
-		return cli.Sessions(args[1:], os.Stdout)
-	}
 	cfg, done, err := startupConfig(args, version)
 	if done || err != nil {
 		return err
 	}
-	// piped in or out, a screen has nowhere to draw: the line prompt reads and writes the pipe
+	// piped in or out, a screen has nowhere to draw
 	cfg.TUI = cfg.TUI && cli.IsTerminal(os.Stdin) && cli.IsTerminal(os.Stdout)
+	if !cfg.TUI && cfg.Prompt == "" {
+		return errors.New("ykode needs a terminal; use -p TASK to answer one task without one")
+	}
 	// the built-in localhost default is a guess: ask, rather than fail with "cannot reach server"
 	if cfg.TUI && !cfg.EndpointSet {
 		if cfg, err = askForServer(cfg, ""); err != nil {
@@ -71,8 +67,8 @@ func Run(args []string, version string) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err, "- continuing without them")
 	}
-	toolOpts, agentOpts := Options(cfg, model.ID, ctxSize, tools.NewResultStore(cfg.ResultDir), &tools.UndoStack{})
-	agentOpts.Instructions, agentOpts.Audit = instructions, auditLogger(cfg)
+	toolOpts, agentOpts := Options(cfg, model.ID, ctxSize)
+	agentOpts.Instructions = instructions
 	agentOpts.Session = session.New(cfg.SessionDir, cfg.Session, cfg.Root)
 
 	front := NewFrontEnd(cfg)
@@ -135,17 +131,22 @@ func startupConfig(args []string, version string) (config.Config, bool, error) {
 	return cfg, err != nil, err
 }
 
-// askForServer saves the choice to settings.yaml; a flag or environment value still wins next time.
+// askForServer saves the choice to the settings file this project uses; a flag or environment value
+// still wins next time.
 func askForServer(cfg config.Config, problem string) (config.Config, error) {
 	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Problem: problem})
 	if err != nil {
 		return cfg, err
 	}
-	path, err := config.SaveEndpoint(res.BaseURL, res.APIKey, res.Model)
+	path, local, err := config.SaveEndpoint(cfg.Root, res.BaseURL, res.APIKey, res.Model)
 	if err != nil {
 		return cfg, err
 	}
-	fmt.Fprintf(os.Stderr, "ykode: saved %s (%s) to %s\n", res.BaseURL, res.Model, path)
+	where := path
+	if !local {
+		where = path + " (the global file: this project has no .ykode/settings.yaml)"
+	}
+	fmt.Fprintf(os.Stderr, "ykode: saved %s (%s) to %s\n", res.BaseURL, res.Model, where)
 	cfg.BaseURL, cfg.Model, cfg.EndpointSet = res.BaseURL, res.Model, true
 	if res.APIKey != "" {
 		cfg.APIKey = res.APIKey
@@ -170,14 +171,10 @@ func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, string, error)
 	ctxSize := cmp.Or(cfg.CtxSize, model.CtxSize)
 	// the screen shows the model and the window in its status bar, so no banner to bury
 	if !cfg.TUI {
-		banner := os.Stdout
-		if cfg.JSON {
-			banner = os.Stderr
-		}
 		if note != "" {
 			fmt.Fprintln(os.Stderr, "ykode:", note)
 		}
-		fmt.Fprintf(banner, "model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
+		fmt.Printf("model: %s\nroot:  %s\nctx:   %s\n\n", model.ID, cfg.Root, describeCtx(ctxSize))
 	}
 	return client, model, ctxSize, note, nil
 }
@@ -213,12 +210,4 @@ func describeCtx(tokens int) string {
 		return "unknown (set --ctx to budget responses)"
 	}
 	return strconv.Itoa(tokens) + " tokens"
-}
-
-// auditLogger writes the tool-call log unless a setting turned it off.
-func auditLogger(cfg config.Config) *audit.Logger {
-	if !cfg.LogAudit {
-		return nil
-	}
-	return audit.New(cfg.AuditDir, cfg.Session)
 }

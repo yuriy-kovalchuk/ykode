@@ -11,7 +11,7 @@ import (
 // WriteFile creates or replaces a whole file, making parent directories.
 type WriteFile struct {
 	scope
-	last Detail // the diff of the write that just ran, for the audit log
+	last Detail // the whole change of the write that just ran, for the diff view
 }
 
 type writeInput struct {
@@ -55,7 +55,7 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	// LastDetail describes this call, so an old diff must not be logged against a new one
+	// LastDetail describes this call, so an old change is never reported against a new one
 	t.last = Detail{}
 	var in writeInput
 	if err := decodeArgs(args, &in); err != nil {
@@ -79,7 +79,6 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	if err := h.root.WriteFile(h.name, []byte(in.Content), 0o644); err != nil {
 		return "", toolError(t.Name(), in.Path, err)
 	}
-	t.pushUndo(h, before, []byte(in.Content), existed)      // only a change that happened is undone
 	t.last.Change = wholeChange(string(before), in.Content) // a new file is a change from nothing
 	if !existed {
 		return fmt.Sprintf("created %s (%d bytes, %d lines)",
@@ -87,11 +86,10 @@ func (t *WriteFile) Run(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	result := fmt.Sprintf("wrote %s (%d bytes)", h.shown(), len(in.Content))
 	if diff := diffText(string(before), in.Content); diff != "" {
-		t.last.Diff = diff
 		result += "\n" + diff
 	}
 	return result, nil
 }
 
-// LastDetail returns the diff of the write that just ran.
+// LastDetail returns the change the write that just ran made.
 func (t *WriteFile) LastDetail() Detail { return t.last }

@@ -68,7 +68,7 @@ func TestAnImplausibleServerCountLeavesTheEstimateAlone(t *testing.T) {
 }
 
 func TestResetClearsTheCostButKeepsTheLesson(t *testing.T) {
-	stub := &stubServer{scripts: []string{answerWithTimings("ok", 1400, 0, 5)}}
+	stub := &stubServer{scripts: []string{answerWithTimings("ok", 600, 0, 5)}}
 	a, cleanup := newAgent(t, stub, Options{}, nullSink{})
 	defer cleanup()
 

@@ -6,94 +6,62 @@ import (
 	"fmt"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
 
-// The fold is the one stage that reads a result at its full length, so it goes before the shortening:
-// once a result has been replaced by its own marker, a recap written from it recites the marker and
-// what the model decided, and the text inside the result is gone from every stage after that. The
-// thinking the model worked through is the only place its reasons are written down, so it goes in too.
-func TestAFoldReadsWhatTheResultsSaidRatherThanTheirMarkers(t *testing.T) {
+// The fold is the one stage that reads a result at its full length: it asks about the conversation
+// itself, exactly as the server already holds it, so the prompt cache covers the asking and the
+// summariser sees what the calls really returned.
+func TestAFoldSendsTheConversationItSummarises(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	deep := "the phrase only the result itself holds: quux quux quux"
 	call := func(id, name, args string) llm.ToolCall {
 		return llm.ToolCall{ID: id, Type: "function",
 			Function: llm.FunctionCall{Name: name, Arguments: json.RawMessage(args)}}
 	}
 	stub := &stubServer{scripts: []string{sse("", "Goal: read it\nWhat I learned: there is a line", "", nil, "stop")}}
-	a, done := newStoringAgent(t, stub, Options{CtxSize: 3000}, &captureSink{}, dir)
+	a, done := newAgentIn(t, stub, Options{CtxSize: 7000}, &captureSink{}, dir)
 	defer done()
 	a.add(llm.Message{Role: "user", Content: "read both files"})
 	a.add(llm.Message{Role: "assistant", Reasoning: "the reason for that range: the header comes first",
 		ToolCalls: []llm.ToolCall{call("c1", "read_file", `{"path":"a.go"}`)}})
-	a.add(llm.Message{Role: "tool", CallID: "c1", Name: "read_file",
-		Content: strings.Repeat("x", 600) + "\n" + deep + "\n" + strings.Repeat("y", 600)})
-	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c2", "search_text", `{"pattern":"quux"}`)}})
-	a.add(llm.Message{Role: "tool", CallID: "c2", Name: "search_text", Content: strings.Repeat("z", 900)})
-	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c3", "search_text", `{"pattern":"line"}`)}})
-	a.add(llm.Message{Role: "tool", CallID: "c3", Name: "search_text", Content: strings.Repeat("w", 400)})
+	a.add(llm.Message{Role: "tool", ToolCallID: "c1", CallID: "c1", Name: "read_file",
+		Content: strings.Repeat("x", 6000) + "\nthe phrase only the result itself holds: quux quux quux\n" + strings.Repeat("y", 2000)})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c2", "read_file", `{"path":"quux"}`)}})
+	a.add(llm.Message{Role: "tool", ToolCallID: "c2", CallID: "c2", Name: "read_file", Content: strings.Repeat("z", 6000)})
+	a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{call("c3", "read_file", `{"path":"inner.txt"}`)}})
+	a.add(llm.Message{Role: "tool", ToolCallID: "c3", CallID: "c3", Name: "read_file", Content: strings.Repeat("w", 4000)})
+	before := append([]llm.Message(nil), a.history...)
+	start, _ := a.compactCut()
 
-	a.prepareTurn(ctx, 1) // the pressure arrives here, with the fold the first thing that answers it
+	a.prepareTurn(ctx, 1) // the pressure arrives here, and the fold is the one thing that answers it
 
-	var asked string
-	for _, req := range stub.requests {
-		for _, m := range req["messages"].([]any) {
-			if body, _ := m.(map[string]any); body["role"] == "user" {
-				asked += body["content"].(string)
-			}
+	if len(stub.requests) == 0 {
+		t.Fatal("no fold request was made")
+	}
+	fold := stub.requests[0]
+	if _, ok := fold["tools"]; !ok {
+		t.Error("the fold request carries no tools, so its prefix is not the one the server holds")
+	}
+	asked := fold["messages"].([]any)
+	if len(asked) < start+1 {
+		t.Fatalf("the fold was sent %d messages, fewer than the %d older ones it summarises", len(asked)-1, start)
+	}
+	for i, m := range before[:len(asked)-1] {
+		sent := asked[i].(map[string]any)
+		if sent["role"] != m.Role || sent["content"] != m.Content {
+			t.Fatalf("message %d is not what the server was already given: sent %v, want %q",
+				i, sent["content"], m.Content)
 		}
 	}
-	if !strings.Contains(asked, "<conversation>") {
-		t.Fatal("the fold was never asked: the shortening answered the pressure first")
+	last := asked[len(asked)-1].(map[string]any)
+	if last["role"] != "user" || !strings.HasPrefix(last["content"].(string), NoteMark) {
+		t.Errorf("the fold's instruction is not a note from ykode after the conversation: %v", last["content"])
 	}
-	if !strings.Contains(asked, deep) {
-		t.Errorf("the fold was asked about a conversation with the middle of a result missing:\n%s", asked)
-	}
-	if strings.Contains(asked, ShrinkMark) {
-		t.Errorf("the fold was asked to recap shortening markers:\n%s", asked)
-	}
-	if !strings.Contains(asked, "thinking: the reason for that range") {
-		t.Error("the fold was asked about the calls without the reasoning behind them")
-	}
-}
-
-func TestCompactShortensTheRestAndSaysHowMuch(t *testing.T) {
-	dir := t.TempDir()
-	name := writeLines(t, dir, "first.txt", 60)
-	stub := &stubServer{scripts: []string{
-		sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + name + `"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
-	defer done()
-
-	if err := a.Ask(context.Background(), "read it"); err != nil {
-		t.Fatal(err)
-	}
-	before := a.estimateTokens()
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("Compact freed %d tokens with a multi-kilobyte result in the history", freed)
-	}
-	if after := a.estimateTokens(); after >= before {
-		t.Errorf("the conversation is %d tokens after Compact and %d before", after, before)
-	}
-	// a search is cheaper to run again than to keep: the summary says so, and no stale copy is left
-	var pointer bool
-	for _, m := range a.history {
-		if m.Role == "tool" && strings.Contains(m.Content, "run the same search_text again") {
-			pointer = true
-		}
-	}
-	if !pointer {
-		t.Error("Compact shortened the search without saying how to get it back")
-	}
-	if _, err := os.ReadFile(filepath.Join(dir, "saved", "r1.txt")); err == nil {
-		t.Error("a search result was stored: it goes stale the moment a file changes")
+	if !strings.Contains(last["content"].(string), "## Goal") {
+		t.Error("the fold's instruction does not name the sections the summary is written in")
 	}
 }
 
@@ -112,7 +80,7 @@ func TestCompactReplacesOlderTurnsWithTheModelSummary(t *testing.T) {
 		sse("", "Goal: rename the helper. Files: file0.go. Decisions: none. Next: run the tests", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read them all"); err != nil {
@@ -137,12 +105,15 @@ func TestCompactReplacesOlderTurnsWithTheModelSummary(t *testing.T) {
 	if len(stub.requests) < 5 {
 		t.Fatal("no summariser request was made")
 	}
-	if tools, ok := stub.requests[4]["tools"].([]any); ok && len(tools) > 0 {
-		t.Errorf("the summariser was offered %d tools; it only writes text", len(tools))
+	// the fold is sent the tools every other request sends: a different body means a cold cache
+	if tools, ok := stub.requests[4]["tools"].([]any); !ok || len(tools) == 0 {
+		t.Error("the summariser request carried no tools, so the server had to re-read the conversation")
 	}
 }
 
-func TestCompactStillFreesRoomWhenTheSummariserFails(t *testing.T) {
+// a summariser that answers with nothing leaves the conversation alone: nothing is rewritten in
+// place, and the notice says the turns stayed as they were
+func TestAFailedSummariserChangesNothing(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 3)
 	for i := range names {
@@ -157,40 +128,38 @@ func TestCompactStillFreesRoomWhenTheSummariserFails(t *testing.T) {
 		sse("", "", "", nil, "stop"), // the summariser answers with nothing
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read them all"); err != nil {
 		t.Fatal(err)
 	}
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("compaction freed %d tokens after the summariser failed", freed)
+	before := dump(a.history)
+	if freed := a.Compact(context.Background()); freed != 0 {
+		t.Errorf("a failed fold freed %d tokens, want 0", freed)
 	}
-	var shortened bool
-	for _, m := range a.history {
-		if m.Role == "tool" && strings.HasPrefix(m.Content, ShrinkMark) {
-			shortened = true
-		}
-	}
-	if !shortened {
-		t.Error("the fallback left the tool results untouched")
+	if dump(a.history) != before {
+		t.Errorf("a failed fold rewrote the conversation:\n%s", dump(a.history))
 	}
 	if strings.HasPrefix(a.history[1].Content, FoldMark) {
 		t.Error("a summary was inserted even though the summariser answered with nothing")
 	}
-	if !sink.noticed("shortening tool results") {
-		t.Error("the fallback happened silently")
+	if !sink.noticed("could not be summarised") {
+		t.Error("the failed fold happened silently")
 	}
 }
 
-// foldRoom is the window above the fixed prompt cost: three 40-line reads overflow it, one fold fits.
-const foldRoom = 2000
+// foldRoom is the window above what the conversation costs at the start: the reads in these tests
+// walk it past the pressure mark, and a fold still fits. The room has to hold the summary as well -
+// the instruction and compactMaxTokens - over and above what a fold leaves standing, so a fold is
+// never refused for being larger than the window it is making room in.
+const foldRoom = 5000
 
 func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 4)
 	for i := range names {
-		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 40)
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 130)
 	}
 	read := func(i int) string {
 		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
@@ -201,7 +170,7 @@ func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
 		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 8, MaxTokens: 64}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 8, MaxTokens: 64}, sink, dir)
 	defer done()
 	a.opts.CtxSize = a.estimateTokens() + foldRoom
 
@@ -216,45 +185,6 @@ func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
 	}
 	if !paired(a.history) {
 		t.Errorf("auto-compaction left the history unpaired:\n%s", dump(a.history))
-	}
-}
-
-func TestCompactionWithoutASummaryStillKeepsTheNewestWriteWhole(t *testing.T) {
-	dir := t.TempDir()
-	body := strings.Repeat("text the surviving turns still need in full ", 60)
-	write := func(i int) string {
-		args := `{"path":"out` + strconv.Itoa(i) + `.txt","content":"` + body + `"}`
-		return sse("", "", "write_file", []string{args}, "tool_calls")
-	}
-	stub := &stubServer{scripts: []string{
-		write(0), write(1), write(2),
-		sse("", "all written", "", nil, "stop"),
-		sse("", "", "", nil, "stop"), // the summariser answers with nothing, so the fallback runs
-	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
-	defer done()
-
-	if err := a.Ask(context.Background(), "write them"); err != nil {
-		t.Fatal(err)
-	}
-	if freed := a.Compact(context.Background()); freed <= 0 {
-		t.Fatalf("compaction freed %d tokens after the summariser failed", freed)
-	}
-	var kept, reduced int
-	for _, m := range a.history {
-		for _, c := range m.ToolCalls {
-			if strings.Contains(string(c.Function.Arguments), body) {
-				kept++
-			} else {
-				reduced++
-			}
-		}
-	}
-	if kept != compactKeep {
-		t.Errorf("%d of the newest writes kept their text, want %d", kept, compactKeep)
-	}
-	if reduced == 0 {
-		t.Error("the older writes are still carrying the whole file they wrote")
 	}
 }
 
@@ -276,7 +206,7 @@ func TestCompactionKeepsTheWordingOfTheCurrentTask(t *testing.T) {
 		sse("", "Goal: rename a helper. Files: three. Decisions: none. Next: edit", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), ask); err != nil {
@@ -311,13 +241,13 @@ func TestCompactionKeepsTheTaskNotANoteYkodeAddedAfterIt(t *testing.T) {
 		sse("", "all read", "", nil, "stop"),
 		sse("", "Goal: rename a helper. Files: three. Decisions: none. Next: edit", "", nil, "stop"),
 	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{decision: Allow}, dir)
 	defer done()
 	if err := a.Ask(context.Background(), ask); err != nil {
 		t.Fatal(err)
 	}
 	// ykode's own notes speak as the user too: one sits between the task and the kept calls
-	note := llm.Message{Role: "user", Content: verifyNote}
+	note := llm.Message{Role: "user", Content: "(the user cancelled this request)"}
 	a.history = append(a.history[:4], append([]llm.Message{note}, a.history[4:]...)...)
 
 	a.Compact(context.Background())
@@ -358,43 +288,8 @@ func historyText(a *Agent) string {
 	return b.String()
 }
 
-// One fold per session is not enough: a long run empties the window again, and the second time
-// there is nothing left to shorten, so the turns have to be folded again.
-func TestTheRunFoldsTheHistoryAgainWhenTheCallsPileBackUp(t *testing.T) {
-	dir := t.TempDir()
-	names := make([]string, 3+foldGap+1)
-	for i := range names {
-		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 40)
-	}
-	read := func(i int) string {
-		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
-	}
-	scripts := []string{read(0), read(1), read(2),
-		sse("", "Goal: read them. Files: three. Decisions: none. Next: keep reading", "", nil, "stop")}
-	for i := 3; i < 3+foldGap; i++ {
-		scripts = append(scripts, read(i))
-	}
-	scripts = append(scripts,
-		sse("", "Goal: read them. Files: nine. Decisions: none. Next: keep reading", "", nil, "stop"),
-		read(len(names)-1),
-		sse("", "all read", "", nil, "stop"))
-	stub := &stubServer{scripts: scripts}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: len(names) + 1, MaxTokens: 64}, &captureSink{}, dir)
-	defer done()
-	a.opts.CtxSize = a.estimateTokens() + foldRoom
-
-	if err := a.Ask(context.Background(), "read every file and say how many lines each has"); err != nil {
-		t.Fatal(err)
-	}
-	if folds := summariserRequests(stub); folds < 2 {
-		t.Errorf("the window emptied twice but the model was asked to summarise %d times", folds)
-	}
-	if !lastFoldSawTheEarlierSummary(stub) {
-		t.Error("the second fold started from scratch and lost what the first one kept")
-	}
-}
-
-// summariserRequests counts the requests that ask for a summary of the older turns.
+// summariserRequests counts the requests that ask for a summary of the older turns: the ones whose
+// last message is ykode's instruction after the conversation itself.
 func summariserRequests(stub *stubServer) int {
 	var folds int
 	for _, req := range stub.requests {
@@ -402,63 +297,55 @@ func summariserRequests(stub *stubServer) int {
 		if len(messages) == 0 {
 			continue
 		}
-		if first, _ := messages[0].(map[string]any); first["content"] == compactPrompt {
+		if last, _ := messages[len(messages)-1].(map[string]any); strings.Contains(fmt.Sprint(last["content"]), "about to leave your context window") {
 			folds++
 		}
 	}
 	return folds
 }
 
-// lastFoldSawTheEarlierSummary says whether the summariser was given the summary from an earlier
-// fold, so the second one does not lose what the first one kept.
-func lastFoldSawTheEarlierSummary(stub *stubServer) bool {
-	seen := false
-	for _, req := range stub.requests {
-		messages, _ := req["messages"].([]any)
-		if len(messages) == 0 {
-			continue
-		}
-		if first, _ := messages[0].(map[string]any); first["content"] != compactPrompt {
-			continue
-		}
-		seen = false
-		for _, raw := range messages[1:] {
-			if msg, _ := raw.(map[string]any); strings.Contains(fmt.Sprint(msg["content"]), "<previous-summary>\nGoal: read them. Files: three") {
-				seen = true
-			}
-		}
-	}
-	return seen
-}
-
-func TestTheSummariserIsNeverHandedMoreThanTheWindowHolds(t *testing.T) {
+// a conversation too big for the window to be summarised is refused rather than sent: a fold request
+// that the server turns away costs the round-trip and saves nothing
+func TestAFoldOfMoreThanTheWindowIsRefused(t *testing.T) {
 	a := newForHistory(Options{CtxSize: 1000})
-	var messages []llm.Message
-	for i := range 300 {
-		messages = append(messages, llm.Message{Role: "user", Content: fmt.Sprintf("turn %d says something worth a line", i)})
+	a.add(llm.Message{Role: "user", Content: "read everything"})
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("c%d", i)
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.go"}`)}}}})
+		a.add(llm.Message{Role: "tool", ToolCallID: id, CallID: id, Name: "read_file", Content: strings.Repeat("a line of the file that was read\n", 80)})
 	}
+	before := dump(a.history)
 
-	text := a.transcriptOf(messages)
-
-	if limit := int(float64(a.opts.CtxSize*2/5) * a.meter.bytesPerTok); len(text) > limit {
-		t.Errorf("transcript is %d bytes, over the %d a 40%% share of the window holds", len(text), limit)
+	if freed := a.Compact(context.Background()); freed != 0 {
+		t.Errorf("a fold of a conversation larger than the window freed %d tokens, want 0", freed)
 	}
-	if !strings.Contains(text, "turn 0 ") || !strings.Contains(text, "turn 299 ") {
-		t.Error("the cut lost the start (an earlier summary) or the end (the latest work)")
+	if dump(a.history) != before {
+		t.Errorf("the refused fold changed the conversation:\n%s", dump(a.history))
+	}
+	if len(a.history) < 4 {
+		t.Error("the conversation the fold refused to summarise got shorter anyway")
 	}
 }
 
 // what a front end reads about the cost follows the fold, instead of waiting for the next reply
 func TestCompactionRepublishesWhatTheConversationCosts(t *testing.T) {
 	dir := t.TempDir()
-	name := writeLines(t, dir, "first.txt", 60)
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 60)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
 	stub := &stubServer{scripts: []string{
-		sse("", "", "search_text", []string{`{"pattern":"line ","path":"` + name + `"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		sse("", "Goal: read them. Files: three. Decisions: none. Next: answer", "", nil, "stop"),
 	}}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 128, CtxSize: 20000}, &captureSink{decision: Allow}, dir)
 	defer done()
-	if err := a.Ask(context.Background(), "read it"); err != nil {
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -490,7 +377,7 @@ func TestTheRecapReachesTheScreen(t *testing.T) {
 		sse("", recap, "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read them all"); err != nil {
@@ -519,14 +406,14 @@ func TestAFoldThatWasNotNeededSaysSo(t *testing.T) {
 		sse("", "read it", "", nil, "stop"),
 	}}
 	sink := &captureSink{decision: Allow}
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, sink, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 4, MaxTokens: 128, CtxSize: 20000}, sink, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read it"); err != nil {
 		t.Fatal(err)
 	}
 	a.Compact(context.Background())
-	if !sink.noticed("too few turns to fold") {
+	if !sink.noticed("too little older work to fold") {
 		t.Errorf("nothing said why there was no recap: %v", sink.kinds())
 	}
 	for _, ev := range sink.events {
@@ -553,7 +440,7 @@ func TestAFoldReachesTheSavedConversation(t *testing.T) {
 		sse("", "Goal: read the files. Files: file0.go. Decisions: none. Next: stop", "", nil, "stop"),
 	}}
 	saved := session.New(dir, "s20260101-120000", dir)
-	a, done := newStoringAgent(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000, Session: saved}, &captureSink{decision: Allow}, dir)
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000, Session: saved}, &captureSink{decision: Allow}, dir)
 	defer done()
 
 	if err := a.Ask(context.Background(), "read them all"); err != nil {
@@ -658,23 +545,175 @@ func TestAReplyThatIsNotASummaryIsNotKept(t *testing.T) {
 	}
 }
 
-// the ask comes after the transcript, and the transcript is quoted, so the model reads it as material
-func TestTheSummaryRequestEndsWithTheAskNotTheTranscript(t *testing.T) {
-	stub := &stubServer{scripts: []string{sse("", "## Goal\nx", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 2, MaxTokens: 64}, &captureSink{})
+// the newest call and its replies survive a fold word for word: what the model is working from is
+// never rewritten, and a fold that lost it would cost the work it is in the middle of
+func TestAFoldNeverTouchesTheNewestCall(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 4)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 130)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2), read(3),
+		sse("", "Goal: read them. Files: four. Decisions: none. Next: answer", "", nil, "stop"),
+	}}
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 8, MaxTokens: 64, CtxSize: 40000}, &captureSink{}, dir)
 	defer done()
-	if _, err := a.summariseWithModel(context.Background(), "an earlier recap", "user: fix it"); err != nil {
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
 		t.Fatal(err)
 	}
-	msgs, _ := stub.requests[0]["messages"].([]any)
-	last, _ := msgs[len(msgs)-1].(map[string]any)
-	text := fmt.Sprint(last["content"])
-	for _, want := range []string{"<previous-summary>\nan earlier recap", "<conversation>\nuser: fix it", "Write the summary now"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("the request lacks %q:\n%s", want, text)
+
+	start := len(a.history)
+	for i := len(a.history) - 1; i >= 0; i-- {
+		if m := a.history[i]; m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			start = i
+			break
 		}
 	}
-	if !strings.HasSuffix(text, compactAsk) {
-		t.Error("the ask is not the last thing the model reads")
+	newest := dump(a.history[start:])
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatal("nothing was folded")
+	}
+	end := len(a.history)
+	for i := len(a.history) - 1; i >= 0; i-- {
+		if m := a.history[i]; m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			end = i
+			break
+		}
+	}
+	if got := dump(a.history[end:]); got != newest {
+		t.Errorf("the newest call was changed by the fold:\n%s\nwant\n%s", got, newest)
+	}
+}
+
+// a model that answers the fold with a tool call is asked once more with tools refused, and a second
+// call is refused: a summary is the only thing a fold may write
+func TestAFoldAnsweredWithACallIsRetriedWithoutTools(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 130)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	call := sse("", "", "read_file", []string{`{"path":"file0.txt"}`}, "tool_calls")
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		call, call,
+	}}
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000}, &captureSink{}, dir)
+	defer done()
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
+		t.Fatal(err)
+	}
+	before := dump(a.history)
+	if freed := a.Compact(context.Background()); freed != 0 {
+		t.Errorf("a fold that was answered with calls freed %d tokens, want 0", freed)
+	}
+	if dump(a.history) != before {
+		t.Errorf("a fold that was answered with calls rewrote the conversation:\n%s", dump(a.history))
+	}
+	folds := stub.requests[4:]
+	if len(folds) != 2 {
+		t.Fatalf("%d fold requests, want 2", len(folds))
+	}
+	if folds[1]["tool_choice"] != "none" {
+		t.Errorf("the second fold asked with tool_choice %v, want the tools refused", folds[1]["tool_choice"])
+	}
+}
+
+// a long run folds more than once, and the next fold waits for new work: asking again every turn
+// would pay for a request and a cold prompt cache each time
+func TestTheNextFoldWaitsForNewCalls(t *testing.T) {
+	a := newForHistory(Options{})
+	if !a.foldOverdue() {
+		t.Fatal("a conversation that was never folded is not due for a fold")
+	}
+	a.compactedAt = 0
+	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "go"}}
+	for i := 0; i < foldGap-1; i++ {
+		id := fmt.Sprintf("c%d", i)
+		history = append(history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id,
+			Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}})
+	}
+	a.history = history
+	if a.foldOverdue() {
+		t.Errorf("%d new calls were not enough to ask again, want %d", callBlocks(history)-a.compactedAt, foldGap)
+	}
+	a.history = append(history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "last",
+		Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"a.go"}`)}}}})
+	if !a.foldOverdue() {
+		t.Error("the next fold never became due")
+	}
+}
+
+// the recap an earlier fold left is sent to the next one as part of the conversation, so the second
+// summary updates what the first kept instead of starting over
+func TestTheNextFoldCarriesTheEarlierRecap(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe work went on", "", nil, "stop")}}
+	a, done := newAgentIn(t, stub, Options{CtxSize: 7000}, &captureSink{}, t.TempDir())
+	defer done()
+	recap := llm.Message{Role: "user", Content: FoldMark + "\n## Goal\nthe work so far"}
+	a.add(recap)
+	for i := 0; i < 4; i++ {
+		id := fmt.Sprintf("c%d", i)
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"a.go"}`)}}}})
+		a.add(llm.Message{Role: "tool", ToolCallID: id, CallID: id, Name: "read_file", Content: strings.Repeat("x", 3000)})
+	}
+
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatal("the second fold freed nothing")
+	}
+	messages, _ := stub.requests[0]["messages"].([]any)
+	var carried bool
+	for _, raw := range messages {
+		if msg, _ := raw.(map[string]any); fmt.Sprint(msg["content"]) == recap.Content {
+			carried = true
+		}
+	}
+	if !carried {
+		t.Error("the earlier recap was left out of the request, so the new summary starts from scratch")
+	}
+}
+
+// a small window has few calls and each one is big, so insisting on keeping the newest two can leave
+// nothing to fold at all: the fold keeps one newest call instead, because a fold that frees something
+// is always better than a deletion
+func TestASmallWindowFoldsRatherThanDeleteTheOlderCall(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe first read is summarized here\n", "", nil, "stop")}}
+	sink := &captureSink{}
+	a, done := newAgentIn(t, stub, Options{CtxSize: 8192, KeepRecentTokens: 8192 / 5}, sink, t.TempDir())
+	defer done()
+
+	const ask = "read both files"
+	a.task = ask
+	a.add(llm.Message{Role: "user", Content: ask})
+	for i, path := range []string{"a.txt", "b.txt"} { // two calls: the newest two are the whole run
+		id := fmt.Sprintf("c%d", i)
+		a.add(llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Type: "function",
+			Function: llm.FunctionCall{Name: "read_file", Arguments: json.RawMessage(`{"path":"` + path + `"}`)}}}})
+		a.add(llm.Message{Role: "tool", ToolCallID: id, CallID: id, Name: "read_file", Content: strings.Repeat("x", 9000)})
+	}
+
+	if a.Compact(context.Background()) <= 0 {
+		t.Fatal("nothing was folded, so the drop layer has to delete a real result")
+	}
+	var folds int
+	for _, ev := range sink.events {
+		if ev.Kind == Summary {
+			folds++
+		}
+	}
+	if folds == 0 {
+		t.Fatal("the fold ran without a recap")
+	}
+	if kept := callBlocks(a.history); kept < 1 {
+		t.Errorf("the fold left %d whole calls, want the newest one at least", kept)
 	}
 }

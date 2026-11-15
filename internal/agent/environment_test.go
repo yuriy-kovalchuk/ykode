@@ -121,7 +121,6 @@ func TestAnAskCarriesTheDateAndTheTreeStateOnlyWhenTheyChange(t *testing.T) {
 	log := session.New(t.TempDir(), "s1", dir)
 	a, done := stub.agent(t, dir, log)
 	defer done()
-	a.opts.NoVerify = true
 	ask := func(text string) string {
 		t.Helper()
 		if err := a.Ask(context.Background(), text); err != nil {
@@ -164,7 +163,6 @@ func TestAResumeAfterTheTreeChangedKeepsEverythingBeforeTheNewAsk(t *testing.T) 
 	first := &rawStub{scripts: []string{sse("", "five lines", "", nil, "stop")}}
 	a, done := first.agent(t, dir, log)
 	defer done()
-	a.opts.NoVerify = true
 	if err := a.Ask(context.Background(), "how big is this?"); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +178,6 @@ func TestAResumeAfterTheTreeChangedKeepsEverythingBeforeTheNewAsk(t *testing.T) 
 	second := &rawStub{scripts: []string{sse("", "ok", "", nil, "stop")}}
 	b, done2 := second.agent(t, dir, nil)
 	defer done2()
-	b.opts.NoVerify = true
 	b.Resume(back)
 	if err := b.Ask(context.Background(), "and now?"); err != nil {
 		t.Fatal(err)
