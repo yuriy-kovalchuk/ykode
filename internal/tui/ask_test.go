@@ -49,6 +49,29 @@ func TestAChoiceLongerThanTheTerminalIsReadAcrossRows(t *testing.T) {
 	}
 }
 
+// a question longer than the terminal is all of it on the screen: the end of the sentence is the part
+// that says what is being asked, and a question nobody can finish reading cannot be answered
+func TestALongQuestionIsReadAcrossRows(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 80, 24
+	long := "the settings screen can stay one column that scrolls, or split into a column of keys and a " +
+		"column of values, and the help for a key could sit under the key you have selected or in the " +
+		"row at the bottom where the model and the context already live; of those two changes, or " +
+		"both, or neither, which do you want?"
+	askedAbout(m, long, "the split", "the split and the help line", "neither")
+	plain := stripCodes(m.View())
+	// the bar down the left of each row is not part of the question, so it comes out before comparing
+	flat := strings.Join(strings.Fields(strings.ReplaceAll(plain, askBar, " ")), " ")
+	if !strings.Contains(flat, strings.Join(strings.Fields(long), " ")) {
+		t.Errorf("the question did not reach the screen whole:\n%s", plain)
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Errorf("a row runs past the terminal (%d columns): %q", lipgloss.Width(line), line)
+		}
+	}
+}
+
 func TestTheQuestionTheModelAskedShowsItsChoicesNumbered(t *testing.T) {
 	m := newTestModel()
 	m.width = 90

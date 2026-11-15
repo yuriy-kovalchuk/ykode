@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // AskUser stops the run and puts one question to the person running ykode, with the choices the
@@ -24,12 +25,10 @@ type Asker interface {
 	Ask(ctx context.Context, q Question) string
 }
 
-const (
-	askQuestionChars = 400 // what a question says; past this it is a document, not a question
-	askOptionChars   = 120 // what one choice says
-	askAnswerChars   = 600 // what an answer may say back
-	maxAskOptions    = 6   // choices one question offers; more than a screen reads at once
-)
+// maxAskOptions is choices one question offers: more than a screen reads at once. What one question
+// or choice says is not capped: the screen breaks it across rows and cuts it there, where what is lost
+// is visible, rather than here, where it would be silently taken back out.
+const maxAskOptions = 6
 
 // noAnswer is what the model reads when the question came back empty. The choice and the report of it
 // are its job from there, so the run does not stop for want of an answer.
@@ -74,14 +73,14 @@ func (t *AskUser) Run(ctx context.Context, args json.RawMessage) (string, error)
 	if err := decodeArgs(args, &in); err != nil {
 		return "", err
 	}
-	q := Question{Text: oneLine(in.Question, askQuestionChars), Options: cleanOptions(in.Options)}
+	q := Question{Text: strings.TrimSpace(in.Question), Options: cleanOptions(in.Options)}
 	if q.Text == "" {
 		return "", errors.New("ask_user: nothing was asked; send the question written out")
 	}
 	if t.ask == nil {
 		return noAnswer, nil // nobody was ever going to answer it
 	}
-	answer := oneLine(t.ask.Ask(ctx, q), askAnswerChars)
+	answer := strings.TrimSpace(t.ask.Ask(ctx, q))
 	if answer == "" {
 		return noAnswer, nil
 	}
@@ -93,7 +92,7 @@ func (t *AskUser) Run(ctx context.Context, args json.RawMessage) (string, error)
 func cleanOptions(in []string) []string {
 	options := make([]string, 0, min(len(in), maxAskOptions))
 	for _, option := range in {
-		text := oneLine(option, askOptionChars)
+		text := strings.TrimSpace(option)
 		if text == "" || len(options) == maxAskOptions {
 			continue
 		}

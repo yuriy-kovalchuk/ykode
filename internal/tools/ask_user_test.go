@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -145,5 +146,65 @@ func TestTheQuestionIsOnlyListedWhereItCanBeAnswered(t *testing.T) {
 	registry.Add(NewAskUser(&askedRecords{}))
 	if !has(registry, "ask_user") {
 		t.Error("a registry with a front end does not list the question")
+	}
+}
+
+// askedArgs builds one call's arguments, so the text under test can hold quotes and newlines
+func askedArgs(t *testing.T, question string, options []string) []byte {
+	t.Helper()
+	raw, err := json.Marshal(askInput{Question: question, Options: options})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// the question is the model's own wording: what a person reads has to be all of it, since the end of a
+// sentence is usually the part that decides the answer
+func TestALongQuestionReachesTheScreenWhole(t *testing.T) {
+	long := "the settings screen can stay one column that scrolls, or split into a column of keys and a " +
+		"column of values, and the help for a key could sit under the key you have selected or in the " +
+		"row at the bottom where the model and the context already live; the split costs a row of the " +
+		"transcript but keeps every key readable without scrolling, and moving the help to the bottom " +
+		"keeps the columns steady while you move between sections but puts it further from what it " +
+		"describes: of those two changes, or both, or neither, which do you want?"
+	front := &askedRecords{answer: "the split"}
+	if _, err := NewAskUser(front).Run(context.Background(), askedArgs(t, long, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if got := front.questions[0].Text; got != long {
+		t.Errorf("the screen was shown %d of %d characters of the question:\n%s", len(got), len(long), got)
+	}
+}
+
+// a choice is what the model would act on, so a fragment of one is not enough to answer from
+func TestALongChoiceReachesTheScreenWhole(t *testing.T) {
+	choice := "keep the stat poll every five seconds, since it costs nothing on a local branch and a " +
+		"file watcher would need a second goroutine and a debounce to say the same thing"
+	front := &askedRecords{answer: "the first"}
+	if _, err := NewAskUser(front).Run(context.Background(), askedArgs(t, "which way?", []string{choice})); err != nil {
+		t.Fatal(err)
+	}
+	if got := front.questions[0].Options; len(got) != 1 || got[0] != choice {
+		t.Errorf("the choices: %q", got)
+	}
+}
+
+// what a person types back is theirs: the model reads all of it, or the run goes on having half asked
+func TestALongAnswerReachesTheModelWhole(t *testing.T) {
+	answer := "use the split, but keep the keys in the order the settings file lists them rather than " +
+		"alphabetically, and leave the help line where it is now because moving it under the selected " +
+		"column makes it jump as you move; one more thing - the settings screen should say which keys " +
+		"come from the project file rather than from the user's own file, since that is the one that " +
+		"surprises people when a value will not change no matter how many times they set it. One more " +
+		"thing while I have you: the transcript should not repeat the same tool result twice in one run, " +
+		"since that is the second thing people notice about the screen"
+	front := &askedRecords{answer: answer}
+	got, err := NewAskUser(front).Run(context.Background(), askedArgs(t, "which layout?", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, answer) {
+		t.Errorf("the model was given %q", got)
 	}
 }
