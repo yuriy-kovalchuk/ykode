@@ -13,29 +13,29 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 	thinking, noThink := cfg.SamplingFor(model)
 	plan := tools.NewPlan() // one list: the tool writes it while the screen reads it
 	return tools.Options{
-		ReadLines:      cfg.ReadLines,
-		ExecTimeout:    cfg.ExecTimeout,
-		CommandLogDir:  cfg.CommandLogDir,
-		MaxResultBytes: resultBytes,
-		Plan:           plan,
-	}, agent.Options{
-		MaxTurns:         cfg.MaxTurns,
-		MaxTokens:        cfg.MaxTokens,
-		SafetyMargin:     cfg.SafetyMargin,
-		CtxSize:          ctxSize,
-		// the number typed on the command line is a request about this server, not about whichever model
-		// gets picked next: without this, a model switch replaces what the user wrote with the model's own
-		// window and says nothing.
-		CtxPinned:        cfg.CtxSize > 0,
-		KeepRecentTokens: min(20000, ctxSize/5),
-		ThinkingLevel:    cfg.ThinkingLevel,
-		AssumeYes:        cfg.AssumeYes,
-		SendReasoning:    cfg.SendReasoningFor(model),
-		Thinking:         thinking,
-		NoThink:          noThink,
-		MaxResult:        resultBytes,
-		Allow:            cfg.Allow,
-		Root:             cfg.Root,
-		Plan:             plan,
-	}
+			ReadLines:      cfg.ReadLines,
+			ExecTimeout:    cfg.ExecTimeout,
+			CommandLogDir:  cfg.CommandLogDir,
+			MaxResultBytes: resultBytes,
+			Plan:           plan,
+		}, agent.Options{
+			MaxTurns:     cfg.MaxTurns,
+			MaxTokens:    cfg.MaxTokens,
+			SafetyMargin: cfg.SafetyMargin,
+			CtxSize:      ctxSize,
+			// the number typed on the command line is a request about this server, not about whichever model
+			// gets picked next: without this, a model switch replaces what the user wrote with the model's own
+			// window and says nothing.
+			CtxPinned:        cfg.CtxSize > 0,
+			KeepRecentTokens: min(20000, ctxSize/5),
+			ThinkingLevel:    cfg.ThinkingLevel,
+			AssumeYes:        cfg.AssumeYes,
+			SendReasoning:    cfg.SendReasoningFor(model),
+			Thinking:         thinking,
+			NoThink:          noThink,
+			MaxResult:        resultBytes,
+			Allow:            cfg.Allow,
+			Root:             cfg.Root,
+			Plan:             plan,
+		}
 }
