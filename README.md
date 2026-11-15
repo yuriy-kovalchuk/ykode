@@ -477,8 +477,9 @@ ykode as a user with access only to what you are willing to let a shell touch, o
 
 ## Benchmarks
 
-The task benchmark against pi lives outside this repository, in `~/Developer/testing-ykode`
-(`./bench.py --agents ykode`); its README and `BASELINE.md` say how to run and read it.
+The task benchmark against pi lives outside this repository, in `~/Developer/testing-ykode`; its
+README and `BASELINE.md` say how to run and read it. It drives `ykode -p ... --json`, and `--json`
+went with the reduction, so it has to be updated before it can score ykode again.
 
 ## Development
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// SystemPrompt follows pi's shape: each task-specific rule fixed one task and broke another (TODO.md).
+// SystemPrompt follows pi's shape: each task-specific rule fixed one task and broke another (ideas.md, "Measured").
 const SystemPrompt = `You are ykode, a coding assistant working in one project. Help the user inspect files,
 run commands, and change code.
 

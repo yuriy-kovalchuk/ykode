@@ -270,3 +270,32 @@ The screen's colours are built once in `internal/tui/palette.go` (`styleDim`, `s
 terminal's own capabilities deciding whether to use 16, 256 or true colour. A light-terminal
 theme is the reason to want it: faint-on-white is unreadable today. Open question: whether
 syntax colours for code blocks (`markdown.go`) follow the same map or stay a separate choice.
+
+---
+
+## Measured, do not retry blindly
+
+- The system prompt is pi's shape, not a list of task rules (2026-11-08). Each rule fixed one task
+  and broke another: "say so in your answer" padded task 05's answers, "just that value" then
+  dropped the file name `read-the-note` needs, "follow a project file even if the code suggests
+  otherwise" made the model trust a stale README (5 of 29 task-05 runs), "then verify" brought
+  throwaway programs and "verify once" was the patch for those. The pi-style prompt, without any of
+  them: 55/55 against 54/55, 24.7 s against 26.8 s a run, 9.2k against 11.9k prompt tokens
+  (`testing-ykode` runs `20261108-021409` and `-023702`). It checks its work less often (task 03 in
+  2 of 5 runs, task 09 in 1 of 5) without failing a task; if that starts to cost passes, the answer
+  is running the project's check itself, not another rule. `TestTheTaskRulesStayOut` names the rules,
+  so one comes back by decision.
+- `chat_template_kwargs.reasoning_effort` is not sent: the Qwen template throws on a value it does
+  not know, and `thinking_budget_tokens` already sets the depth on any llama.cpp server.
+- Removing "do not write throwaway programs" (2026-11-07, task 03 ×5) brought one 89 s run of
+  `go run -` and `/tmp` test files back; task 10 did not improve. The rule stays.
+- Trimming a path description to "relative to the project root" made the model write the root's own
+  path without its leading slash (3 of 5 task-11 runs, 0 in 397 runs before). The description now
+  gives an example (`src/main.go`), and the path tools read such a path as the root anyway.
+- `find_files` and `search_text` went with the reduction (2026-11-09). Two things learned: the two
+  dependencies they pulled (`bmatcuk/doublestar`, `sabhiram/go-gitignore`) had no test of their own,
+  so `go mod tidy` dropped them with the code and nothing complained; and the loop guard's "same call
+  repeats" rule was not what kept a rewritten file's old listing short - its test still passed with
+  the guard deleted, because the fold had already replaced the listing. That test went when a second
+  read of the same window started sending the text again: no memory of what was shown, so nothing to
+  be told twice.

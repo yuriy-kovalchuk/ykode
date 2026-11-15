@@ -284,7 +284,7 @@ func TestThePromptStaysSmall(t *testing.T) {
 	}
 }
 
-// each fixed one benchmark task and broke another (TODO.md, "Measured")
+// each fixed one benchmark task and broke another (ideas.md, "Measured")
 func TestTheTaskRulesStayOut(t *testing.T) {
 	for _, rule := range []string{
 		"throwaway",                                     // verify once: task 03 got faster, checks got rarer
