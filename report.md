@@ -665,3 +665,68 @@ Then the transcript's unbounded growth, which is what a heavy user will feel fir
 Then the leftovers: the tracked empty file, the unformatted file, the unused helpers, the retired keys,
 the linter and the formatter in the checks, and a decision about whether the module is meant to build
 anywhere other than unix.
+
+---
+
+## What was done, and what was not
+
+Every finding in this report was checked against the code before anything was changed, and the changes
+were made in the order above. Each one went through `go vet`, the whole test suite, `gofmt`, and the race
+detector on the packages it touched, and each is its own commit.
+
+**Fixed and committed.** The file reader's byte-cut floor and the result-budget floors. The stream's
+usage counts being overwritten by a timings chunk, the error field that could not be a string, the retry
+that dropped the first and interesting failure, the unfinished-stream notice repeated per turn. The
+settings that could not be cleared, the provenance of an empty value, the two prune loops that stopped at
+the first entry they could not read. The context meter's memory: the server's real token count now
+survives a fold, a drop, an overflow and a new ask, and the history's byte total is incremental with a
+self-check rather than re-measured. The session log writes one line about what a trim removed instead of
+a copy of everything, tracks positions across boundaries, and carries a format version that refuses a
+newer file. The concurrency seams: the agent now refuses to change the conversation under a turn, in one
+place, instead of trusting a comment. The settings screen commits a typed value to the row it was typed
+for. The windows build, `gofmt` in the checks, the tracked empty file, the stub server that was hiding
+panics. A single change no longer costs the screen four megabytes. The trust hole where saving a knob
+into a project file the user had declined accepted the whole file. An allow entry can name one file.
+A model switch picks up the model it is switching to. The command waiting rule has one owner. The null
+device is no longer mistaken for a terminal. The two byte-ceiling calculations are one.
+
+**Checked, and found not to be defects.** The symlink escape (the operating system's directory-handle
+check refuses it). The call arguments being validated and then ignored (`repair` writes the unwrapped
+bytes back). Tool-call ordering, pinned deliberately by a test. The idle watchdog's flag. The quoted `cd`
+strip. The settings screen's cursor. The turn-off-able yes flag and the granularity of the allow list.
+The catalogue cache, the transcript's fold-on-scroll and lazy replay, and the pace ring - all measured,
+all already fast enough that the change would have added complexity for nothing.
+
+**Left as decisions, with the reasoning recorded where the claim stood.** The whole-file strictness of
+the settings schema, the tool-level remembering from an on-screen "always", the carry-over of a window
+for a model the server does not list, and the fact that a trusted project's retention setting is
+machine-wide. Each is pinned by a test that says why, and I reverted my own change rather than rewrite
+those tests.
+
+**Fixed, and the finding was also wrong about the symptom.** Writes to the terminal were unchecked. The
+report said a scripted run whose reader stops early "fails every write, reports nothing, and exits zero";
+measured against a fake server it is blunter than that - the process dies of `SIGPIPE` (exit `-13`), so a
+script piping ykode into something that reads one line gets a signal rather than a result it can branch
+on. What was done is the one-owner fix rather than nineteen return checks: the stream front end keeps the
+first write that failed, the single-task path asks for it after the run and fails the run with it, and
+every other unchecked write is now either handled where a failure means something (the trust question
+cannot be asked, so the project is not trusted and says why; the session log's `Close` is checked, because
+a record that never reached a network mount is a conversation that did not happen) or discarded with a
+name and a sentence explaining why nothing could be lost by it. Three tests cover the kept failure and one
+of them fails without the fix, saying so in its own words.
+
+The linter is configured and has a `make lint` target; it reports `0 issues` now. It is deliberately not
+part of `make check`, because `golangci-lint` is not vendored and a gate that fails for a missing
+third-party tool is a gate people stop running - the target says so out loud when the tool is absent. The
+three dead helpers it found (`joined`, `quote`, `absolute`) are gone, along with two dead key constants in
+a test file; each was checked by hand first, because the linter's own output was not the only copy of the
+claim. The 41 findings that were `defer Close()` in test cleanup are excluded by rule rather than silenced:
+a cleanup close in a test is not a step whose failure means anything.
+
+**Still open, and named so plainly.** A read-only home directory still turns a first run into a message on
+stderr before the first request; it no longer stops the run, and the case is measured rather than assumed.
+Two notions of the project root, a directory handle for the file tools and a recorded string for commands,
+remain two - the confinement was verified to hold, so this is a maintenance cost rather than a hole. A
+broken pipe on stdout still ends the process by signal, which is Go's own behaviour for the standard
+streams and at least gives a script an exit code to branch on; the fix reaches the failures that signal
+does not report, a full disk and a stream that stops mid-answer.
