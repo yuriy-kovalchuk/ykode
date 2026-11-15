@@ -100,13 +100,33 @@ func (v *View) reset() string {
 // IsTerminal reports whether a stream is an interactive one, so a script can know nobody will answer.
 func IsTerminal(f *os.File) bool { return isTerminal(f) }
 
+// nullInfo is what the null device looks like, taken once: a stream that is the null device is a
+// character device and so passes the mode test, but nobody reads what is written to it and nothing
+// arrives on the one read from it. That is the opposite of interactive, and it is what a test binary or
+// a `ykode < /dev/null` run hands us.
+var nullInfo = func() os.FileInfo {
+	info, err := os.Stat(os.DevNull)
+	if err != nil {
+		return nil
+	}
+	return info
+}()
+
 func isTerminal(w io.Writer) bool {
 	file, ok := w.(*os.File)
 	if !ok {
 		return false
 	}
 	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if nullInfo != nil && os.SameFile(nullInfo, info) {
+		return false
+	}
+	// a stream opened on the null device by name is the same thing even where the two stats do not
+	// agree on identity, which is how the null device behaves on windows
+	return file.Name() != os.DevNull
 }
 
 // flat puts a call or its result on one short line: the line log is read as a list, not as a document.
