@@ -20,6 +20,7 @@ func Set(root, key, value string) (string, bool, error) {
 		return "", false, fmt.Errorf("%s is not a setting: settings lists what there is", key)
 	}
 	path, local := SettingsTarget(root)
+	wasAccepted := local && localAccepted(root)
 	doc, err := readSettingsDoc(path)
 	if err != nil {
 		return path, local, err
@@ -49,7 +50,7 @@ func Set(root, key, value string) (string, bool, error) {
 		return path, local, err
 	}
 	if local {
-		if err := trustWritten(root, k.key); err != nil {
+		if err := trustWritten(root, wasAccepted, k.key); err != nil {
 			return path, local, err
 		}
 	}

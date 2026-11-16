@@ -57,13 +57,13 @@ func sessionLine(s status) string {
 		branch = " (" + s.branch + ")"
 	}
 	// the path is cut, never the branch: the branch is the part of this row that changes
-	where := oneLine(shortenHome(s.root), max(rootRoom-lipgloss.Width(branch), 1)) + branch
-	depth := s.thinking
-	if depth == llm.ThinkingOff {
-		depth = "thinking off"
+	where := styleDim.Render(oneLine(shortenHome(s.root), max(rootRoom-lipgloss.Width(branch), 1))) + styleCode.Render(branch)
+	depth := styleGutter.Render("✦ " + s.thinking)
+	if s.thinking == llm.ThinkingOff {
+		depth = styleDim.Render("thinking off")
 	}
-	return align([]string{styleDim.Render(where)},
-		[]string{styleAccent.Render(oneLine(s.model, modelRoom)), styleDim.Render(depth)}, s.width)
+	return align([]string{styleAccent.Render("◆ ") + where},
+		[]string{styleAccent.Render(oneLine(s.model, modelRoom)), depth}, s.width)
 }
 
 // statusLine is the footer's second row: what the conversation has cost, and what is happening now.
@@ -110,7 +110,7 @@ func statusFacts(s status) []string {
 	used := s.usage.EstTok
 	if s.ctxSize > 0 {
 		pct := used * 100 / s.ctxSize
-		facts = append(facts, fullness(pct).Render(fmt.Sprintf("ctx %s/%s %d%%", tokCount(used), tokCount(s.ctxSize), pct)))
+		facts = append(facts, fullBar(pct)+" "+fullness(pct).Render(fmt.Sprintf("ctx %s/%s %d%%", tokCount(used), tokCount(s.ctxSize), pct)))
 	} else {
 		facts = append(facts, styleDim.Render(fmt.Sprintf("ctx %s", tokCount(used))))
 	}
@@ -175,6 +175,15 @@ func fullness(pct int) lipgloss.Style {
 		return styleWarn
 	}
 	return styleOK
+}
+
+// barCells is how many cells the window's fullness is drawn in.
+const barCells = 8
+
+// fullBar draws how full the window is, ▰ for each part used and ▱ for each still free.
+func fullBar(pct int) string {
+	used := min(max((pct*barCells+50)/100, 0), barCells)
+	return fullness(pct).Render(strings.Repeat("▰", used)) + styleBorder.Render(strings.Repeat("▱", barCells-used))
 }
 
 // tokCount writes a token count the way it is read at a glance: 900, 9.5k, 12k, 131k, 3.1M.

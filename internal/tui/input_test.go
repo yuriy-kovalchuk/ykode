@@ -22,9 +22,10 @@ func boxRows(m *model) []string {
 	return rows
 }
 
+// inputModel is a session whose box is width columns wide inside the card that frames it.
 func inputModel(width int) *model {
 	m := newTestModel()
-	m.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+	m.Update(tea.WindowSizeMsg{Width: width + boxEdges*2, Height: 30})
 	return m
 }
 

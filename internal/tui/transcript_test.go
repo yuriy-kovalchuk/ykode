@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestThinkingArrivesInPiecesAndReadsAsOneBlock(t *testing.T) {
@@ -41,7 +43,7 @@ func TestAParallelReplyLandsOnItsOwnCall(t *testing.T) {
 		t.Errorf("b.go was answered with a.go's result")
 	}
 	out := stripCodes(log.render(80))
-	if !strings.Contains(out, "▸ read_file b.go") {
+	if !strings.Contains(squeezed(out), "▸ read_file b.go") {
 		t.Errorf("a call still running does not say it is working:\n%s", out)
 	}
 }
@@ -55,10 +57,10 @@ func TestMessagesCarryTheirTime(t *testing.T) {
 	log.done(sent.Add(51*time.Second), 51*time.Second)
 	view := stripCodes(log.render(60))
 	first := strings.Split(view, "\n")[0]
-	if !strings.HasSuffix(first, "08:31") || len(first) < 50 {
-		t.Errorf("the prompt's time is not at the end of its row: %q", first)
+	if !strings.HasSuffix(first, "08:31 ─╮") || lipgloss.Width(first) != 60 {
+		t.Errorf("the prompt's time is not at the end of its card's top edge: %q", first)
 	}
-	if !strings.Contains(view, "08:31 · 51s") {
+	if !strings.Contains(view, "done in 51s · 08:31") {
 		t.Errorf("the finished prompt has no end time and duration:\n%s", view)
 	}
 }

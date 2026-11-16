@@ -11,12 +11,12 @@ import (
 const (
 	promptMark    = "❯ "
 	maxInputLines = 10 // the input grows with what is typed, up to this
-	inputGap      = "" // a blank row between the prompt and what the session reports
 	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
 
-	// reportRows is what the bottom always holds under the box: the gap, the two rows the session
-	// reports on, and the gap at the terminal's edge
-	reportRows = 4
+	// reportRows is what the bottom always holds under the box: the two rows the session reports on,
+	// and the gap at the terminal's edge. The box's own bottom edge sets it apart from the report.
+	reportRows = 3
+	boxEdges   = 2 // the input card's top and bottom edges
 )
 
 // keys is what ? shows, as key and what it does.
@@ -29,11 +29,11 @@ var keys = [][2]string{
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 
-// bottomArea is everything under the transcript: the rule, the keys if ? asked for them, what is
-// waiting or being chosen, the question if one waits, the prompt, and under it the two rows the
+// bottomArea is everything under the transcript: the keys if ? asked for them, what is waiting or
+// being chosen, the question if one waits, the prompt in its card, and under it the two rows the
 // session reports on. The report goes last: it is read after the prompt, not before it.
 func (m *model) bottomArea() string {
-	rows := []string{ruleWith(m.width, m.scrollMark())}
+	var rows []string
 	if m.showKeys {
 		rows = append(rows, m.keysHelp())
 	}
@@ -41,7 +41,7 @@ func (m *model) bottomArea() string {
 	rows = append(rows, m.waitingRows()...)
 	// the candidates take the rows the screen can spare: its height, less what stands above them,
 	// what follows them, and the least the session insists on
-	under := m.input.Height() + reportRows + blankRowsBelow // the box and the report are spaced apart
+	under := m.input.Height() + boxEdges + reportRows + blankRowsBelow // the box and the report are spaced apart
 	if m.err != "" {
 		under++
 	}
@@ -56,7 +56,7 @@ func (m *model) bottomArea() string {
 	if ask != "" {
 		rows = append(rows, ask)
 	}
-	rows = append(rows, m.promptLines(), inputGap)
+	rows = append(rows, m.promptLines())
 	s := m.status()
 	rows = append(rows, sessionLine(s), statusLine(s))
 	if m.err != "" {
@@ -209,7 +209,8 @@ func writeSide(change *strings.Builder, sign, text string) {
 	}
 }
 
-// promptLines is the input with the prompt mark on its first line.
+// promptLines is the input in its card, the prompt mark on its first line. The card's top edge says
+// where a reader who scrolled up stands, so nothing else has to.
 func (m *model) promptLines() string {
 	mark := styleAccent.Render(promptMark)
 	if m.running {
@@ -223,7 +224,15 @@ func (m *model) promptLines() string {
 			lines[i] = strings.Repeat(" ", lipgloss.Width(promptMark)) + lines[i]
 		}
 	}
-	return strings.Join(lines, "\n")
+	title := styleAccent.Render("ask")
+	if m.running {
+		title = styleWorking.Render("working")
+	}
+	label := ""
+	if mark := m.scrollMark(); mark != "" {
+		label = styleWarn.Render(mark)
+	}
+	return strings.Join(card(title, label, lines, m.width), "\n")
 }
 
 // fitInput grows the box with the rows typed, to ten, and never past the point where the session

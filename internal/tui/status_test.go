@@ -203,3 +203,12 @@ func TestWhatMadeRoomShowsBesideTheWorkingPrompt(t *testing.T) {
 		t.Errorf("the label intrudes on a prompt waiting for an answer: %s", held)
 	}
 }
+
+// the window's fullness is a bar of cells, filled in proportion and never past either end
+func TestTheFullnessBarFillsInProportion(t *testing.T) {
+	for pct, want := range map[int]string{0: "▱▱▱▱▱▱▱▱", 50: "▰▰▰▰▱▱▱▱", 100: "▰▰▰▰▰▰▰▰", 140: "▰▰▰▰▰▰▰▰"} {
+		if got := stripCodes(fullBar(pct)); got != want {
+			t.Errorf("%d%%: %q, want %q", pct, got, want)
+		}
+	}
+}

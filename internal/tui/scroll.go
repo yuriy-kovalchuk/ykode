@@ -2,10 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const wheelStep = 3 // lines one notch of the wheel moves the transcript
@@ -45,17 +43,4 @@ func (m *model) scrollMark() string {
 		mark += " · new output below"
 	}
 	return mark + " · end returns"
-}
-
-// ruleWith is the rule with a label at its right end, for what the reader should know.
-func ruleWith(width int, label string) string {
-	if label == "" {
-		return rule(width)
-	}
-	label = styleWarn.Render(" " + label + " ")
-	fill := width - lipgloss.Width(label) - 2
-	if fill < 1 {
-		return rule(width)
-	}
-	return styleDim.Render(strings.Repeat("─", fill)) + label + styleDim.Render("──")
 }

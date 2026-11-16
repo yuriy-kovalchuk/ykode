@@ -171,15 +171,6 @@ func clock(at time.Time) string {
 	return at.Format("15:04")
 }
 
-// rightAligned puts tag at the end of the row when it fits, after the text when it does not.
-func rightAligned(text, tag string, width int) string {
-	gap := width - lipgloss.Width(text) - lipgloss.Width(tag)
-	if gap < 2 {
-		return text + "  " + tag
-	}
-	return text + strings.Repeat(" ", gap) + tag
-}
-
 // padTo fills a row out to width so a style laid over it covers the whole row.
 func padTo(text string, width int) string {
 	if gap := width - lipgloss.Width(text); gap > 0 {

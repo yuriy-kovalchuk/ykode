@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -119,23 +120,38 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 	}
 }
 
-// what was asked sits in a band across the whole screen, so it reads apart from an answer even
+// paintedBehind is an escape that sets a background colour: 48 as a parameter of its own, not the
+// tail of a truecolor value such as 248.
+var paintedBehind = regexp.MustCompile(`\x1b\[(?:[0-9]+;)*48;`)
+
+// promptTop is how the card an ask sits in opens.
+const promptTop = "╭─ you"
+
+// what was asked sits in a card across the whole screen, so it reads apart from an answer even
 // when the ask runs over several rows
-func TestAPromptIsABandAcrossTheScreen(t *testing.T) {
+func TestAPromptIsACardAcrossTheScreen(t *testing.T) {
 	block := strings.TrimRight(strings.Join((&transcript{}).draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60), "\n"), "\n")
-	lines := strings.Split(block, "\n")
-	if len(lines) < 2 {
-		t.Fatalf("the band does not reach over more than one row: %q", block)
+	lines := strings.Split(stripCodes(block), "\n")
+	if len(lines) < 4 {
+		t.Fatalf("the card does not hold both rows of the ask between its edges: %q", block)
 	}
-	// the test terminal has no colours, so what is checked here is the row the band style is laid
-	// over: full width, and marked at the left on every row.
-	for _, line := range lines {
+	for i, line := range lines {
 		if lipgloss.Width(line) != 60 {
-			t.Errorf("the band stops short at %d cells: %q", lipgloss.Width(line), line)
+			t.Errorf("the card stops short at %d cells: %q", lipgloss.Width(line), line)
 		}
-		if !strings.HasPrefix(stripCodes(line), userMark) {
-			t.Errorf("the row does not start at the mark: %q", stripCodes(line))
+		want := "│"
+		switch i {
+		case 0:
+			want = promptTop
+		case len(lines) - 1:
+			want = "╰"
 		}
+		if !strings.HasPrefix(line, want) {
+			t.Errorf("row %d does not start with %q: %q", i, want, line)
+		}
+	}
+	if !strings.Contains(lines[0], clock(time.Now())) {
+		t.Errorf("the card's top edge does not say when it was asked: %q", lines[0])
 	}
 }
 
@@ -232,7 +248,7 @@ func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
 		if !strings.Contains(stripCodes(want.row), want.mark) {
 			t.Errorf("%s lacks its mark %q: %q", what, want.mark, stripCodes(want.row))
 		}
-		if strings.Contains(want.row, "48;") || strings.Contains(want.row, "\x1b[7m") {
+		if paintedBehind.MatchString(want.row) || strings.Contains(want.row, "\x1b[7m") {
 			t.Errorf("%s is painted behind its words: %q", what, want.row)
 		}
 	}
@@ -273,7 +289,7 @@ func TestAMessageSitsInsideTheMargins(t *testing.T) {
 	log.notice("the model asked for the same read again")
 
 	rows := log.rows(80)
-	if ask := rows[log.rowStart[0]]; !strings.HasPrefix(ask, userMark) || lipgloss.Width(ask) != 80 {
+	if ask := rows[log.rowStart[0]]; !strings.HasPrefix(stripCodes(ask), promptTop) || lipgloss.Width(ask) != 80 {
 		t.Errorf("the ask does not keep the whole width: %q", stripCodes(ask))
 	}
 	for _, i := range []int{1, 2, 3, 4} {
@@ -285,8 +301,8 @@ func TestAMessageSitsInsideTheMargins(t *testing.T) {
 			t.Errorf("a message row reaches %d of the 80 columns: %q", got, stripCodes(row))
 		}
 	}
-	if answer := stripCodes(rows[log.rowStart[1]]); strings.HasPrefix(answer, userMark) {
-		t.Errorf("an answer is drawn as a band: %q", answer)
+	if answer := stripCodes(rows[log.rowStart[1]]); strings.HasPrefix(answer, promptTop) {
+		t.Errorf("an answer is drawn as a prompt card: %q", answer)
 	}
 }
 
@@ -311,4 +327,33 @@ func TestAMarginNeverPushesARowPastANarrowScreen(t *testing.T) {
 // the failure drawn under it.
 func callRow(log *transcript, at int) string {
 	return log.rows(60)[log.rowStart[at]]
+}
+
+// squeezed is a row with its runs of spaces made one, for a check about words rather than columns.
+func squeezed(row string) string {
+	lines := strings.Split(row, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Join(strings.Fields(line), " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// a card is exactly as wide as asked, its label in the top edge, and a screen too narrow for the
+// frame gets the text alone rather than a broken frame
+func TestACardFramesItsRowsAtTheWidthAsked(t *testing.T) {
+	rows := card("you", "08:31", []string{"one", "two"}, 30)
+	if len(rows) != 4 || !strings.HasSuffix(stripCodes(rows[0]), " 08:31 ─╮") {
+		t.Fatalf("card rows: %q", rows)
+	}
+	for _, row := range rows {
+		if lipgloss.Width(row) != 30 {
+			t.Errorf("a row is %d wide, want 30: %q", lipgloss.Width(row), stripCodes(row))
+		}
+	}
+	if narrow := card("you", "", []string{"x"}, 3); len(narrow) != 1 || narrow[0] != "x" {
+		t.Errorf("a 3-column card: %q", narrow)
+	}
+	if tight := card("you", "a label far too long for this card", []string{"x"}, 12); lipgloss.Width(tight[0]) != 12 {
+		t.Errorf("a label that does not fit pushed the edge to %d columns: %q", lipgloss.Width(tight[0]), stripCodes(tight[0]))
+	}
 }

@@ -64,7 +64,3 @@ func (m *model) View() string {
 	// every row of both again to find that out
 	return strings.Repeat("\n", topRows) + m.view.view() + "\n" + m.screenBottom()
 }
-
-func rule(width int) string {
-	return styleDim.Render(strings.Repeat("─", max(width, 0)))
-}

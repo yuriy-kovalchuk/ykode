@@ -39,7 +39,7 @@ func TestACarriedOverCallNamesItsFileFromTheProject(t *testing.T) {
 			row = line
 		}
 	}
-	if !strings.Contains(row, "read_file src/parser.go") {
+	if !strings.Contains(squeezed(row), "read_file src/parser.go") {
 		t.Errorf("the row does not name the file from the project: %q", row)
 	}
 	if strings.Contains(row, "/home/dev/") {
@@ -91,7 +91,7 @@ func TestAReplayedFoldIsDrawnAsAFold(t *testing.T) {
 	if !strings.Contains(out, "the older turns, folded into this") || !strings.Contains(out, "folded into this") {
 		t.Errorf("the recap of a saved fold is not drawn as a recap:\n%s", out)
 	}
-	if strings.Contains(out, userMark) {
+	if strings.Contains(out, promptTop) {
 		t.Errorf("the recap is drawn as a prompt:\n%s", out)
 	}
 }

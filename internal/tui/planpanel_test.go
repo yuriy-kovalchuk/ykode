@@ -183,7 +183,7 @@ func TestAPlanCallIsOneRowSayingHowFarItGot(t *testing.T) {
 	args := `{"steps":[{"text":"read","status":"done"},{"text":"build the panel","status":"active"},{"text":"test"}]}`
 	log.toolStart("plan", args)
 	log.toolEnd("plan", args, "plan 1/3\n[x] read\n[*] build the panel\n[ ] test")
-	row := stripCodes(log.render(100))
+	row := squeezed(stripCodes(log.render(100)))
 	if !strings.Contains(row, "plan 1/3 steps · build the panel") || strings.Contains(row, "plan plan") || strings.Count(row, "\n") != 0 {
 		t.Errorf("the plan row is %q", row)
 	}

@@ -115,8 +115,8 @@ func TestTheReportSitsUnderThePrompt(t *testing.T) {
 	if project < prompt || costs != project+1 {
 		t.Errorf("the report is not two rows under the prompt:\n%s", strings.Join(rows, "\n"))
 	}
-	if rows[project-1] != "" {
-		t.Errorf("no row of air between the prompt and what it reports:\n%s", strings.Join(rows, "\n"))
+	if !strings.HasPrefix(rows[project-1], "╰") {
+		t.Errorf("the prompt's card is not closed above what it reports:\n%s", strings.Join(rows, "\n"))
 	}
 	if costs != len(rows)-2 { // the last row is the gap under the cursor
 		t.Errorf("the report is not the last thing on the screen:\n%s", strings.Join(rows, "\n"))

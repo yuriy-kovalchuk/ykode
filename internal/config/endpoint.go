@@ -15,6 +15,7 @@ import (
 // keys survive. It answers the file it wrote and whether that was the project's own.
 func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 	path, local := SettingsTarget(root)
+	wasAccepted := local && localAccepted(root)
 	doc, err := readSettingsDoc(path)
 	if err != nil {
 		return path, local, err
@@ -31,7 +32,7 @@ func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 		return path, local, err
 	}
 	if local {
-		if err := trustWritten(root, "base_url", "api_key", "model"); err != nil {
+		if err := trustWritten(root, wasAccepted, "base_url", "api_key", "model"); err != nil {
 			return path, local, err
 		}
 	}

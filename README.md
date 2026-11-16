@@ -131,21 +131,25 @@ The commands of `In the session` work there too, except
 that `/reset` and `/compact` wait for the running turn rather than
 racing it.
 
-The box a prompt is typed in grows with what is typed, to ten rows, and past that scrolls the text
-inside itself; a long prompt therefore keeps the rows it wraps over on the screen. What was asked
-stands in a band across the whole width, so a prompt reads apart from an answer even when it runs
-over several rows. Everything else — the answer, the thinking, a call and what it changed, notices —
+The box a prompt is typed in sits in a rounded card and grows with what is typed, to ten rows, and
+past that scrolls the text inside itself; a long prompt therefore keeps the rows it wraps over on the
+screen. Its top edge says where a reader who scrolled up stands. What was asked sits in a card of its
+own across the whole width, `you` and the hour in its top edge, so a prompt reads apart from an answer
+even when it runs over several rows. Thinking runs behind a violet gutter, each call sits on a pink
+rail with the tools' names lined up in a column, and a finished prompt closes with `╰ ✓ done in 42s`.
+The colours are ykode's own, a dark and a light shade of each picked from the terminal's background;
+a terminal without truecolor gets the nearest it has. Everything else — the answer, the thinking, a call and what it changed, notices —
 is read inside a margin: two columns clear of the left edge and one held back from the right, so the
 nesting of an answer, its code and its changes stays visible and nothing sits against the terminal's
 border. The session also starts one row below the top edge.
 
 The footer is two rows. The first names where the session runs on the left — the project root and the
-branch checked out there, written from `$HOME`, as `~/Developer/ykode (main)` — and on the right the
-model and how deeply it thinks (`· high`, or `· thinking off`). The second has what the conversation
+branch checked out there, written from `$HOME`, as `◆ ~/Developer/ykode (main)` — and on the right the
+model and how deeply it thinks (`· ✦ high`, or `· thinking off`). The second has what the conversation
 has cost on the left: `↑` prompt tokens, `↓` generated, and `R` of them served from the server's cache,
 all three summed over the whole session; then `cache %` for what the last request found already cached,
 `draft %` where the server ran a draft model (how much of the last reply's speculation the real model
-kept), and last how full the window is, `ctx used/total %`. A screen too narrow for all of it drops the totals first and
+kept), and last how full the window is, as a bar and in numbers: `▰▰▰▱▱▱▱▱ ctx used/total %`. A screen too narrow for all of it drops the totals first and
 keeps the window. What is happening now sits on the right of that row: the running prompt's clock
 (`✓ done in 51s` once it finishes) and, beside it, what that ask had to do to fit the conversation in —
 `summarising older turns`, `folded 12 older turns`, `dropped 3 older messages` — said while it

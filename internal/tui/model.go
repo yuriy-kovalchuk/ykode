@@ -169,7 +169,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.input.SetWidth(m.width - lipgloss.Width(promptMark))
+		m.input.SetWidth(m.width - lipgloss.Width(promptMark) - boxEdges*2) // inside the card's sides
 		m.refresh()
 		return m, nil
 	case eventMsg:

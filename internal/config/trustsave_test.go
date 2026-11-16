@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -98,5 +100,41 @@ func TestAcceptingAProjectFileIsWhatLetsItsKeysTake(t *testing.T) {
 	}
 	if len(after.HeldKeys) != 0 || !after.AssumeYes {
 		t.Errorf("after accepting: held %v assume_yes %v, want the key applied", after.HeldKeys, after.AssumeYes)
+	}
+}
+
+// A file the user accepted stays accepted when they change one of its keys through the screen. It used to
+// lose its acceptance whenever it also held another safety key the change did not write: the reload then
+// held every safety key back, so assume_yes could never be switched on, and base_url went with it.
+func TestASwitchInAnAcceptedProjectFileTakesAndKeepsTheFileAccepted(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".ykode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	own := "base_url: http://gpu.local:9/v1\nmodel: qwen\nassume_yes: false\n"
+	if err := os.WriteFile(LocalSettings(root), []byte(own), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(own))
+	if err := TrustProject(root, hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []bool{true, false, true} {
+		value := "false"
+		if want {
+			value = "true"
+		}
+		if _, _, err := Set(root, "assume_yes", value); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load([]string{"--root", root})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.AssumeYes != want || len(cfg.HeldKeys) != 0 || cfg.BaseURL != "http://gpu.local:9/v1" {
+			t.Fatalf("after assume_yes=%s: assume_yes %v, held %v, base_url %q", value, cfg.AssumeYes, cfg.HeldKeys, cfg.BaseURL)
+		}
 	}
 }

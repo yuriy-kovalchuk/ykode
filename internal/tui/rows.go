@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -58,7 +57,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 	inner := max(width-lipgloss.Width(messageLead)-messageRight, 1)
 	switch e.who {
 	case whoUser:
-		return append(promptRows(*e, width), "") // the band: edge to edge
+		return append(promptRows(*e, width), "") // the card: edge to edge
 	case whoAnswer:
 		return append(e.laid.draw(e.text, inner, messageLead), "")
 	case whoSummary:
@@ -73,7 +72,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 	case whoOutput:
 		rows = append(indent(wrapKept(e.text, max(inner-2, 1)), "  "), "")
 	case whoDone:
-		rows = []string{styleDim.Render(fmt.Sprintf("  %s · %s", clock(e.at), duration(e.took))), ""}
+		rows = []string{styleOK.Render("╰ ✓ ") + styleBold.Render("done in "+duration(e.took)) + styleDim.Render(" · "+clock(e.at)), ""}
 	case whoNotice:
 		for _, row := range wrap(oneLine(e.text, noticeChars), max(inner-2, 1)) {
 			rows = append(rows, styleDim.Render("· "+row))
@@ -98,25 +97,15 @@ func thinkingRow(row string) string {
 	return messageLead + gutterMark() + styleThink.Render(row)
 }
 
-// promptRows is what was asked, as a band across the whole screen: the ask then reads apart
-// from the answer even when it runs over several lines.
+// promptRows is what was asked, as a card across the whole screen: the ask then reads apart from the
+// answer even when it runs over several lines. An ask carried over from an earlier run has no hour.
 func promptRows(e entry, width int) []string {
-	when := clock(e.at) // an ask carried over from an earlier run has no hour to show
-	lines := wrap(strings.TrimSpace(e.text), width-promptEdge)
-	if when != "" {
-		lines[len(lines)-1] = rightAligned(lines[len(lines)-1], when, width-promptEdge)
+	when := ""
+	if at := clock(e.at); at != "" {
+		when = styleDim.Render(at)
 	}
-	for i, line := range lines {
-		lines[i] = styleUserLine.Render(padTo(userMark+" "+line, width))
-	}
-	return lines
+	return card(styleAccent.Render("you"), when, wrap(strings.TrimSpace(e.text), max(width-4, 1)), width)
 }
-
-// promptEdge and userMark are the band's left edge: the mark and the space after it.
-const (
-	promptEdge = 2
-	userMark   = "▌"
-)
 
 // toolRow is one call on one row, with no ground behind it: the mark at its left carries the state
 // (a coloured glyph is read before the words are, and a whole row of green or red is noise), the tool's
@@ -135,10 +124,14 @@ func toolRow(e entry, width int) string {
 
 // callHead is a call's one row: its mark, its name, and a note cut so the row never wraps.
 func callHead(mark string, ink lipgloss.Style, tool, note string, width int) string {
-	room := max(width-toolRowMark-lipgloss.Width(tool), toolRowArgs)
+	name := padTo(tool, toolNameWidth)
+	room := max(width-toolRowMark-lipgloss.Width(name), toolRowArgs)
 	note = cutToWidth(oneLine(note, noticeChars), room)
-	return "  " + ink.Render(mark) + " " + styleBold.Render(tool) + " " + styleDim.Render(note)
+	return styleRail.Render("┃") + " " + ink.Render(mark) + " " + styleBold.Render(name) + " " + styleDim.Render(note)
 }
+
+// toolNameWidth lines the tools' names up in a column: the longest one ykode has, exec_command.
+const toolNameWidth = 12
 
 // draftRows is a call being written: its head, then the newest lines of what it writes.
 func draftRows(d draft, root string, width int) []string {
@@ -151,4 +144,4 @@ func draftRows(d draft, root string, width int) []string {
 }
 
 // gutterMark leads a row that is not the answer, such as thinking or a call's preview.
-func gutterMark() string { return styleDim.Render("  ┊ ") }
+func gutterMark() string { return styleGutter.Render("│ ") }
