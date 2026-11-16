@@ -36,12 +36,9 @@ type Agent struct {
 	history         []llm.Message
 	histBytes       int // the conversation's bytes, kept as it changes: the estimate runs on every call
 	histCount       int // how many messages that total was measured over, so a stale total is caught
-	seenThrough     int // how far the history has reached the model: a result past it was never read
 	meter           meter
 	specBytes       int         // what the tool list costs every request, counted once
 	savedRatio      float64     // the byte ratio the session log last heard of
-	sincePlan       int         // tool calls since the model last touched its plan
-	planReminded    bool        // the stale-plan line has been said for this plan already
 	usageMu         sync.Mutex  // the numbers a front end reads while a turn runs elsewhere
 	report          Usage       // what the conversation cost as of the last finished turn
 	work            contextWork // what this ask had to do to fit the conversation in, for a front end to say so
@@ -87,7 +84,6 @@ func (a *Agent) Reset() {
 func (a *Agent) startOver() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.recountBytes()
-	a.seenThrough = len(a.history) // only the prompt is there, and it is not sent as a turn
 	a.meter.clearCost()
 	a.compactedAt = -1
 	a.readFiles, a.modifiedFiles = nil, nil
@@ -143,7 +139,6 @@ func (a *Agent) Learned(bytesPerTok float64) {
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
 	a.recountBytes()
-	a.seenThrough = len(a.history) // the run that wrote these sent them to its model
 	// the new calls continue the saved numbering, or a fresh result would take an id that recall
 	// already points at, and the store would answer with someone else's output
 	a.callSeq = highestCallID(a.history)
@@ -203,14 +198,3 @@ func (a *Agent) turnNo() int { return int(a.turn.Load()) }
 func (a *Agent) note(text string) {
 	a.add(llm.Message{Role: "assistant", Content: text})
 }
-
-// modelNote answers the model in the user's voice: a request whose last line is an assistant
-// message is continued by the server as prefill instead of answered.
-func (a *Agent) modelNote(text string) {
-	a.add(llm.Message{Role: "user", Content: NoteMark + text})
-}
-
-// NoteMark opens a message ykode wrote to the model in the user's place. Without it the model takes
-// the note for something the user typed - and a model reading this very repository has answered one
-// as "a string from your own codebase, a slip" and carried on as if nothing had been said.
-const NoteMark = "[ykode, the program running this session, not the user] "

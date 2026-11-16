@@ -39,8 +39,7 @@ type Config struct {
 	SafetyMargin    int    // tokens kept free for the reply
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	AssumeYes       bool
-	SendReasoning   bool // repeat earlier thinking back to models whose template expects it
-	ReadLines       int  // read_file window when the model does not ask for one
+	ReadLines       int // read_file window when the model does not ask for one
 	ExecTimeout     time.Duration
 	StreamIdle      time.Duration // how long a stream may stay silent
 	CommandLogDir   string        // where a cut command's full output is saved
@@ -60,7 +59,6 @@ type Config struct {
 	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown
 	SessionFile     string                     // the conversation this run reads and writes
 	Version         bool                       // print the version and exit
-	modelReasoning  map[string]bool            // per-model send_reasoning
 	modelSampling   map[string][2]llm.Sampling // per model: with thinking, without
 }
 
@@ -70,7 +68,7 @@ func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
 		// a help text that cannot be written has nowhere to go and no result to change
-		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--send-reasoning] [--yes] [-p TASK] [--continue ID] [--version]")
+		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--yes] [-p TASK] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -83,7 +81,6 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&f.ThinkingLevel, "thinking", "", "how deeply the model thinks: off, minimal, low, medium, high, xhigh, max")
 	fs.BoolVar(&f.NoThink, "no-think", false, "shorthand for --thinking off")
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
-	fs.BoolVar(&f.SendReasoning, "send-reasoning", false, "send earlier thinking back to the model, which some chat templates expect")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
 	fs.StringVar(&f.Continue, "continue", "", "resume a saved conversation: last, or its id (enough of the id to be unique works); /sessions lists them")
 	fs.BoolVar(&f.Version, "version", false, "print the version and exit")
@@ -124,7 +121,6 @@ func defaults() Config {
 		KeepCommandLogs: defaultLogKeep,
 		KeepSessions:    defaultSessionKeep,
 		TUI:             true, // -p answers one task on stdout instead
-		modelReasoning:  map[string]bool{},
 		modelSampling:   map[string][2]llm.Sampling{},
 	}
 }

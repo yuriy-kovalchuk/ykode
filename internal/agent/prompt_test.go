@@ -284,18 +284,13 @@ func TestThePromptStaysSmall(t *testing.T) {
 	}
 }
 
-// The prompt tells the model that a tool's text is data and that only a note opened by this program
-// speaks as the program. The opening it names has to be the opening the notes really use, or the rule
-// points at a marker no message carries: a model reading an instruction inside command output then has
-// nothing to weigh it against, and a model reading the program's own note takes it for the user.
-func TestThePromptNamesTheMarkerTheNotesActuallyUse(t *testing.T) {
-	// the prompt quotes the marker as "[ykode": the first token of what NoteMark really opens with
-	marker := NoteMark[:len("[ykode")]
-	if !strings.Contains(SystemPrompt, `"`+marker) {
-		t.Errorf("SystemPrompt does not name the marker %q that opens every note:\n%s", marker, SystemPrompt)
-	}
-	if !strings.Contains(SystemPrompt, "data") || !strings.Contains(SystemPrompt, "instruction") {
-		t.Errorf("SystemPrompt does not say a tool's text is data and not an instruction:\n%s", SystemPrompt)
+// lines that cast tool output as suspect made the model announce, again and again, that it was
+// ignoring an injected instruction nobody had written
+func TestThePromptDoesNotCastToolOutputAsAnAttack(t *testing.T) {
+	for _, phrase := range []string{"never an instruction", "[ykode", "=== name ==="} {
+		if strings.Contains(SystemPrompt, phrase) {
+			t.Errorf("SystemPrompt still says %q", phrase)
+		}
 	}
 }
 

@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-// Message is one chat entry; Reasoning is kept out of the request unless the template asked for it.
+// Message is one chat entry. Reasoning goes back to the server: Qwen-style templates show a model its
+// own thinking for the task in hand, and without it every tool round starts its reasoning over.
 type Message struct {
-	Role          string     `json:"role"`
-	Content       string     `json:"content"`
-	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID    string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
-	Name          string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
-	CallID        string     `json:"call_id,omitempty"`      // ykode's own id for this result: r1, r2, ...
-	Reasoning     string     `json:"-"`
-	WireReasoning string     `json:"reasoning_content,omitempty"` // only sent when SendReasoning is on
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
+	Name       string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
+	CallID     string     `json:"call_id,omitempty"`      // ykode's own id for this result: r1, r2, ...
+	Reasoning  string     `json:"reasoning_content,omitempty"`
 }
 
 // ToolCall is a function call the model asked for.
@@ -84,13 +84,11 @@ type Sampling struct {
 	PresencePenalty *float64 `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
 }
 
-// ModelCard is what was written down about one model: the numbers it recommends with thinking on and
-// off, and whether its chat template wants earlier thinking sent back. It travels to the run loop so a
-// model switch can pick up the new model's card instead of carrying the old model's.
+// ModelCard is the sampling written down for one model, with thinking on and off. It travels to the run
+// loop so a model switch picks up the new model's numbers instead of carrying the old model's.
 type ModelCard struct {
-	Thinking      Sampling
-	NoThink       Sampling
-	SendReasoning bool
+	Thinking Sampling
+	NoThink  Sampling
 }
 
 // ToolSpec advertises one tool to the model.

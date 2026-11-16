@@ -52,15 +52,17 @@ var factSep = styleDim.Render(" · ")
 
 // sessionLine is the footer's top row: where the session runs, and which model and depth answer.
 func sessionLine(s status) string {
-	where := shortenHome(s.root)
+	branch := ""
 	if s.branch != "" {
-		where += " (" + s.branch + ")"
+		branch = " (" + s.branch + ")"
 	}
+	// the path is cut, never the branch: the branch is the part of this row that changes
+	where := oneLine(shortenHome(s.root), max(rootRoom-lipgloss.Width(branch), 1)) + branch
 	depth := s.thinking
 	if depth == llm.ThinkingOff {
 		depth = "thinking off"
 	}
-	return align([]string{styleDim.Render(oneLine(where, rootRoom))},
+	return align([]string{styleDim.Render(where)},
 		[]string{styleAccent.Render(oneLine(s.model, modelRoom)), styleDim.Render(depth)}, s.width)
 }
 

@@ -67,16 +67,12 @@ func TestASwitchPicksUpTheModelItIsSwitchingTo(t *testing.T) {
 		CtxSize:  1000,
 		Thinking: llm.Sampling{Temperature: sp(0.2)},
 		Cards: map[string]llm.ModelCard{
-			"small": {Thinking: llm.Sampling{Temperature: sp(0.9)}, SendReasoning: true},
+			"small": {Thinking: llm.Sampling{Temperature: sp(0.9)}},
 		},
 	})
-	before := a.opts.SendReasoning
 	a.Command(context.Background(), "/model small")
 	if got := a.opts.Thinking.Temperature; got == nil || *got != 0.9 {
 		t.Errorf("after /model small the sampling sent is %+v, want the temperature that model's card recommends", a.opts.Thinking)
-	}
-	if a.opts.SendReasoning == before {
-		t.Errorf("send_reasoning for the new model was not taken: still %v", a.opts.SendReasoning)
 	}
 	// a model nothing was written about keeps what is in use: nothing is known about it, and the
 	// server's own default is not necessarily what had been working
@@ -100,3 +96,14 @@ func TestAModelOffTheListKeepsTheWindowAndSaysSo(t *testing.T) {
 }
 
 func sp(v float64) *float64 { return &v }
+
+// a run that started with no window known still keeps recent work in a fold once a switch gives it one
+func TestASwitchToAKnownWindowSetsWhatAFoldKeeps(t *testing.T) {
+	a := New(nil, nil, "test-model", Options{}, nil)
+	if !a.SetEndpoint(nil, "big", 100000) {
+		t.Fatal("the switch was refused between turns")
+	}
+	if got := a.opts.KeepRecentTokens; got != KeepRecentTokens(100000) || got == 0 {
+		t.Errorf("KeepRecentTokens = %d after switching to a 100000 window", got)
+	}
+}

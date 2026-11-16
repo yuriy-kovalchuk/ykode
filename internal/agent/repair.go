@@ -27,20 +27,9 @@ func repair(msg llm.Message) llm.Message {
 	return msg
 }
 
-// toolCallsRunnable reports whether every call has complete arguments.
-func toolCallsRunnable(calls []llm.ToolCall) bool {
-	for _, c := range calls {
-		if _, err := c.Function.ArgsJSON(); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
 // storable returns a copy whose call arguments are whole JSON. A reply cut off at max_tokens carries
 // half a JSON document as raw bytes, and those bytes fail the encoder that writes the session log: the
-// conversation stops being saved from that point on. The copy keeps the original for toolCallsRunnable,
-// which must still see that the call was cut.
+// conversation stops being saved from that point on.
 func storable(m llm.Message) llm.Message {
 	if len(m.ToolCalls) == 0 {
 		return m

@@ -51,9 +51,8 @@ type fileSettings struct {
 		Allow []string `yaml:"allow,omitempty"`
 	} `yaml:"permissions,omitempty"`
 	Models map[string]struct {
-		SendReasoning *bool         `yaml:"send_reasoning,omitempty"`
-		Thinking      *llm.Sampling `yaml:"thinking,omitempty"`
-		NoThink       *llm.Sampling `yaml:"no_think,omitempty"`
+		Thinking *llm.Sampling `yaml:"thinking,omitempty"`
+		NoThink  *llm.Sampling `yaml:"no_think,omitempty"`
 	} `yaml:"models,omitempty"`
 }
 
@@ -284,7 +283,6 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 		c.Allow = append(c.Allow, s.Permissions.Allow...)
 	}
 	for model, ms := range s.Models {
-		c.modelReasoning[model] = ms.SendReasoning != nil && *ms.SendReasoning
 		c.modelSampling[model] = [2]llm.Sampling{deref(ms.Thinking), deref(ms.NoThink)}
 	}
 	return nil

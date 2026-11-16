@@ -46,6 +46,15 @@ func TestTheSessionLineNamesTheProjectTheModelAndTheDepth(t *testing.T) {
 	}
 }
 
+// a long path is what gets cut: the branch after it is the part that changes, so it always shows
+func TestALongPathIsCutBeforeTheBranch(t *testing.T) {
+	root := "/var/folders/45/4pk739kn7434g1zm6c_r123m0000gn/T/w217023357/side"
+	row := stripCodes(sessionLine(status{root: root, branch: "elsewhere", model: "m", thinking: "high", width: 120}))
+	if !strings.Contains(row, "(elsewhere)") {
+		t.Errorf("the branch was cut off a long path: %q", row)
+	}
+}
+
 // a path under the user's home is short enough to sit beside the branch and the model
 func TestTheSessionsPathIsWrittenFromHome(t *testing.T) {
 	home, err := os.UserHomeDir()

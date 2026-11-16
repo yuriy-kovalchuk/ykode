@@ -54,7 +54,6 @@ func TestLoadDefaults(t *testing.T) {
 	cfg.SessionDir = ""    // derived from $YKODE_HOME
 	cfg.SessionFile = ""   // derived from $YKODE_HOME and the run time
 	cfg.Session = ""       // derived from the run time
-	cfg.modelReasoning = nil
 	cfg.modelSampling = nil
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg = %+v, want %+v", cfg, want)
@@ -199,23 +198,6 @@ func TestTheApiKeyComesFromTheEnvOrTheFlag(t *testing.T) {
 	}
 }
 
-func TestTheReasoningSwitch(t *testing.T) {
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SendReasoning {
-		t.Fatal("thinking is not sent back unless asked")
-	}
-	cfg, err = Load([]string{"--send-reasoning"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.SendReasoning {
-		t.Fatal("--send-reasoning did not flip the switch")
-	}
-}
-
 func TestTheOneShotFlags(t *testing.T) {
 	cfg, err := Load([]string{"-p", "fix the flaky test"})
 	if err != nil {
@@ -333,14 +315,14 @@ func TestTwoRunsInTheSameSecondGetTheirOwnConversation(t *testing.T) {
 func TestEveryFlagReachesItsSetting(t *testing.T) {
 	tempHome(t)
 	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
-		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes", "--send-reasoning",
+		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes",
 		"-p", "task", "--version"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
 		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes ||
-		!cfg.SendReasoning || cfg.Prompt != "task" || !cfg.Version {
+		cfg.Prompt != "task" || !cfg.Version {
 		t.Errorf("flags did not all land: %+v", cfg)
 	}
 	off, err := Load([]string{"--yes=false", "--no-think=false"})

@@ -40,7 +40,7 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 		"thinking_level": "off",
 		"max_tokens": 2048, "context": {"safety_margin": 512},
 		"tools": {"read_lines": 120, "search_limit": 20, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
-		"models": {"qwen": {"send_reasoning": true}}
+		"models": {"qwen": {"thinking": {"temperature": 0.6}}}
 	}`)
 
 	cfg, err := Load(nil)
@@ -59,8 +59,11 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	if cfg.ReadLines != 120 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
 		t.Fatalf("tool settings = %+v", cfg)
 	}
-	if !cfg.SendReasoningFor("qwen") || cfg.SendReasoningFor("other") {
-		t.Fatal("send_reasoning must be per model")
+	if qwen, _ := cfg.SamplingFor("qwen"); qwen.Temperature == nil || *qwen.Temperature != 0.6 {
+		t.Fatal("the model's sampling was not read")
+	}
+	if other, _ := cfg.SamplingFor("other"); other.Temperature != nil {
+		t.Fatal("sampling must be per model")
 	}
 	if cfg.CommandLogDir != filepath.Join(user, "logs") {
 		t.Fatalf("command log dir = %q, want it under YKODE_HOME", cfg.CommandLogDir)
@@ -323,7 +326,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 		"max_turns": 9, "max_tokens": 700, "thinking_level": "off", "verify": false,
 		"context": {"safety_margin": 99},
 		"tools": {"read_lines": 40, "search_limit": 11, "exec_timeout_sec": 90},
-		"models": {"qwen": {"send_reasoning": true}}
+		"models": {"qwen": {"thinking": {"temperature": 0.6}}}
 	}`)
 
 	cfg, err := Load([]string{"--root", root})
@@ -335,7 +338,7 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 	}
 	if cfg.MaxTurns != 9 || cfg.MaxTokens != 700 || cfg.SafetyMargin != 99 || cfg.ReadLines != 40 ||
 		cfg.ExecTimeout != 90*time.Second || cfg.ThinkingLevel != "off" ||
-		!cfg.SendReasoningFor("qwen") {
+		cfg.Cards()["qwen"].Thinking.Temperature == nil {
 		t.Errorf("project settings = %+v", cfg)
 	}
 }

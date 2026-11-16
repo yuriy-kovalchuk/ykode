@@ -377,7 +377,7 @@ func (m *model) applyLive(before, now config.Config) {
 		// use has a card, which is what it had at start-up anyway
 		o.Cards = now.Cards()
 		if card, known := o.Cards[m.agent.Model()]; known {
-			o.Thinking, o.NoThink, o.SendReasoning = card.Thinking, card.NoThink, card.SendReasoning
+			o.Thinking, o.NoThink = card.Thinking, card.NoThink
 		}
 	})
 }

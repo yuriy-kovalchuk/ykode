@@ -41,7 +41,6 @@ make run ARGS="--base-url https://host/v1 --model Qwen3.6-35B-A3B-GSQ-hybrid"
 | `--thinking LEVEL` | — | `medium` | how deeply the model thinks: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--no-think` | — | thinking on | shorthand for `--thinking off` |
 | `--yes` | — | off | skip in-project confirmations |
-| `--send-reasoning` | — | off | send earlier thinking back to the model, which some chat templates expect |
 | `-p TASK` | — | — | answer one task and exit; the answer goes to stdout, so it pipes |
 | `--continue ID` | — | — | resume a saved conversation: `last`, or an id like `s20260102-150405.123` |
 | `--version` | — | — | print the version and exit |
@@ -181,14 +180,13 @@ What streams is drawn at thirty frames a second, however fast the tokens come, a
 for a frame: what it reports is queued and reaches the screen joined. An answer is laid out a block at
 a time, so a frame costs the block being written rather than the answer so far.
 
-A turn carries on until the work is answered, not until a reply happens to end. A reply cut off at
-`max_tokens` - an answer stopped mid-sentence, or thinking that used the whole budget - is asked to go
-on; so is an empty one, and, once, a reply that says what it will do next and then does not do it or
-leaves steps of its plan open. A tool call the model wrote out as text (`<tool_call>…`), which some
-servers do not read back into a call, is run as the call it is when it names a tool ykode has, and its
-markup is never drawn. When a request uses all its tool rounds (`max_turns`, 100 unless set) the
-model is asked where the work stands and the screen says a message will carry it on. What ykode tells
-the model in the user's place is marked as ykode's, so the model does not answer it as the user's.
+A request ends when a reply makes no tool call, as it does in pi: ykode never writes to the model in
+the user's place to keep it going. A reply cut off at `max_tokens` with tool calls has each call
+answered with why it did not run, and the model re-issues them; one cut off without a call ends the
+request, and so does an answer that keeps repeating the same lines. A tool call the model wrote out
+as text (`<tool_call>…`), which some servers do not read back into a call, is run as the call it is
+when it names a tool ykode has, and its markup is never drawn. When a request uses all its tool
+rounds (`max_turns`, 100 unless set) it stops there, and any message carries it on.
 
 For a long task the model keeps a checklist with the `plan` tool: it sends every step each time, each
 pending, active (the one it is on), done or failed, so the list is never half an edit. The screen pins it
@@ -197,9 +195,7 @@ between the transcript and the prompt, where it cannot scroll away: a heading wi
 per step, the active one turning with the spinner while the turn runs. A plan too long for the room shows the
 steps around the active one and counts what it left out; a short terminal, `ctrl+o`, or a plan whose every step
 has an outcome fold it to its heading — `plan ✓ 3/3 done`, or `plan ✗ 2/3` when a step failed, since a plan that
-ended badly is over but did not finish. A model that works on for several calls without touching a plan
-with open steps is reminded of it on the next result it reads, so the list moves with the work
-instead of being ticked off all at once at the end. A plan that is over is dropped when the next prompt starts, so it does
+ended badly is over but did not finish. A plan that is over is dropped when the next prompt starts, so it does
 not sit there for the rest of the session; one with steps still pending or active carries over, which is what a
 stopped turn and a "carry on" leave behind. The plan is kept with the conversation: `/reset` clears it, `--continue` finds it again
 in the newest plan call, and a fold carries it in its recap so the model never loses the list it is working
@@ -312,7 +308,8 @@ what a request costs, are in `/ctx`.
    cost 1500 tokens, or an eighth of the window where the window is smaller: a fold request has to fit
    the window it is making room in, and a fold that would not is refused out loud.
 2. **Drop.** Past 9/10 of the window the emergency brake applies: the oldest messages go, whole — a
-   call together with its replies — until the estimate fits. A fold's recap, the ask being answered and
+   call together with its replies — until a quarter of the window is free below that mark, so the start
+   of the prompt the server caches moves once rather than every round. A fold's recap, the ask being answered and
    the newest call are never dropped. The notice names what went (`dropped 3 older messages to fit the
    context: read_file src/parser.go; exec_command go test ./...; ...`), so a model that needs one of
    them again can ask for it instead of guessing at what it forgot.
@@ -338,8 +335,9 @@ project is only named there, with the command that continues it in its own root.
 The screen opens with the conversation it came back to — the asks, the calls with what they
 answered, and the recap of any fold — and `ctrl+p` still walks the earlier prompts of it.
 
-The model's thinking is saved beside each message and shown again on resume (it is never sent
-back to the server unless `send_reasoning` asks for it).
+The model's thinking is saved beside each message, shown again on resume, and always sent back to the
+server: a Qwen-style template shows the model its own thinking for the task in hand, and without it
+every tool round starts its reasoning over.
 
 A resume reads back what the last run *ended with*: a fold is written to the log with its summary,
 the files it covered, how many messages it took out and what the conversation cost before it, and
@@ -434,7 +432,6 @@ tools:
   keep_command_logs: 24h
 models:
   Qwen3.6-35B-A3B-GSQ-hybrid:
-    send_reasoning: false
     thinking: { temperature: 0.6, top_p: 0.95, top_k: 20, min_p: 0 }
     no_think: { temperature: 0.7, top_p: 0.8, top_k: 20, presence_penalty: 1.5 }
 ```
@@ -445,8 +442,7 @@ when a server sends nothing while it reads a long cold prompt), `max_tokens` is 
 for more than the window has left), `thinking_level` how deeply the model thinks
 (`off` … `max`; each level asks llama.cpp for a thinking budget, and the budget is capped so the answer
 keeps room of its own), `safety_margin` what is kept free beside
-it for the chat template, and `send_reasoning` tells ykode to repeat earlier thinking for a chat template that
-expects it back from tool-calling turns. `thinking` and `no_think` are the sampling a model
+it for the chat template. `thinking` and `no_think` are the sampling a model
 gets with its thinking phase on and off (`temperature`, `top_p`, `top_k`, `min_p`,
 `presence_penalty`); anything left out is the server's default. A server that wants a bearer token takes it from
 `api_key`, or from the variable `api_key_env` names — the second keeps the secret out of

@@ -21,14 +21,17 @@ func (a *Agent) estimateTokens() int {
 }
 
 // makeRoom is the last resort: when the conversation is over the ceiling even after a fold had its
-// turn, the oldest messages go, whole, until it fits.
+// turn, the oldest messages go, whole, until a quarter of the window is free below the ceiling. Dropping
+// only enough for this round moved the start of the prompt every round, and the server read the whole
+// conversation again each time.
 func (a *Agent) makeRoom() {
-	if a.opts.CtxSize <= 0 {
+	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.ceiling() {
 		return
 	}
+	target := a.ceiling() - a.opts.CtxSize/dropShare
 	var gone []string
 	messages := 0
-	for a.estimateTokens() > a.ceiling() {
+	for a.estimateTokens() > target {
 		unit := a.dropOldestUnit()
 		if unit == nil {
 			break
@@ -49,6 +52,9 @@ func (a *Agent) makeRoom() {
 	a.tell(fmt.Sprintf("dropped %s to fit the context: %s",
 		counted(messages, "older message", "older messages"), strings.Join(named, "; ")))
 }
+
+// dropShare is the part of the window one drop frees below the ceiling: one in four.
+const dropShare = 4
 
 // namedDrops is how many of the dropped calls the notice names: enough for the model to see the kind
 // of what went, short enough to read while a request runs.
@@ -91,13 +97,15 @@ func (a *Agent) dropOldestUnit() []llm.Message {
 		for end < tail && a.history[end].Role == "tool" {
 			end++
 		}
+		// the log's positions match only the history as it stands before the drop
+		inStep := a.opts.Session.Count() == len(a.history)-1
 		unit := a.history[i:end]
 		a.history = append(a.history[:i:i], a.history[end:]...)
 		gone := historyBytes(unit)
 		a.histBytes -= gone
 		a.histCount -= len(unit)
 		a.meter.shrinkAnchor(gone) // the count the server gave still stands for what is left
-		a.logDropped(i, end)
+		a.logDropped(i, end, inStep)
 		return unit
 	}
 	return nil
@@ -116,29 +124,21 @@ func (a *Agent) sendingBytes() int {
 	return a.wireSpecBytes() + a.histBytes
 }
 
-// logDropped writes the one line that says a run of messages went, rather than a copy of everything
-// left standing. A trim runs once per message it removes, and each whole copy carries the full text of
-// every file the model read: a session that folds and trims a dozen times carries a dozen copies of
-// itself in a file designed to grow one line at a time. The system prompt sits at history[0] and is
-// never saved, so the message at history index i stands at position i-1. When that mapping cannot be
-// trusted, the conversation is written whole instead: deleting the wrong turns on the way back costs a
-// great deal more than the bytes the partial line saves.
-func (a *Agent) logDropped(from, to int) {
-	// the partial line is only safe while the file holds exactly the conversation in front of us, less
-	// the system prompt: then position i-1 in the file is history[i] and nothing else. Anything that
-	// changed that without saying so falls back to the whole copy, which cannot be wrong.
-	if a.opts.Session.Count() == len(a.history)-1 {
-		if err := a.opts.Session.Dropped(from-1, to-1); err == nil {
-			return
-		}
+// logDropped writes the one line that says history[from:to] went, rather than a copy of everything
+// left standing: each copy carries every file the model read. The system prompt is never saved, so
+// history[i] sits at position i-1 in the log - but only while the log was in step with the history
+// before the drop. Otherwise the conversation is written whole, which cannot delete the wrong turns.
+func (a *Agent) logDropped(from, to int, inStep bool) {
+	if inStep && a.opts.Session.Dropped(from-1, to-1) == nil {
+		return
 	}
 	a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
 }
 
 // messageBytes is what one message costs a request: the fields that go on the wire, which is what the
-// server counts. Reasoning stays home unless SendReasoning copies it into WireReasoning.
+// server counts.
 func messageBytes(m llm.Message) int {
-	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.WireReasoning)
+	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.Reasoning)
 	for _, c := range m.ToolCalls {
 		bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
 	}

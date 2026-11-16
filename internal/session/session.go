@@ -38,28 +38,22 @@ type header struct {
 // format is this program's session format. Lines added to it raise the number.
 const format = 1
 
-// record is a message as the log keeps it: the message the server sees, and beside it the thinking
-// that came with it, which no request carries but a resumed session should still be able to show.
+// record is a message as the log keeps it, with the thinking that came with it beside it.
 type record struct {
 	llm.Message
 	Thinking string `json:"thinking,omitempty"`
-	// Sent says the thinking also goes back to the model, so it is kept once, under thinking,
-	// instead of twice on every assistant line.
-	Sent bool `json:"sent,omitempty"`
 }
 
+// recordOf keeps the thinking once, under thinking, rather than also as the wire's reasoning_content.
 func recordOf(m llm.Message) record {
 	r := record{Message: m, Thinking: m.Reasoning}
-	if m.WireReasoning != "" && m.WireReasoning == m.Reasoning {
-		r.Message.WireReasoning, r.Sent = "", true
-	}
+	r.Message.Reasoning = ""
 	return r
 }
 
 func (r record) message() llm.Message {
-	r.Message.Reasoning = r.Thinking
-	if r.Sent { // an older file carries both fields and needs neither flag
-		r.Message.WireReasoning = r.Thinking
+	if r.Thinking != "" {
+		r.Message.Reasoning = r.Thinking
 	}
 	return r.Message
 }

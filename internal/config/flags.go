@@ -18,7 +18,6 @@ type flagValues struct {
 	ThinkingLevel string
 	NoThink       bool
 	Yes           bool
-	SendReasoning bool
 	Prompt        string
 	Continue      string
 	Version       bool
@@ -37,18 +36,17 @@ func given(fs *flag.FlagSet) map[string]bool {
 // applyFlags applies the flags the user typed; a bool flag only ever switches its setting on (or thinking off).
 func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	setters := map[string]func(){
-		"base-url":       func() { c.BaseURL, c.EndpointSet = f.BaseURL, true },
-		"api-key":        func() { c.APIKey = f.APIKey },
-		"model":          func() { c.Model = f.Model },
-		"max-turns":      func() { c.MaxTurns = f.MaxTurns },
-		"max-tokens":     func() { c.MaxTokens = f.MaxTokens },
-		"ctx":            func() { c.CtxSize = f.CtxSize },
-		"thinking":       func() { c.ThinkingLevel = f.ThinkingLevel },
-		"yes":            func() { c.AssumeYes = c.AssumeYes || f.Yes },
-		"send-reasoning": func() { c.SendReasoning = c.SendReasoning || f.SendReasoning },
-		"p":              func() { c.Prompt = f.Prompt },
-		"continue":       func() { c.Continue = f.Continue },
-		"version":        func() { c.Version = f.Version },
+		"base-url":   func() { c.BaseURL, c.EndpointSet = f.BaseURL, true },
+		"api-key":    func() { c.APIKey = f.APIKey },
+		"model":      func() { c.Model = f.Model },
+		"max-turns":  func() { c.MaxTurns = f.MaxTurns },
+		"max-tokens": func() { c.MaxTokens = f.MaxTokens },
+		"ctx":        func() { c.CtxSize = f.CtxSize },
+		"thinking":   func() { c.ThinkingLevel = f.ThinkingLevel },
+		"yes":        func() { c.AssumeYes = c.AssumeYes || f.Yes },
+		"p":          func() { c.Prompt = f.Prompt },
+		"continue":   func() { c.Continue = f.Continue },
+		"version":    func() { c.Version = f.Version },
 	}
 	for name := range set {
 		if apply, ok := setters[name]; ok {

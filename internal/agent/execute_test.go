@@ -30,8 +30,8 @@ func TestTruncatedToolCallIsNotRun(t *testing.T) {
 	}
 	next := stub.requests[1]["messages"].([]any)
 	last := next[len(next)-1].(map[string]any)
-	if last["role"] != "user" || !strings.Contains(fmt.Sprint(last["content"]), "cut off") {
-		t.Fatalf("the model was never told its reply was cut off, or was told in the wrong voice: %v", last)
+	if last["role"] != "tool" || !strings.Contains(fmt.Sprint(last["content"]), "cut off") {
+		t.Fatalf("the cut call was not answered with why it did not run: %v", last)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestARequestAfterACutOffTurnDoesNotEndWithAnAssistantLine(t *testing.T) {
 	}
 	messages := stub.requests[1]["messages"].([]any)
 	last := messages[len(messages)-1].(map[string]any)
-	if last["role"] != "user" {
+	if last["role"] == "assistant" {
 		t.Errorf("the retry request ends with role %v: a server sees that as its own unfinished reply and continues it\n%v",
 			last["role"], last["content"])
 	}

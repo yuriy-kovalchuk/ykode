@@ -207,7 +207,7 @@ func (a *Agent) summarise(ctx context.Context, start int) (string, error) {
 			return "", fmt.Errorf("they are larger than the window")
 		}
 	}
-	messages := append(append([]llm.Message{}, prefix...), llm.Message{Role: "user", Content: NoteMark + compactPrompt})
+	messages := append(append([]llm.Message{}, prefix...), llm.Message{Role: "user", Content: compactPrompt})
 	var why error
 	// first exactly as a normal request, so the cached prefix matches; then with tools refused, for a
 	// model that answered the first one with a call

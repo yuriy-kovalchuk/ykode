@@ -269,8 +269,8 @@ func TestThinkingAndAFoldSurviveAResume(t *testing.T) {
 	if err != nil || len(got) != 2 || got[1].Reasoning != "then b.go" {
 		t.Fatalf("after the fold: %+v, %v", got, err)
 	}
-	if strings.Contains(string(mustJSON(got[1])), "then b.go") {
-		t.Error("thinking leaked into the message a request would carry")
+	if !strings.Contains(string(mustJSON(got[1])), `"reasoning_content":"then b.go"`) {
+		t.Error("the thinking does not go back to the model after a resume")
 	}
 }
 
@@ -382,18 +382,15 @@ func TestReadingASavedConversationWritesNothing(t *testing.T) {
 	}
 }
 
-// thinking that goes back to the model is one text, not two: it is written once and put back in
-// both places when the conversation is read again
-func TestThinkingSentBackToTheModelIsStoredOnce(t *testing.T) {
+// thinking is written once on a line, and comes back as the thinking the model is sent
+func TestThinkingIsStoredOnceAndComesBack(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-000000.jsonl")
 	log := New(dir, "s20260101-000000", "/work")
-	if err := log.Append(llm.Message{Role: "assistant", Content: "answer",
-		Reasoning: "thought it through", WireReasoning: "thought it through"}); err != nil {
+	if err := log.Append(llm.Message{Role: "assistant", Content: "answer", Reasoning: "thought it through"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := log.Append(llm.Message{Role: "assistant", Content: "next",
-		Reasoning: "kept off the wire"}); err != nil {
+	if err := log.Append(llm.Message{Role: "assistant", Content: "next"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,11 +409,11 @@ func TestThinkingSentBackToTheModelIsStoredOnce(t *testing.T) {
 	if len(back) != 2 {
 		t.Fatalf("%d messages loaded, want 2", len(back))
 	}
-	if back[0].Reasoning != "thought it through" || back[0].WireReasoning != "thought it through" {
-		t.Errorf("the thinking the model was sent is missing after a resume: %+v", back[0])
+	if back[0].Reasoning != "thought it through" {
+		t.Errorf("the thinking is missing after a resume: %+v", back[0])
 	}
-	if back[1].Reasoning != "kept off the wire" || back[1].WireReasoning != "" {
-		t.Errorf("thinking that never went out came back on the wire: %+v", back[1])
+	if back[1].Reasoning != "" {
+		t.Errorf("a reply with no thinking came back with some: %+v", back[1])
 	}
 }
 
@@ -433,7 +430,7 @@ func TestThinkingStoredTwiceByAnOlderRunStillLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(back) != 1 || back[0].Reasoning != "thought it through" || back[0].WireReasoning != "thought it through" {
+	if len(back) != 1 || back[0].Reasoning != "thought it through" {
 		t.Fatalf("an older file did not read back: %+v", back)
 	}
 }

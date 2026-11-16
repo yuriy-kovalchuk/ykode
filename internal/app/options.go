@@ -27,10 +27,9 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 			// gets picked next: without this, a model switch replaces what the user wrote with the model's own
 			// window and says nothing.
 			CtxPinned:        cfg.CtxSize > 0,
-			KeepRecentTokens: min(20000, ctxSize/5),
+			KeepRecentTokens: agent.KeepRecentTokens(ctxSize),
 			ThinkingLevel:    cfg.ThinkingLevel,
 			AssumeYes:        cfg.AssumeYes,
-			SendReasoning:    cfg.SendReasoningFor(model),
 			Thinking:         thinking,
 			NoThink:          noThink,
 			MaxResult:        resultBytes,

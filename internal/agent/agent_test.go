@@ -208,8 +208,8 @@ func TestMaxTurnsStopsTheLoop(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reached --max-turns (2)") {
 		t.Fatalf("error = %v, want the max-turns failure", err)
 	}
-	if len(stub.requests) != 3 {
-		t.Fatalf("%d requests, want one per tool round plus the answer-only one", len(stub.requests))
+	if len(stub.requests) != 2 {
+		t.Fatalf("%d requests, want one per tool round and nothing after", len(stub.requests))
 	}
 }
 
@@ -231,23 +231,9 @@ func TestToolUsingRequestIsNotNudged(t *testing.T) {
 
 // hasUserNote looks for text in the user messages of a recorded request.
 
-func TestReasoningIsSentBackWhenTheTemplateWantsIt(t *testing.T) {
-	stub := &stubServer{scripts: []string{
-		sse("thinking first", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
-		sse("", "done", "", nil, "stop"),
-	}}
-	a, done := newAgent(t, stub, Options{MaxTurns: 3, MaxTokens: 512, SendReasoning: true}, &captureSink{})
-	defer done()
-
-	if err := a.Ask(context.Background(), "list the files"); err != nil {
-		t.Fatal(err)
-	}
-	if got := assistantReasoning(t, stub.lastRequest(t)); got != "thinking first" {
-		t.Fatalf("reasoning_content in the follow-up = %q, want the earlier thinking back", got)
-	}
-}
-
-func TestThinkingIsNotSentBackUnasked(t *testing.T) {
+// the model sees its own thinking on the next tool round, as pi sends it: without it every round
+// starts its reasoning over
+func TestReasoningIsAlwaysSentBack(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("thinking first", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
 		sse("", "done", "", nil, "stop"),
@@ -258,8 +244,8 @@ func TestThinkingIsNotSentBackUnasked(t *testing.T) {
 	if err := a.Ask(context.Background(), "list the files"); err != nil {
 		t.Fatal(err)
 	}
-	if got := assistantReasoning(t, stub.lastRequest(t)); got != "" {
-		t.Fatalf("reasoning_content in the follow-up = %q, want it left out by default", got)
+	if got := assistantReasoning(t, stub.lastRequest(t)); got != "thinking first" {
+		t.Fatalf("reasoning_content in the follow-up = %q, want the earlier thinking back", got)
 	}
 }
 

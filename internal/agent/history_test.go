@@ -95,7 +95,7 @@ func TestASmallWindowDropsTheOldestToolCallWhole(t *testing.T) {
 }
 
 // the drop keeps what it must: a fold's recap, the ask being answered and the newest call, and it
-// stops as soon as the estimate is under the ceiling
+// leaves the estimate under the ceiling
 func TestADropKeepsTheRecapTheTaskAndTheNewestCall(t *testing.T) {
 	history := []llm.Message{{Role: "system", Content: SystemPrompt},
 		{Role: "user", Content: FoldMark + "\nGoal: the work so far"},
@@ -363,4 +363,30 @@ func (c *countingTool) NeedsConfirm() bool                              { return
 func (c *countingTool) Targets(json.RawMessage) ([]tools.Target, error) { return nil, nil }
 func (c *countingTool) Run(_ context.Context, _ json.RawMessage) (string, error) {
 	return "read", nil
+}
+
+// a drop makes room for more than the next result: dropping one message per round moved the start of
+// the prompt every round, and the server read the whole conversation again each time
+func TestADropLeavesRoomForTheNextRounds(t *testing.T) {
+	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
+	call := func(i int) []llm.Message {
+		id := fmt.Sprintf("c%d", i)
+		return []llm.Message{
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f.go"}`)}}}},
+			{Role: "tool", ToolCallID: id, Name: "read_file", Content: strings.Repeat("x", 2000)}}
+	}
+	for i := 0; i < 60; i++ {
+		history = append(history, call(i)...)
+	}
+	a := newForHistory(Options{CtxSize: 32000})
+	a.task = "read them all"
+	a.history = history
+	a.makeRoom()
+
+	a.history = append(a.history, call(60)...)
+	before := len(a.history)
+	a.makeRoom()
+	if len(a.history) != before {
+		t.Errorf("the round after a drop dropped again: %d messages became %d", before, len(a.history))
+	}
 }

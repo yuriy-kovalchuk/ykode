@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
-	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
@@ -31,10 +29,9 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 	a.add(llm.Message{Role: "user", Content: asked})
 	a.task = asked // what the history holds, which is what compaction looks for
 
-	usedTools, textNudged, loops := false, false, 0
-	// a reply that ends the turn without finishing the work is asked to go on, a bounded number of
-	// times: the user should not have to type "continue" for a run that only lost its footing
-	emptyNudges, cutNudges, pausedNudged, overflowed := 0, 0, false, false
+	// a reply with no tool call ends the ask, as it does in pi: nothing is added in the user's voice
+	// to keep the model going, because every such nudge costs a whole round of thinking
+	textRan, overflowed := false, false
 	for turn := 1; ; turn++ {
 		a.turn.Store(int64(turn))
 		a.emit(Event{Kind: TurnStart, Turn: turn})
@@ -45,15 +42,10 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 		}
 		msg, finish, err := a.chat(ctx, req)
 		if errors.Is(err, errRepeating) {
-			// the half-written reply is dropped: it holds nothing but the loop
 			a.emit(Event{Kind: TurnEnd, Turn: turn})
-			if loops++; loops > 1 || a.outOfRounds(turn) {
-				a.tell("the reply went in circles again: asking for an answer with no tools")
-				return a.forceAnswer(ctx, "No tools now. Answer in text from what you have already read, and say what you could not confirm.")
-			}
-			a.tell("the reply kept repeating the same lines: stopped it and told the model to move on")
-			a.modelNote("(your last reply kept repeating the same lines and was stopped. Do not go over it again: make the next tool call, or answer from what you have.)")
-			continue
+			a.tell("the reply kept repeating the same lines: stopped it")
+			a.note("(the reply was stopped: it kept repeating the same lines)")
+			return nil
 		}
 		if err != nil {
 			// Close any half-streamed thinking block before reporting.
@@ -63,148 +55,79 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 				return nil
 			}
 			if llm.IsOverflow(err) && !overflowed {
-				// the server counted more tokens than the estimate did. A refusal that names the number is
-				// the one exact measurement available here, so it is taken as the count rather than nudging a
-				// guess: the estimate is what just failed. Where the server gave no number, the ratio is what
-				// has to move, and it moves down because the conversation is bigger than the bytes said.
 				overflowed = true
-				count := llm.StatedPromptTokens(err)
-				if count > 0 {
-					a.tell(fmt.Sprintf("the server says the conversation is %d tokens and does not fit its window: making room and asking again", count))
-					a.meter.toldByServer(count, a.sendingBytes())
-				} else {
-					a.tell("the server says the conversation does not fit its window: making room and asking again")
-					a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
-					a.meter.anchorTokens = 0
-				}
-				if a.Compact(ctx) <= 0 {
-					for i := 0; i < 8 && a.dropOldestUnit() != nil; i++ {
-					}
-					a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
-				}
+				a.recoverFromOverflow(ctx, err)
 				continue
 			}
 			return fmt.Errorf("chat turn %d: %w", turn, err)
 		}
-		wroteCall := len(msg.ToolCalls) == 0 && hasTextCall(msg.Content)
-		if wroteCall {
-			if calls := a.textCalls(msg.Content, turn); len(calls) > 0 && finish != finishLength {
-				// the call is whole and names a tool we have: it runs, as the call the model meant
-				msg.ToolCalls, wroteCall = calls, false
-				if !textNudged {
-					textNudged = true // said once per ask, however many calls arrive this way
+		cut := finish == finishLength
+		if len(msg.ToolCalls) == 0 && hasTextCall(msg.Content) {
+			if calls := a.textCalls(msg.Content, turn); len(calls) > 0 && !cut {
+				msg.ToolCalls = calls // whole, and naming a tool we have: it runs as the call it meant
+				if !textRan {
+					textRan = true
 					a.tell("the model wrote a tool call as text: running it as the call it meant")
 				}
 			}
 			msg.Content = withoutTextCalls(msg.Content) // the answer never carries the markup
 		}
-		if finish == finishLength {
-			// a call stopped mid-tag never closed, so everything after its opening was never answer.
-			// It is not read as a call and the model is not told it wrote one: the next lines report the
-			// reply running out of tokens, which is what actually happened.
+		if cut {
+			// a call stopped mid-tag never closed, so everything after its opening was never answer
 			msg.Content = withoutCutCalls(msg.Content)
+			a.tell("the response hit max_tokens and may be incomplete")
 		}
 		a.add(msg)
 
-		if finish == finishLength {
-			a.tell("the response hit max_tokens and may be incomplete")
-			if !toolCallsRunnable(msg.ToolCalls) {
-				// a cut-off tool call cannot run: tell the model rather than hand broken arguments over
-				a.modelNote("(your reply was cut off by max_tokens and the tool call was not valid JSON; make it smaller or split it into two calls)")
-				if a.outOfRounds(turn) {
-					return a.outOfTurns(ctx)
-				}
-				continue
-			}
-		}
-		if wroteCall && !textNudged && !a.outOfRounds(turn) {
-			textNudged = true
-			a.tell("the model wrote a tool call as text instead of calling it: asking once to call it properly")
-			a.modelNote("(you wrote a tool call as plain text, so it did not run. Make the call through the tool interface, or answer in words if you need no tool.)")
-			continue
-		}
 		if len(msg.ToolCalls) == 0 {
-			said := strings.TrimSpace(msg.Content)
-			switch {
-			case finish == finishLength && cutNudges < maxResumeNudges && !a.outOfRounds(turn):
-				// the reply ran into max_tokens: all of it thinking, or an answer stopped mid-sentence.
-				// Either way the turn is not over, and ending it here leaves the user to type "continue"
-				cutNudges++
-				if said == "" {
-					a.tell("the reply ran out of tokens while the model was still thinking: asking it to go on with less")
-					a.modelNote("(your reply ran out of tokens while you were still thinking, before any answer or tool call. Think briefly this time: make the next tool call, or answer.)")
-				} else {
-					a.tell("the reply was cut off: asking the model to carry on from where it stopped")
-					a.modelNote("(your reply was cut off by the token limit. Carry on from exactly where it stopped, without repeating what you already wrote.)")
-				}
-				continue
-			case said == "":
+			if strings.TrimSpace(msg.Content) == "" {
 				a.tell("the model returned no text")
-				// an empty reply is not an answer: the task is left half done, so ask to go on
-				if emptyNudges < maxResumeNudges && !a.outOfRounds(turn) {
-					emptyNudges++
-					a.modelNote("(your reply was empty. Continue the task with the next tool call, or answer if it is done.)")
-					continue
-				}
-			case usedTools && !pausedNudged && !a.outOfRounds(turn) && a.stoppedHalfway(said):
-				// it said what it would do next and then did not do it, or left steps of its own plan
-				// open: a model that loses the thread mid-task stops like this, and one line brings it back
-				pausedNudged = true
-				a.tell("the model stopped with work still open: asking it once to carry on")
-				a.modelNote("(you stopped before the work was finished. If you are waiting for the user, say what you need in one line. Otherwise carry on with the next tool call" + a.planReminderForPause() + ".)")
-				continue
 			}
 			return nil
 		}
-
-		usedTools = true
-		a.runToolCalls(ctx, msg.ToolCalls)
+		if cut {
+			a.failCutCalls(msg.ToolCalls)
+		} else {
+			a.runToolCalls(ctx, msg.ToolCalls)
+		}
 		if a.outOfRounds(turn) {
-			return a.outOfTurns(ctx)
+			return fmt.Errorf("reached --max-turns (%d) before the model answered; send any message to carry on", a.opts.MaxTurns)
 		}
 	}
 }
 
-// maxResumeNudges is how many times one kind of unfinished reply is asked to go on within one ask.
-const maxResumeNudges = 2
-
-// announcesRe is a last line that says what comes next rather than what was found: "Let me update the
-// tests now", "Next, I'll run the build". A reply that ends on one has not ended the work.
-var announcesRe = regexp.MustCompile(`(?i)^(?:(?:now|next|then|ok|okay|alright|first|great|good)[,.!]?\s+)*(?:let me|let's|i'll|i will|i'm going to|i am going to|i need to|i'm now going to|now i|next i|i now)\b`)
-
-// stoppedHalfway says a reply with no tool call reads as a pause rather than an answer: its last line
-// announces the next step or ends in a colon, or the plan the model wrote still has steps open. A
-// reply that ends by asking the user something is a real stop, whatever the plan says.
-func (a *Agent) stoppedHalfway(said string) bool {
-	last := said[strings.LastIndexByte(said, '\n')+1:]
-	last = strings.TrimSpace(strings.Trim(strings.TrimSpace(last), "*_`"))
-	if asksTheUser(said) || strings.HasPrefix(strings.ToLower(last), "let me know") {
-		return false // it is waiting for the user, and says so
+// recoverFromOverflow makes room after the server refused a request as too big for its window. A
+// refusal that names the size is the one exact count available, so it replaces the estimate that just
+// failed; without one the byte ratio moves down, because the conversation is bigger than it said.
+func (a *Agent) recoverFromOverflow(ctx context.Context, err error) {
+	if count := llm.StatedPromptTokens(err); count > 0 {
+		a.tell(fmt.Sprintf("the server says the conversation is %d tokens and does not fit its window: making room and asking again", count))
+		a.meter.toldByServer(count, a.sendingBytes())
+	} else {
+		a.tell("the server says the conversation does not fit its window: making room and asking again")
+		a.meter.bytesPerTok = max(a.meter.bytesPerTok*3/4, minBytesPerTok)
+		a.meter.anchorTokens = 0
 	}
-	if strings.HasSuffix(last, ":") || announcesRe.MatchString(last) {
-		return true
+	if a.Compact(ctx) > 0 {
+		return
 	}
-	steps := a.opts.Plan.Steps()
-	return len(steps) > 0 && !tools.Settled(steps)
+	// each drop already writes itself to the session log
+	for i := 0; i < overflowDrops && a.dropOldestUnit() != nil; i++ {
+	}
 }
 
-// questionRe is a sentence that ends in a question mark, at the end of a line or before the next one.
-var questionRe = regexp.MustCompile(`\?[*_` + "`" + `)]*(?:\s|$)`)
+// overflowDrops is how many of the oldest calls go when a refused request could not be folded.
+const overflowDrops = 8
 
-// asksTheUser says the reply's closing paragraph puts a question to the user. A report often ends
-// "Want me to fix both? I'd keep the bump separate.": the question is not on the last line, and
-// the reply is still waiting for an answer.
-func asksTheUser(said string) bool {
-	said = strings.TrimSpace(said)
-	return questionRe.MatchString(said[strings.LastIndex(said, "\n\n")+1:])
-}
-
-// planReminderForPause adds the plan to the line that asks a paused model to go on, when it has one.
-func (a *Agent) planReminderForPause() string {
-	if steps := a.opts.Plan.Steps(); len(steps) == 0 || tools.Settled(steps) {
-		return ""
+// failCutCalls answers every call of a reply that ran into max_tokens without running any of them:
+// the arguments of the last one may be cut short, and the model re-issues them knowing why.
+func (a *Agent) failCutCalls(calls []llm.ToolCall) {
+	ids := a.nextCallIDs(len(calls))
+	for i, call := range calls {
+		why := a.failTool(call.Function.Name, string(call.Function.Arguments),
+			"your reply was cut off by max_tokens, so this call did not run; make it smaller or split it")
+		a.add(a.toolMessage(call, why, ids[i]))
 	}
-	return ", and update the plan as each step is finished"
 }
 
 // prepareTurn gets the conversation ready for the next round-trip: asks typed meanwhile join it, and
@@ -232,13 +155,9 @@ func (a *Agent) prepareTurn(ctx context.Context, turn int) {
 func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	thinking, answer := newLineRepeats(), newLineRepeats()
-	looping := false
+	answer, looping := newLineRepeats(), false
 	stopwatch := newPace(time.Now, a.meter.bytesPerTok)
 	var shown callHider // a call written as text is not drawn as part of the answer
-	// everything in the conversation up to here is about to be read by the model; if this request never
-	// reaches it, what was added for it stays whole so the text is not lost on a call that was never made
-	a.seenThrough = len(a.history)
 	turn, err := a.client.ChatStream(ctx, req, func(d llm.Delta) {
 		if d.Reasoning != "" {
 			a.emit(Event{Kind: Thinking, Text: d.Reasoning})
@@ -260,7 +179,8 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 			// a server that only reports speeds at the end: the decode speed on screen is measured here
 			a.emit(Event{Kind: Progress, Stats: Stats{DecodeTokSec: decode, OutputTokens: int(stopwatch.total), Estimated: true}})
 		}
-		if !looping && (thinking.add(d.Reasoning) || answer.add(d.Content)) {
+		// thinking is not watched: its budget already ends it, and drafting code in it repeats lines honestly
+		if !looping && answer.add(d.Content) {
 			looping = true
 			cancel() // the rest of this reply would be more of the same, for as long as the window lasts
 		}
@@ -306,11 +226,7 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		// this way would otherwise warn once per round-trip for the whole session.
 		a.tell("the server ended a reply without saying it was finished; it may be cut short, or this server may simply never say so")
 	}
-	msg := repair(turn.Message)
-	if a.opts.SendReasoning {
-		msg.WireReasoning = msg.Reasoning
-	}
-	return msg, turn.FinishReason, nil
+	return repair(turn.Message), turn.FinishReason, nil
 }
 
 // callBytes is the size of a piece of a tool call being written, which streams like text does.

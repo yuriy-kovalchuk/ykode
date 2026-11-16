@@ -57,8 +57,8 @@ func TestAFoldSendsTheConversationItSummarises(t *testing.T) {
 		}
 	}
 	last := asked[len(asked)-1].(map[string]any)
-	if last["role"] != "user" || !strings.HasPrefix(last["content"].(string), NoteMark) {
-		t.Errorf("the fold's instruction is not a note from ykode after the conversation: %v", last["content"])
+	if last["role"] != "user" {
+		t.Errorf("the fold's instruction does not follow the conversation as a user message: %v", last)
 	}
 	if !strings.Contains(last["content"].(string), "## Goal") {
 		t.Error("the fold's instruction does not name the sections the summary is written in")
