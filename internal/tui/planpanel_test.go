@@ -99,8 +99,7 @@ func TestAFinishedPlanFoldsToATickedHeading(t *testing.T) {
 	}
 }
 
-// a step that failed has an outcome, so a plan that ended badly folds too and says it failed rather
-// than claiming it finished
+// a plan that ended badly folds too and says it failed instead of claiming it finished
 func TestAPlanThatEndedBadlyFoldsAndSaysSo(t *testing.T) {
 	m := planModel(t, 100, 40, steps(done, failed, done)...)
 	rows := m.planRows()

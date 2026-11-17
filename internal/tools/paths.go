@@ -76,9 +76,7 @@ type handle struct {
 	closer *os.Root // a Root opened for an outside path; nil for in-project ones
 }
 
-// close releases a handle opened for an approved outside path. The error is dropped on purpose: by the
-// time this runs the tool has its result, and a directory handle that would not close changes nothing
-// about it. Said out loud because a linter is right that nobody looks at it.
+// close drops the handle's error on purpose: the tool has its result already, and nothing changes it
 func (h handle) close() {
 	if h.closer != nil {
 		_ = h.closer.Close()

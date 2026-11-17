@@ -337,8 +337,7 @@ func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
 	}
 }
 
-// a server reading a prompt rewritten by a fold sends nothing for a while: that is not a dead
-// stream, so the wait for the first byte is not the wait between tokens
+// a fold-rewritten prompt sends nothing for a while: the first-byte wait is not the wait between tokens
 func TestChatStreamWaitsForAServerToStartAnswering(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -430,8 +429,7 @@ func TestTheWireNeverCarriesYkodeOwnResultIds(t *testing.T) {
 	}
 }
 
-// a conversation is one conversation to the server: every request names the run, so a proxy in
-// front of the server can keep it on the slot that already holds its prompt cache
+// every request names the run, so a proxy can keep it on the slot already holding its prompt cache
 func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -472,8 +470,7 @@ func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
 	}
 }
 
-// The second failure of a retried turn is often the blander of the two; the first one usually names
-// the reason, so it travels with the error the user reads.
+// the second failure of a retried turn is the blander one, so the first travels with the error
 func TestARetriedFailureKeepsTheFirstReason(t *testing.T) {
 	c, attempts := flakyServer(t, 5, http.StatusServiceUnavailable, "model is loading")
 	_, _, err := collect(t, c)

@@ -47,8 +47,7 @@ func TestACarriedOverCallNamesItsFileFromTheProject(t *testing.T) {
 	}
 }
 
-// coming back to a conversation shows what was already said: the model has it, and an empty screen
-// says otherwise
+// coming back shows what was said: the model has it, and an empty screen says otherwise
 func TestAResumedConversationIsOnTheScreen(t *testing.T) {
 	a := agent.New(nil, nil, "test-model", agent.Options{}, nil)
 	a.Resume(savedConversation())

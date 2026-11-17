@@ -16,11 +16,9 @@ import (
 )
 
 const (
-	// streamIdleTimeout bounds the silence between events: a cold 60k prompt can take minutes,
-	// so only a stream that stops producing altogether counts as dead.
+	// streamIdleTimeout bounds the gap between events: only a stream that stops producing at all counts as dead
 	streamIdleTimeout = 2 * time.Minute
-	// firstByteWait bounds the wait for a server to start answering at all. A prompt rewritten by a
-	// fold is read again before the first token, and a busy machine takes longer than any token gap.
+	// firstByteWait bounds the wait for a server to start answering, which a rewritten prompt makes longer
 	firstByteWait = 10 * time.Minute
 
 	maxResponseBytes  = 8 << 20 // refuse a runaway server
@@ -36,8 +34,7 @@ type Client struct {
 	Idle    time.Duration // longest silence a stream may keep before it counts as dead
 	opening time.Duration // how long the server may take to send its first byte
 
-	// Session names this conversation on every request. A server reached through a proxy can send
-	// one conversation to the slot that already holds its prompt cache; the server itself ignores it.
+	// Session names this conversation on every request, so a proxy can keep it on its prompt-cache slot
 	Session string
 }
 
@@ -72,10 +69,7 @@ type idleWatchdog struct {
 	cancel context.CancelFunc
 	timer  *time.Timer
 	idle   time.Duration
-	// started says something has been read, so the gap being watched is between bytes and not the first
-	// one. Only the reading goroutine writes it, and it is only read after that goroutine has returned
-	// from readSSE, so it needs no lock - which is worth stating, because the timer fires on its own
-	// goroutine and touches everything else in here.
+	// started is written only by the reading goroutine and read after it returns, so it needs no lock
 	started bool
 }
 
@@ -131,9 +125,7 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 		if info.CtxSize == 0 {
 			info.CtxSize, _ = flagValue(m.Status.Args, "--ctx-size")
 		}
-		// A server that thought about what it feeds the model says so; llama.cpp says no more than that it
-		// was started with a projector, which is exactly the difference between reading an image and
-		// refusing one.
+		// a server that thought about what it feeds the model says so; llama.cpp says only that it has a projector
 		info.Vision = takesImages(m.Meta.InputModality) || takesImages(m.Architecture.InputModality) ||
 			hasFlag(m.Status.Args, "--mmproj")
 		models = append(models, info)
@@ -192,8 +184,7 @@ func (c *Client) postChat(ctx context.Context, payload []byte) (*http.Response, 
 		}
 		if attempt == chatAttempts || !couldPassLater(err) {
 			if attempt > 1 && firstErr != nil {
-				// the first failure is usually the one that explains itself - "connection refused" on a
-				// server that is swapping a model out, where the second reads as a bare timeout
+				// the first failure usually explains itself, where the second reads as a bare timeout
 				return nil, fmt.Errorf("%w (after a first failure: %v)", err, firstErr)
 			}
 			return nil, err
@@ -252,8 +243,7 @@ func (f chatFailure) Error() string {
 // overflowWords is how servers say a request was bigger than the model's window.
 var overflowWords = regexp.MustCompile(`(?i)(exceeds? the (available )?context|context (size|length|window)|maximum context|too many tokens|prompt is too long|n_ctx)`)
 
-// IsOverflow says a request failed because it did not fit the model's window. The count that said it
-// would fit was an estimate, so the run can make room and ask again instead of giving up.
+// IsOverflow says a request did not fit the window, so the run can make room and ask again
 func IsOverflow(err error) bool {
 	var failure chatFailure
 	if !errors.As(err, &failure) {
@@ -262,14 +252,10 @@ func IsOverflow(err error) bool {
 	return (failure.code == http.StatusBadRequest || failure.code == http.StatusRequestEntityTooLarge) && overflowWords.MatchString(failure.detail)
 }
 
-// statedTokens is where a server names the size of the request it refused, next to the size it has.
-// OpenAI says "your messages resulted in 9123 tokens"; llama-server says "prompt of 9123 tokens is
-// larger than the context". The limit itself is matched by overflowWords and deliberately not here.
+// statedTokens is where a server names the size of the request it refused, next to the size it has
 var statedTokens = regexp.MustCompile(`(?i)(?:resulted in|messages? (?:are|total)|prompt(?: of| is)?|total(?: of| is)?|used|with)\s+(\d{2,9})\s+tokens`)
 
-// StatedPromptTokens is the size a server said the request that overflowed actually was, or 0 when it
-// did not say. A refusal that names a number is the one exact measurement available at the worst moment
-// in a long session: the estimate just failed, and this replaces a guess with the server's own count.
+// StatedPromptTokens is the size a server said the overflowing request was, or 0 when it did not say
 func StatedPromptTokens(err error) int {
 	var failure chatFailure
 	if !errors.As(err, &failure) {

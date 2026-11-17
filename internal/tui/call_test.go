@@ -30,8 +30,7 @@ func TestAReadShowsItsRowAndNotTheFile(t *testing.T) {
 	}
 }
 
-// a call that ended does not keep what it was reading: the row holds a sentence, and the rest of
-// the answer goes back where it came from
+// a finished call keeps no body: the row holds a sentence, the rest goes back where it came from
 func TestACallDoesNotKeepWhatItRead(t *testing.T) {
 	var log transcript
 	log.root = "/work"
@@ -95,8 +94,7 @@ func TestTheWholeChangeIsDrawnWhenTheToolHandsItOver(t *testing.T) {
 	}
 }
 
-// a command that came back non-zero says its exit and shows the lines that explain it: the last
-// ones, which is where the error is, not the first
+// a non-zero command says its exit and shows the last lines, which is where the error is
 func TestACommandThatFailedSaysWhy(t *testing.T) {
 	var log transcript
 	log.root = "/work"

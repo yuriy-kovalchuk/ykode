@@ -14,8 +14,7 @@ func saveSessions(t *testing.T, ids ...string) {
 	}
 }
 
-// an id is a timestamp down to the millisecond, and nobody remembers one: enough of it to name one
-// conversation is enough
+// nobody remembers a timestamp id: enough of it to name one conversation is enough
 func TestContinueAcceptsEnoughOfAnIDToBeUnique(t *testing.T) {
 	saveSessions(t, "s20260101-120000.000", "s20260102-213711.728")
 

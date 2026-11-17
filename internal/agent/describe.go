@@ -7,8 +7,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// describe is what a confirmation asks the user about: the call in the words the tools use, and
-// the paths that fall outside the project when any do.
+// describe is what a confirmation asks about: the call in the tools' words, plus outside paths
 func describe(name, argsText string, outside []string) string {
 	what := tools.Describe(name, argsText)
 	if len(outside) == 0 {

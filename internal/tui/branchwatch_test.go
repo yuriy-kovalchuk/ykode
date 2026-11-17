@@ -12,8 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
-// shortTemp is a named temporary directory: the footer truncates the path before it drops the
-// branch, so a project under a long test path has no room left to show one.
+// shortTemp is a named temporary dir: the footer truncates a long path before the branch
 func shortTemp(t *testing.T, mark string) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", mark)
@@ -77,8 +76,7 @@ func TestALookThatFoundNoChangeLeavesTheScreenAlone(t *testing.T) {
 	}
 }
 
-// a worktree keeps a .git file instead of a .git directory: its own branch is the one to show, and
-// its own HEAD is the file that moves
+// a worktree keeps a .git file, so its own HEAD is the file that moves and shows its branch
 func TestTheFooterFollowsAWorktree(t *testing.T) {
 	dir := gitProject(t)
 	work := filepath.Join(shortTemp(t, "w"), "side")

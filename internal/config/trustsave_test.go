@@ -8,10 +8,7 @@ import (
 	"testing"
 )
 
-// A project's settings file can name a server and skip the confirmations; those are held back and asked
-// about until the user accepts the file. Saving a harmless knob into that same file used to record it as
-// accepted whole, so the warning was retired without ever showing what had been withheld, and the next
-// start applied a cloned project's base_url and assume_yes unasked.
+// saving a harmless knob into a project file must not accept the unsafe keys it also holds
 func TestASaveIntoADeclinedProjectFileDoesNotAcceptTheKeysHeldBack(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
@@ -103,9 +100,7 @@ func TestAcceptingAProjectFileIsWhatLetsItsKeysTake(t *testing.T) {
 	}
 }
 
-// A file the user accepted stays accepted when they change one of its keys through the screen. It used to
-// lose its acceptance whenever it also held another safety key the change did not write: the reload then
-// held every safety key back, so assume_yes could never be switched on, and base_url went with it.
+// a file the user accepted stays accepted when they change one of its keys through the screen
 func TestASwitchInAnAcceptedProjectFileTakesAndKeepsTheFileAccepted(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()

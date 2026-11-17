@@ -10,11 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Several commands are answered with a list to look through rather than text in the transcript: the
-// saved conversations, the models the server offers, the calls this run logged, the tools in play, the
-// commands there are. What the rows hold, what the pane says about one and what choosing it does belong
-// to each command; the filter, the cursor, the window of rows and the box belong to all of them, and
-// live here once.
+// the lists that answer commands share filter, cursor, row window and box, held here once
 
 // chooser is such a list: the rows typing leaves, where the cursor is, and what was refused.
 type chooser struct {
@@ -28,19 +24,15 @@ type chooser struct {
 	chosen          string // the row the pane is about, once the list has been looked at
 	note            string // said below the list instead of in the transcript, because the screen answers the command
 
-	// detailRows is how many rows the pane under the list keeps: a list of calls has more to say about
-	// each one than a list of commands does
+	// detailRows is how many rows the pane under the list keeps, by what the list has to say
 	detailRows int
 
-	// expanded says one entry is being read in full, which is what a list of calls does with enter instead
-	// of writing that entry into the conversation: the list falls back to the row the entry is, and the rest
-	// of the box is the entry itself, scrolled through rather than cut when it is longer than the box
+	// expanded reads one entry in full: the list falls back to its row, the box scrolls the entry
 	expanded bool
 	scroll   viewport.Model // the entry read in full, scrolled through rather than cut
 }
 
-// listRow is one entry: an id that stays put, a cell telling what kind of entry it is, a few fixed-width
-// facts, and what it was about. hay is what typing matches against.
+// listRow is one entry: id, kind, a few fixed-width facts, and what it was about
 type listRow struct {
 	id, mark, lead, text, hay string
 	cells                     []listCell
@@ -79,8 +71,7 @@ func (c *chooser) load(rows []listRow) {
 	c.at = min(c.at, max(len(c.rows)-1, 0))
 }
 
-// keys answers the list's keys the same way every list does: esc closes, the arrows move, typing narrows,
-// enter hands the row under the cursor to choose.
+// keys answers every list alike: esc closes, arrows move, typing narrows, enter chooses
 func (c *chooser) keys(msg tea.Msg, choose func(id string) (tea.Cmd, overlayNext)) (tea.Cmd, overlayNext, bool) {
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
@@ -119,9 +110,7 @@ func (c *chooser) keys(msg tea.Msg, choose func(id string) (tea.Cmd, overlayNext
 	return nil, stayOpen, true
 }
 
-// readKeys is the box reading one entry in full: the arrows and page keys scroll it, the side arrows step
-// to the entry next to it, and esc goes back to the list. The wheel is answered above, where it reaches
-// the transcript, so it never arrives here.
+// readKeys scrolls one entry: the side arrows step to the next entry, esc goes back to the list
 func (c *chooser) readKeys(msg tea.Msg) (tea.Cmd, overlayNext, bool) {
 	if key, isKey := msg.(tea.KeyMsg); isKey {
 		switch key.String() {
@@ -174,8 +163,7 @@ func (c *chooser) move(by int) {
 	c.clamp()
 }
 
-// clamp keeps the cursor inside the window of rows the terminal has room for. A box that grows past the
-// screen edge is not scrolled: it is drawn over, so the list is cut and the cursor window does the rest.
+// clamp keeps the cursor inside the rows there is room for: the box is drawn over, not scrolled
 func (c *chooser) clamp() {
 	if c.at < c.top {
 		c.top = c.at
@@ -184,8 +172,7 @@ func (c *chooser) clamp() {
 	}
 }
 
-// shown is the row the pane is about: the one the cursor was left on once it has been moved, so passing
-// over a row does not change what the pane says until you mean it.
+// shown is the row the pane is about: the cursor's row, once it has been moved on purpose
 func (c *chooser) shown() string {
 	if len(c.rows) == 0 {
 		return ""
@@ -193,20 +180,16 @@ func (c *chooser) shown() string {
 	return c.rows[c.at].id // the pane follows the cursor, so the arrows walk the entries one after another
 }
 
-// view is the list with a details pane below it. The pane keeps its rows however long what it says is,
-// so the box holds one height no matter which row is chosen.
+// view is the list with a details pane below it, one height whatever the pane has to say
 func (c *chooser) view(width, height int, detail func(id string) []string) string {
 	inner := overlayInner(width)
 	c.inner = inner
 	c.filter.Width = max(inner-4, 1)
-	// the frame and the title, filter and hint take listChrome rows between them: what is left is shared,
-	// two thirds to the pane, since what one entry is about matters more than a longer list - but the list
-	// keeps two rows whenever it has that many
+	// what the box has left is shared two thirds to the pane, the list keeping two rows when it can
 	spare := height - listChrome - listFloor
 	details := min(c.detailRows, max(spare*2/3, listNarrow))
 	if c.expanded {
-		// the entry in full: the list keeps one row saying which entry this is and the rest of the box is
-		// the entry, scrolled through, so nothing about the call is left out to make the box fit
+		// reading one entry: a row says which it is and the rest of the box is the entry, scrolled
 		details = max(height-listChrome-listFloor, listNarrow)
 	}
 	c.room = max(height-listChrome-details, listMinRow)
@@ -236,9 +219,7 @@ func (c *chooser) view(width, height int, detail func(id string) []string) strin
 	return place(width, height, strings.Join(lines, "\n"))
 }
 
-// reading is the box below the list: the few rows the list has room for what it knows about the chosen row,
-// or the whole entry scrolled through a viewport, which is what a call is read with - its arguments are as
-// long as they are and none of them is left out.
+// reading is the pane below the list: a few rows, or the whole entry scrolled through
 func (c *chooser) reading(detail func(id string) []string, inner, keep int) string {
 	if !c.expanded {
 		return c.pane(detail, inner, keep)
@@ -256,8 +237,7 @@ func (c *chooser) reading(detail func(id string) []string, inner, keep int) stri
 	return c.scroll.View()
 }
 
-// hintWith says what the keys do and, while an entry is being read, how much of it is still below the box,
-// so a person knows the call continues.
+// hintWith says what the keys do, and how much of an entry is still below the box
 func (c *chooser) hintWith(box viewport.Model) string {
 	hint := c.hint
 	if c.expanded && c.readHint != "" {
@@ -299,8 +279,7 @@ func (c *chooser) pane(detail func(id string) []string, inner, keep int) string 
 	}
 	rows := []string{}
 	for _, line := range lines {
-		// wrapKept, not wrap: a value that does not fit one row is read over two, and its second row hangs
-		// under the first instead of starting a new thought at the left edge
+		// wrapKept, not wrap: a value over one row hangs under itself instead of starting anew
 		rows = append(rows, wrapKept(line, inner)...)
 		if len(rows) >= keep {
 			break
@@ -314,8 +293,7 @@ func (c *chooser) pane(detail func(id string) []string, inner, keep int) string 
 	return strings.Join(rows, "\n")
 }
 
-// shortenHint keeps the keys a person needs most and drops the ones they can guess, from the front of the
-// list, so a narrow terminal still says how to get out.
+// shortenHint drops the guessable keys from the front, so a narrow screen says how to leave
 func shortenHint(full string, inner int) string {
 	parts := strings.Split(full, " · ")
 	for i := range parts {

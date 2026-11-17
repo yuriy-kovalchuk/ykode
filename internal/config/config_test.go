@@ -12,8 +12,7 @@ import (
 	"testing"
 )
 
-// TestMain keeps the package away from the developer's own ~/.ykode: a settings file that is
-// really there would answer for every test below.
+// TestMain keeps the package away from the developer's own ~/.ykode, which would answer every test
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "ykode-config-home")
 	if err != nil {

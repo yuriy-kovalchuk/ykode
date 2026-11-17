@@ -24,8 +24,7 @@ func serverWith(t *testing.T, id string) *llm.Client {
 	return llm.NewClient(srv.URL, "")
 }
 
-// a model pinned in settings.yaml belongs to the endpoint it was chosen on: another endpoint that does
-// not list it gets its own model, and the note says what happened
+// a model pinned in settings.yaml belongs to its endpoint: another endpoint picks its own, and says so
 func TestAPinnedModelTheServerDoesNotHaveIsReplacedByItsOwn(t *testing.T) {
 	homeDir, root := scratchHome(t)
 	if err := os.WriteFile(filepath.Join(homeDir, "settings.yaml"), []byte("model: old-qwen\n"), 0o600); err != nil {

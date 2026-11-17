@@ -13,9 +13,7 @@ import (
 	"time"
 )
 
-// Cancelling a command has to take its children with it: a build's compiler and a test runner's
-// subprocesses are the reason the command runs in a process group at all. Killing only the shell would
-// leave them writing into pipes nobody reads, and on this platform they would outlive the run.
+// cancelling must take a command's children with it, which is why it runs in its own group
 func TestACancelledCommandTakesItsChildrenWithIt(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "child")
@@ -54,8 +52,7 @@ func TestACancelledCommandTakesItsChildrenWithIt(t *testing.T) {
 	t.Errorf("the child pid %d outlived the cancelled command", pid)
 }
 
-// The group request is the point of the unix half of the split; a bare SysProcAttr would run the
-// command in the parent's group and the cancel would only ever reach the shell.
+// the group request is the point: a bare SysProcAttr leaves the cancel reaching only the shell
 func TestACommandAsksForItsOwnProcessGroup(t *testing.T) {
 	cmd := groupCommand(context.Background(), "sh", "-c", "true")
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {

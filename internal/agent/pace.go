@@ -9,10 +9,7 @@ const (
 	paceMinPrompt = 64                     // fewer new prompt tokens than this say nothing about prefill speed
 )
 
-// pace measures how fast a reply streams from the client's side, for servers that report their own
-// speeds only when the reply is over. It counts what arrives, converts bytes to tokens with the ratio the
-// run has learned, and divides by a sliding window of time, the way a stopwatch would. The numbers are
-// estimates, so they are marked as such until the server's exact ones replace them.
+// pace measures the streaming speed from the client's side, for servers reporting only at the end
 type pace struct {
 	now      func() time.Time
 	sent     time.Time // the request went out
@@ -34,10 +31,7 @@ func newPace(now func() time.Time, bytesPerTok float64) *pace {
 	return &pace{now: now, sent: now(), rate: max(bytesPerTok, minBytesPerTok)}
 }
 
-// add counts a chunk of the reply and says the speed over the last second, and whether it is time to
-// report it: not before a speed can be read, and not more often than the footer needs. Prefill is not
-// estimated here: how long the first token took says as much about the queue and the network as about
-// the prompt, and the server's own figure arrives with the end of the reply.
+// add counts a reply chunk and says the speed over the last second, when there is one to read
 func (p *pace) add(bytes int) (decode float64, due bool) {
 	if p.exact || bytes <= 0 {
 		return 0, false
@@ -59,9 +53,7 @@ func (p *pace) add(bytes int) (decode float64, due bool) {
 	return decode, true
 }
 
-// decode is the tokens in the last window over the time they took. At the start the window is short, so
-// the span is the time since the first token, which keeps the first reading from dividing by a second that
-// has not passed.
+// decode is the tokens in the last window over the time they took, from the first token at the start
 func (p *pace) decode(at time.Time) float64 {
 	cut := at.Add(-paceWindow)
 	i := 0
@@ -86,8 +78,7 @@ func (p *pace) decode(at time.Time) float64 {
 	return tokens / span.Seconds()
 }
 
-// average is the speed over the whole reply, from the first token to the last: what a reply that never
-// heard from the server about speed ends with.
+// average is the speed over the whole reply, what a server silent about speed ends with
 func (p *pace) average() (tokens int, perSecond float64) {
 	if p.first.IsZero() {
 		return 0, 0

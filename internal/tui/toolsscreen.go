@@ -8,9 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// toolsScreen is /tools: what the model may call, and what each description costs every request. The
-// command prints a column of names, which answers "how many" but not "which one reads files" or "which
-// one is costing the most"; here the list narrows and a row says its share.
+// toolsScreen is /tools: what the model may call and what each description costs a request
 type toolsScreen struct {
 	chooser
 	specs []agent.Spec

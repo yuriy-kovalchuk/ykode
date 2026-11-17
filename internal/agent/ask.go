@@ -6,10 +6,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// asksTo is how the ask_user tool reaches the person running ykode: the same sink that draws the run
-// answers the question, in words. Empty says there is none: the run was cancelled, the screen closed,
-// or the front end has nobody watching it. The run keeps its place while it waits, the way a
-// confirmation does.
+// asksTo is how ask_user reaches the person running ykode: through the sink that draws the run
 type asksTo struct{ a *Agent }
 
 func (s asksTo) Ask(ctx context.Context, q tools.Question) string {

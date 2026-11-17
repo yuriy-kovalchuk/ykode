@@ -14,8 +14,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// twoCalls builds one assistant turn with two tool calls: the shape a model sends when it
-// wants several things at once.
+// twoCalls builds one assistant turn with two tool calls: several things asked at once
 func twoCalls(toolA, argsA, toolB, argsB string) string {
 	var b strings.Builder
 	raw, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"index": 0, "delta": map[string]any{
@@ -28,8 +27,7 @@ func twoCalls(toolA, argsA, toolB, argsB string) string {
 	return b.String()
 }
 
-// barrierTool answers only once every call in the batch has arrived, so a sequential agent
-// deadlocks on it: the test is the overlap, not the timing.
+// barrierTool answers only once every call in the batch arrives, so a sequential agent deadlocks
 type barrierTool struct {
 	name    string
 	arrived chan struct{}

@@ -65,9 +65,7 @@ func newStreamAccumulator() *streamAccumulator {
 
 func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 	if chunk.Timings != nil {
-		// A timings chunk carries the speeds, and usually the counts too - but not always, and not in the
-		// order a server chooses. Assigning it whole would throw away counts a usage block had already
-		// brought, which is what the turn's whole budget is measured from, so the counts are merged.
+		// a timings chunk may carry counts a usage block already brought, so counts merge rather than replace
 		a.timings = mergeTimings(a.timings, *chunk.Timings)
 		onDelta(Delta{Timings: chunk.Timings})
 	}
@@ -102,14 +100,10 @@ func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 	}
 }
 
-// applyUsage folds an OpenAI-style count into the figures. llama.cpp sends its own timings and no
-// usage block; other servers send usage and no timings; some send both, in either order. A field the
-// server never sent stays zero rather than being guessed at, and a count already held is kept, so the
-// order the two kinds of chunk arrive in cannot lose a number.
+// applyUsage folds in a server's counts, keeping what a chunk already held so the order cannot lose one
 func (a *streamAccumulator) applyUsage(u *usage) {
 	if a.timings.PromptTokens() == 0 && u.PromptTokens > 0 {
-		// the total is what the server counted; the cached share is part of it, and a server that says
-		// one without the other leaves the part it did not say at zero
+		// the cached share is part of the total, and a server saying one without the other leaves it at zero
 		cached := min(u.Details.CachedTokens, u.PromptTokens)
 		a.timings.CacheN, a.timings.PromptN = cached, u.PromptTokens-cached
 	}
@@ -118,9 +112,7 @@ func (a *streamAccumulator) applyUsage(u *usage) {
 	}
 }
 
-// mergeTimings lays a later timings block over an earlier one, field by field. A zero in the new block
-// says that server said nothing about that figure, not that it fell to zero, so the earlier figure
-// stands: a server that sends its counts in one chunk and its speeds in another keeps both.
+// mergeTimings keeps an earlier figure where the later block says nothing, which is not the same as zero
 func mergeTimings(earlier, later Timings) Timings {
 	if later.CacheN == 0 && later.PromptN == 0 {
 		later.CacheN, later.PromptN = earlier.CacheN, earlier.PromptN
@@ -145,8 +137,7 @@ func mergeTimings(earlier, later Timings) Timings {
 	return later
 }
 
-// turn builds the reply; tool calls come back in the order their first fragment arrived, which is the
-// order the server chose to open them in.
+// turn builds the reply; tool calls keep the order the server opened them in
 func (a *streamAccumulator) turn() Turn {
 	turn := Turn{
 		Message: Message{

@@ -5,10 +5,7 @@ import (
 	"testing"
 )
 
-// A character device test calls the null device a terminal. It is not one: nothing arrives on the
-// stream read from it and nobody reads what is written to the one written to. That is the stream a
-// `ykode < /dev/null` run and every test binary is handed, and reading it as interactive is how a
-// program ends up waiting for an answer from nobody.
+// a character device test calls the null device a terminal; it is not one, and a test binary gets one
 func TestTheNullDeviceIsNotATerminal(t *testing.T) {
 	f, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
@@ -20,8 +17,7 @@ func TestTheNullDeviceIsNotATerminal(t *testing.T) {
 	}
 }
 
-// a pipe is not a terminal either, and that case already worked: said here so the two are not
-// confused by a future change to the mode test
+// a pipe is not a terminal either, and already worked: said so the two cases are not confused later
 func TestAPipeIsNotATerminal(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {

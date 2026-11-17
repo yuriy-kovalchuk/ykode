@@ -14,8 +14,7 @@ const (
 	minAnswerTok   = 1024 // what the answer keeps after a thinking phase takes its share
 )
 
-// inputModes is what the model in use takes as input besides text, which is what decides whether an
-// attachment goes out at all. Text needs no saying: every chat server takes it.
+// inputModes is what the model takes besides text, which decides whether an attachment goes out
 func (a *Agent) inputModes() []string {
 	if !a.opts.Vision {
 		return nil
@@ -32,8 +31,7 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 		Tools:      a.specs(),
 		ToolChoice: "auto",
 		MaxTokens:  a.opts.MaxTokens,
-		// what this model is known to take: an attachment of anything else stays out of the request while
-		// it stays in the conversation, so a model that reads it gets it back
+		// an attachment this model cannot take stays out of the request but in the conversation
 		Modalities: a.inputModes(),
 		// the screen shows the speed while the reply streams; servers that do not know the field ignore it
 		TimingsPerToken: true,
@@ -69,10 +67,7 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 	return req, nil
 }
 
-// reserve is the part of the window held back for the reply and the chat template. It is what the
-// user asked for, but never more than a quarter of the window: a reserve of four thousand tokens
-// is sensible against a window of sixty thousand and is the whole of a window of four thousand, which
-// is what a llama-server started with no flags has.
+// reserve is the room held for the reply and template, never over a quarter of the window
 func (a *Agent) reserve() int {
 	return min(cmp.Or(a.opts.SafetyMargin, ctxSafetyTok), max(a.opts.CtxSize/4, ctxSafetyTok))
 }
@@ -80,19 +75,12 @@ func (a *Agent) reserve() int {
 // usable is the window less the reserve: what a request may fill, reply included.
 func (a *Agent) usable() int { return a.opts.CtxSize - a.reserve() }
 
-// The conversation is kept under two marks. The ceiling is where the oldest messages start being
-// dropped whole: nine tenths of the window, or less when the reserve asks for more than that tenth -
-// so what a drop leaves always passes the check a request makes, and a run never folds, drops and
-// then refuses to send.
+// the conversation stays under two marks: the ceiling is where the oldest messages get dropped
 func (a *Agent) ceiling() int {
 	return min(a.opts.CtxSize*9/10, a.usable()-minResponseTok)
 }
 
-// pressureMark, where the older turns are folded into a summary, is the last moment a fold is still
-// possible: the fold's request carries the older turns and pays for the summary they become, so the
-// ask belongs where the window can still hold both. Folding earlier throws away whole results that
-// the model was still using; folding later leaves the drop layer to delete what a summary would have
-// written down.
+// pressureMark is the last point a fold still fits, since a fold pays for turns and recap alike
 func (a *Agent) pressureMark() int {
 	return min(a.ceiling(), a.usable()-a.compactRoom())
 }
@@ -105,8 +93,7 @@ func (a *Agent) underPressure() bool {
 // neverRan is the reply written for a call that was interrupted before it answered.
 const neverRan = "this call never ran: the request was interrupted before it finished"
 
-// sanitizeHistory keeps history something a server accepts: a cut-off call holds invalid JSON, and a
-// call whose reply was never written (the user pressed Ctrl-C mid-tool) makes the whole request fail.
+// sanitizeHistory keeps history a server accepts: a cut-off call or a missing reply fails the request
 func (a *Agent) sanitizeHistory() {
 	fixed := []int{}
 	for i := range a.history {
@@ -117,9 +104,7 @@ func (a *Agent) sanitizeHistory() {
 			}
 		}
 	}
-	// a call's arguments repaired in place is one line each, not a copy of the conversation: the trim and
-	// the fold already write the whole thing often enough. Positions are only safe while the file holds
-	// exactly this conversation less the system prompt, which the added replies below would move.
+	// a repaired call's arguments go to the log as one line each, not as a copy of the conversation
 	if len(fixed) > 0 && a.opts.Session.Count() == len(a.history)-1 {
 		for _, i := range fixed {
 			if err := a.opts.Session.Revised(i-1, a.history[i]); err != nil {

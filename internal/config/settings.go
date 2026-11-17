@@ -61,8 +61,7 @@ func settingsIn(dir string) string {
 	return filepath.Join(dir, "settings.yaml")
 }
 
-// SeedSettings writes the defaults to $YKODE_HOME/settings.yaml when nothing is there yet, so
-// the file a user might edit exists and shows every key. An existing file is never touched.
+// SeedSettings writes the defaults when nothing is there yet, and never touches an existing file
 func SeedSettings() error {
 	path := home.Settings()
 	if _, err := os.Stat(settingsIn(home.Dir())); err == nil {
@@ -89,8 +88,7 @@ func (c *Config) readSettings() error {
 	return c.applyFile(LocalSettings(c.Root), true)
 }
 
-// applyFile reads one settings file and layers it over what came before. A project's file is a
-// stranger: it may say how the project works, and everything else waits until the user trusts it.
+// applyFile layers one settings file over the rest; a project's waits until it is trusted
 func (c *Config) applyFile(path string, project bool) error {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -101,10 +99,7 @@ func (c *Config) applyFile(path string, project bool) error {
 	}
 	var s fileSettings
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	// A key the shape has no field for fails the file, naming the file and the key. That is a decision
-	// an existing test pins: a key that no longer exists (reserve_output, once a second name for
-	// max_tokens) must not read as if it had taken effect, and a misspelling one edit away is cheaper
-	// than a setting quietly ignored. The failure says which file and which key, so the fix is one edit.
+	// a key the shape has no field for fails the file, naming file and key so the fix is one edit
 	dec.KnownFields(true)
 	if err := dec.Decode(&s); err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%s: %s", path, describeDecode(raw, err))
@@ -120,10 +115,7 @@ func (c *Config) applyFile(path string, project bool) error {
 	return c.applySettings(s, path)
 }
 
-// describeDecode turns a yaml complaint into one that names the setting. The library reports a line
-// number and the type it wanted; the reader has the file, not the line numbers, and a settings file is
-// the one file in this program a person is expected to edit. So the keys sitting on the lines named get
-// named, and the original wording follows underneath unchanged.
+// describeDecode turns a yaml complaint into one naming the setting, since that file is edited by hand
 func describeDecode(raw []byte, err error) string {
 	msg := err.Error()
 	var names []string
@@ -159,8 +151,7 @@ func linesNamed(msg string) []int {
 	return lines
 }
 
-// keyAtLine is the setting a line of the file belongs to, dotted the way the settings table names it
-// (tools.read_lines). Indentation gives the section; anything that is not a key line is skipped.
+// keyAtLine is the setting a line belongs to, dotted as the table names it, from its indentation
 func keyAtLine(raw []byte, line int) string {
 	if line <= 0 {
 		return ""

@@ -51,9 +51,7 @@ func specBytes(s llm.ToolSpec) int {
 	return len(raw)
 }
 
-// wireSpecBytes is what the tool list costs every request. The list is described to the model once
-// and never changes mid-session, so its size is counted once as well: the estimate that runs inside
-// the drop loop would otherwise rebuild every description and schema per message dropped.
+// wireSpecBytes is what the tool list costs every request, counted once, not per message dropped
 func (a *Agent) wireSpecBytes() int {
 	if a.specBytes == 0 {
 		for _, s := range a.specs() {
@@ -70,8 +68,7 @@ func (a *Agent) specs() []llm.ToolSpec {
 	}
 	all := a.tools.All()
 	specs := make([]llm.ToolSpec, 0, len(all))
-	// the list never changes mid-session: Qwen renders the tools inside the system message, so a
-	// tool arriving later throws away everything the server had cached
+	// the list never changes mid-session: Qwen renders it into the cached system message
 	for _, t := range all {
 		specs = append(specs, llm.ToolSpec{
 			Type:     "function",

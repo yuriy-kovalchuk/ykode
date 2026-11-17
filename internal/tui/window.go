@@ -2,18 +2,14 @@ package tui
 
 import "strings"
 
-// window is the session's slice of the screen. It works on rows the transcript already drew, and it
-// only ever moves a cursor through them: a session of eight thousand rows is drawn again every few
-// tokens, and splitting or measuring those rows once more per draw is what made a long session slow.
-// The rows arrive already cut to the screen's width, so nothing here measures them again.
+// window is the session's slice of the screen, moving a cursor through rows already drawn
 type window struct {
 	rows   []string
 	at     int // the first row in view
 	height int // how many rows fit above the prompt
 }
 
-// setRows takes the session as the transcript drew it. A reader at the end stays at its end as the
-// session grows, and one who scrolled up stays on the same part of it.
+// setRows takes the session as drawn: a reader at the end stays there, one scrolled up stays put
 func (w *window) setRows(rows []string) {
 	atEnd := w.atBottom() // where the reader stood before the session changed
 	w.rows = rows
@@ -43,8 +39,7 @@ func (w *window) percent() float64 {
 	return float64(w.at) / float64(w.last())
 }
 
-// view draws the rows in view and leaves the rest of the block blank, so the prompt stays at the
-// bottom of the screen whatever the session holds.
+// view draws the rows in view and blanks the rest, keeping the prompt at the screen's bottom
 func (w *window) view() string {
 	seen := make([]string, max(w.height, 0))
 	if len(w.rows) > 0 {

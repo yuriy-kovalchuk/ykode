@@ -25,8 +25,7 @@ func TestACallRowSaysWhatItTouches(t *testing.T) {
 		t.Errorf("the row ran past the result into the arguments:\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
-		// measured in columns: the band pads a row out to the width of the screen, and the marks in a
-		// row take more bytes than they do columns
+		// measured in columns: the band pads to the screen's width, and marks take more bytes than columns
 		if got := lipgloss.Width(stripCodes(line)); got > 80 {
 			t.Errorf("a call row is wider than the screen: %d columns %q", got, stripCodes(line))
 		}
@@ -101,8 +100,7 @@ func TestDroppingTheCallsBeingWrittenDrawsTheRowsBelowAgain(t *testing.T) {
 	}
 }
 
-// BenchmarkStreamingRedraw draws the screen as one streamed token does: a session with a long past
-// and one block still growing. Only the block being written may need drawing again.
+// BenchmarkStreamingRedraw draws as one streamed token does: only the growing block may redraw
 func BenchmarkStreamingRedraw(b *testing.B) {
 	var log transcript
 	for i := 0; i < 100; i++ {
@@ -120,15 +118,13 @@ func BenchmarkStreamingRedraw(b *testing.B) {
 	}
 }
 
-// paintedBehind is an escape that sets a background colour: 48 as a parameter of its own, not the
-// tail of a truecolor value such as 248.
+// paintedBehind is an escape setting a background: 48 as a parameter, not the tail of 248
 var paintedBehind = regexp.MustCompile(`\x1b\[(?:[0-9]+;)*48;`)
 
 // promptTop is how the card an ask sits in opens.
 const promptTop = "╭─ you"
 
-// what was asked sits in a card across the whole screen, so it reads apart from an answer even
-// when the ask runs over several rows
+// the ask sits in a card across the screen, reading apart from an answer over several rows
 func TestAPromptIsACardAcrossTheScreen(t *testing.T) {
 	block := strings.TrimRight(strings.Join((&transcript{}).draw(&entry{who: whoUser, text: "count the lines\nand then the ones added since the last release", at: time.Now()}, 60), "\n"), "\n")
 	lines := strings.Split(stripCodes(block), "\n")
@@ -155,8 +151,7 @@ func TestAPromptIsACardAcrossTheScreen(t *testing.T) {
 	}
 }
 
-// a command's answer and a notice stay inside the screen rather than running to the terminal's
-// own break, which is where their columns go missing
+// a command's answer and a notice stay inside the screen, not at the terminal's own break
 func TestACommandAnswerStaysInsideTheScreen(t *testing.T) {
 	long := "  /history [what] what this run did: " + strings.Repeat("a note long enough to run past the screen ", 3)
 	var log transcript
@@ -226,8 +221,7 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 	}
 }
 
-// a call carries no ground: its state is the colour of the mark at its left, and the row is the
-// width of its words, not of the screen
+// a call carries no ground: its state is the mark's colour, and the row is its words' width
 func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
 	withColour(t)
 	var log transcript
@@ -257,8 +251,7 @@ func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
 	}
 }
 
-// the ground a call sits in is a tint, not the terminal's solid colour: a whole row of green or red
-// is noise and nothing on it can be read.
+// a call's ground is a tint, not the terminal's solid colour: a full row of green is noise
 func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	withColour(t)
 	var log transcript
@@ -278,8 +271,7 @@ func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
 	}
 }
 
-// the ask keeps the whole width, and everything else is read inside a margin: two columns at the
-// left, and a row that stops short of the right edge so a wide glyph or a cursor has room
+// the ask keeps the whole width; everything else reads inside a margin, short of the edge
 func TestAMessageSitsInsideTheMargins(t *testing.T) {
 	var log transcript
 	log.user("count the lines", time.Now())
@@ -306,8 +298,7 @@ func TestAMessageSitsInsideTheMargins(t *testing.T) {
 	}
 }
 
-// a terminal narrower than the margin still fits: the margin shrinks rather than pushing a row past
-// the edge, where the terminal would break it and the columns would go missing
+// a terminal narrower than the margin still fits: the margin shrinks rather than overflowing
 func TestAMarginNeverPushesARowPastANarrowScreen(t *testing.T) {
 	var log transcript
 	log.answer(strings.Repeat("the change goes in the status line ", 8))
@@ -323,8 +314,7 @@ func TestAMarginNeverPushesARowPastANarrowScreen(t *testing.T) {
 	}
 }
 
-// callRow is one call's row: its own first row, which is where the call sits, and not the change or
-// the failure drawn under it.
+// callRow is one call's own first row, not the change or failure drawn under it
 func callRow(log *transcript, at int) string {
 	return log.rows(60)[log.rowStart[at]]
 }
@@ -338,8 +328,7 @@ func squeezed(row string) string {
 	return strings.Join(lines, "\n")
 }
 
-// a card is exactly as wide as asked, its label in the top edge, and a screen too narrow for the
-// frame gets the text alone rather than a broken frame
+// a card is as wide as asked, label in the top edge; a narrow screen gets text, not a frame
 func TestACardFramesItsRowsAtTheWidthAsked(t *testing.T) {
 	rows := card("you", "08:31", []string{"one", "two"}, 30)
 	if len(rows) != 4 || !strings.HasSuffix(stripCodes(rows[0]), " 08:31 ─╮") {

@@ -48,8 +48,7 @@ func TestRegistryKeepsRegistrationOrderAndDropsDuplicates(t *testing.T) {
 	}
 }
 
-// Detailed is only safe for tools that never run beside each other, and the agent decides that
-// by name, so pin the half of the built-in set that may overlap.
+// Detailed is only safe for tools that never run beside each other, so pin the overlapping half
 func TestNoOverlappingToolRemembersItsLastCall(t *testing.T) {
 	root, dir := setup(t)
 	overlapping := map[string]bool{"read_file": true}

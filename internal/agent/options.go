@@ -27,20 +27,16 @@ type Options struct {
 	Vision           bool         // the model in use reads images, so a picture read from a file is worth sending
 	Allow            []string     // what never to ask about: a tool name, or "exec:go test"
 	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
-	// Cards are the per-model sampling a settings file gave, for every model it named: without them a
-	// switch moves the window and the model id and keeps the old model's numbers.
+	// Cards are the per-model sampling a settings file gave, so a switch does not keep old numbers
 	Cards map[string]llm.ModelCard
 }
 
-// KeepRecentTokens is what a fold keeps of the newest work for a window of ctxSize: pi's 20,000, or a
-// fifth of a smaller window. An unknown window keeps only the newest calls.
+// KeepRecentTokens is what a fold keeps of recent work: pi's 20,000, or a fifth of a smaller window
 func KeepRecentTokens(ctxSize int) int { return min(keepRecentMax, ctxSize/5) }
 
 const keepRecentMax = 20000
 
-// SetEndpoint points the next request at another server and model, with that model's window and what it
-// takes as input. A request in flight is reading the client, the model and the window to build itself, so
-// it refuses while one runs rather than trusting the caller to have checked.
+// SetEndpoint points the next request at another server, refusing while a round-trip is in flight
 func (a *Agent) SetEndpoint(client *llm.Client, model llm.ModelInfo, ctxSize int) bool {
 	if a.refuseDuringATurn("switching server") {
 		return false
@@ -55,9 +51,7 @@ func (a *Agent) SetEndpoint(client *llm.Client, model llm.ModelInfo, ctxSize int
 	return true
 }
 
-// Tune changes options between turns, for a setting changed while the session runs. The round-trip in
-// flight is reading these options to build its request, so this refuses while one runs: the rule used to
-// be a comment and a promise about who called it.
+// Tune changes options between turns, refusing while a round-trip reads them to build its request
 func (a *Agent) Tune(change func(*Options)) bool {
 	if a.refuseDuringATurn("changing a setting") {
 		return false
@@ -93,20 +87,17 @@ func (a *Agent) CtxSize() int { return a.opts.CtxSize }
 // Root is the project directory this session works in.
 func (a *Agent) Root() string { return a.opts.Root }
 
-// Branch names what HEAD pointed at when the prompt was built. The screen refreshes it before each
-// ask; this saves the run one git call before anything is on screen.
+// Branch names what HEAD pointed at when the prompt was built, saving one git call per ask
 func (a *Agent) Branch() string { return a.branch }
 
 // Model is the model id this agent talks to.
 func (a *Agent) Model() string { return a.model }
 
-// Plan is the steps of the task the run is working through, as the model last wrote them; nil when
-// it wrote none. The run writes them while a front end reads them, so this is a copy.
+// Plan is the steps the model last wrote, nil if none; a copy, since the run writes them
 func (a *Agent) Plan() []tools.PlanStep { return a.opts.Plan.Steps() }
 
 // SavedMessages counts the conversation this run wrote to its session file.
 func (a *Agent) SavedMessages() int { return a.opts.Session.Count() }
 
-// SessionFile names the conversation this run is writing, "" when it saves none; it moves when the run
-// comes back to another one, so a front end's "come back with" line cannot point at the wrong file.
+// SessionFile names the conversation this run writes, "" when it saves none, and moves on a resume
 func (a *Agent) SessionFile() string { return a.opts.Session.Path() }

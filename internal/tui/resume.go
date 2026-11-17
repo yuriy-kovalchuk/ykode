@@ -10,8 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// resume puts the conversation a run came back to on the screen, above the prompt that continues it,
-// and returns the asks it holds so the earlier prompts stay walkable.
+// resume puts the conversation a run came back to on screen and returns its asks to walk
 func resume(log *transcript, id string, messages []llm.Message) []string {
 	if len(messages) < 2 {
 		return nil // only the system prompt: nothing was carried over
@@ -24,8 +23,7 @@ func resume(log *transcript, id string, messages []llm.Message) []string {
 	return log.replay(messages)
 }
 
-// replay draws the conversation a run came back to and returns its asks, so the earlier prompts are
-// still walkable. The model already holds these turns; a blank screen would say otherwise.
+// replay draws the resumed conversation and returns its asks; the model already holds these turns
 func (t *transcript) replay(messages []llm.Message) []string {
 	var asks []string
 	var open []llm.ToolCall // the calls of the assistant message being answered
@@ -37,8 +35,7 @@ func (t *transcript) replay(messages []llm.Message) []string {
 				t.summary(strings.TrimSpace(recap))
 				continue
 			}
-			// the hour was never saved, so a carried-over ask shows no clock; the note ykode added to the
-			// end of it is not what was typed
+			// the hour was never saved, and the note ykode added to an ask is not what was typed
 			ask := session.WithoutEnvironment(m.Content)
 			t.user(ask, time.Time{})
 			asks = append(asks, ask)

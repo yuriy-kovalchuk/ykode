@@ -2,9 +2,7 @@ package tools
 
 import "testing"
 
-// The file tools' scope and the command tool ask the same question - how much of this budget may be
-// filled - and used to answer it with two copies of the same arithmetic. One function answers it now, so
-// a change to the slack or the floor cannot reach one of them and not the other.
+// the file tools and the command tool ask the same question, so one function answers it for both
 func TestTheByteCeilingsAreOneArithmetic(t *testing.T) {
 	for _, budget := range []int{0, -5, 10, 100, 700, 12000, 51200} {
 		want := resultCap(budget)
@@ -23,8 +21,7 @@ func TestTheByteCeilingsAreOneArithmetic(t *testing.T) {
 	}
 }
 
-// A ceiling is a ceiling: a tool that fills to the aim must still fit inside the budget it was given,
-// with room left over for the note about the cut.
+// a ceiling is a ceiling: filling to the aim must still fit the budget, the note included
 func TestAnAimedResultFitsItsBudget(t *testing.T) {
 	for _, budget := range []int{1000, 12000, 51200} {
 		if aim := resultCap(budget); aim+markerOverhead > budget {

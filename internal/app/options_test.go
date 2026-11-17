@@ -27,8 +27,7 @@ func TestEveryRunGetsTheSamePlanAndSettings(t *testing.T) {
 	}
 }
 
-// A window named on the command line is a request about this server, not about whichever model gets
-// picked next: unmarked, a model switch replaces the number the user typed with the model's own.
+// a window named on the command line is about this server, not the next model: unmarked, a switch replaces it
 func TestAWindowNamedByTheFlagIsMarkedAsPinned(t *testing.T) {
 	_, pinned := Options(config.Config{CtxSize: 8000}, "m", 8000)
 	if !pinned.CtxPinned {

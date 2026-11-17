@@ -12,8 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// runTool never returns an error: whatever went wrong becomes result text the model can act on. Its
-// answer carries a picture too, when the tool read one.
+// runTool never returns an error: whatever went wrong becomes result text the model can act on
 func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) tools.Result {
 	name := call.Function.Name
 	args := a.normalizedArgs(name, call.Function.Arguments)
@@ -50,9 +49,7 @@ func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) tools
 	return res
 }
 
-// blindToPictures tells the model it is not being shown a picture this turn, which the request leaves
-// out because the model has no image reader for it. The bytes stay in the conversation, so a model
-// switched to one that reads pictures is sent them; the words say why this one saw nothing.
+// blindToPictures tells the model it saw no picture this turn, while the bytes stay in the conversation
 func (a *Agent) blindToPictures(res *tools.Result) {
 	if a.opts.Vision || len(res.Attachments) == 0 {
 		return
@@ -71,9 +68,7 @@ func (a *Agent) failTool(name, args, why string) string {
 	return "error: " + why
 }
 
-// permit decides whether a call may run, asking the user when nothing already covers it. An
-// outside-root path is asked about even under --yes and an "always" never covers it, so remembering
-// one would only spread it over the same tool inside the project, where nobody was asked.
+// permit decides whether a call may run; an outside-root path asks even under --yes, never remembered
 func (a *Agent) permit(tool tools.Tool, name, args string, outside []string) bool {
 	needsAsk := tool.NeedsConfirm() && !a.opts.AssumeYes
 	switch {
@@ -105,10 +100,7 @@ func outsidePaths(targets []tools.Target) []string {
 // redundantCD is a command's opening "cd DIR &&" or "cd DIR;", with DIR quoted or not.
 var redundantCD = regexp.MustCompile(`^\s*cd\s+(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))\s*(?:&&|;)\s*`)
 
-// withoutRootCD takes a leading cd into the project root off a command. exec_command already starts
-// there, so the cd changes nothing, and it costs: a command that chains can never match an allow entry,
-// so every `cd /project && go test` asked again, and the row on screen opened with a path the reader
-// already knows. A cd anywhere else is the command's own business and stays.
+// withoutRootCD drops a leading cd into the root: it changes nothing and breaks every allow match
 func withoutRootCD(command, root string) string {
 	m := redundantCD.FindStringSubmatch(command)
 	if m == nil {
@@ -124,8 +116,7 @@ func withoutRootCD(command, root string) string {
 	return command
 }
 
-// normalizedArgs is a call's arguments with the redundant cd gone from an exec_command, and anything
-// else untouched.
+// normalizedArgs is a call's arguments with that redundant cd gone, everything else untouched
 func (a *Agent) normalizedArgs(name string, args json.RawMessage) json.RawMessage {
 	if name != "exec_command" || a.opts.Root == "" {
 		return args

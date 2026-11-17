@@ -8,8 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// CommandSpec is one slash command as a front end needs it: what to type, what may follow it,
-// what it does, and whether it waits for the turn in flight.
+// CommandSpec is one slash command as a front end needs it: typing, arguments, meaning, and waiting
 type CommandSpec struct {
 	Name  string // /ctx
 	Args  string // [what]; empty when the command takes nothing
@@ -26,8 +25,7 @@ func (c CommandSpec) Spellings() []string {
 	return []string{c.Name, c.Also}
 }
 
-// Commands lists the slash commands once, in the order they are worth reading: /help prints this
-// and the screen completes from it, so neither can fall behind the other.
+// Commands lists the slash commands once, so /help and the completion cannot fall behind each other
 func Commands() []CommandSpec {
 	return []CommandSpec{
 		{Name: "/help", Note: "the commands, narrowed by typing; enter writes one in the prompt box"},
@@ -46,9 +44,7 @@ func Commands() []CommandSpec {
 	}
 }
 
-// commandColumn is the left column of the list: the command, what may follow it, and any other name
-// it answers to. A command that is typed two ways has to be listed both ways, or the second one looks
-// like a mistake the list forgot.
+// commandColumn is the left column: the command, what may follow, and any name it also answers to
 func commandColumn(c CommandSpec) string {
 	shown := strings.TrimSpace(c.Name + " " + c.Args)
 	if c.Also != "" {
@@ -83,8 +79,7 @@ func UsageLine(u Usage, ctxSize int) string {
 		u.Turns, u.PromptTok, u.CachedTok, u.GenTok, u.TotalPrompt, room, u.BytesPerTok)
 }
 
-// CommandIsSafeDuringATurn says whether a command only reads: /help and /usage can
-// answer while a turn works; /reset and /compact would cut the ground from under it.
+// CommandIsSafeDuringATurn says which commands only read, so they can answer mid-turn
 func CommandIsSafeDuringATurn(line string) bool {
 	name := commandName(line)
 	for _, c := range Commands() {
@@ -113,8 +108,7 @@ func commandName(line string) string {
 	return line
 }
 
-// Command runs a slash command and returns the text a front end should show.
-// quit says the session is over; err is the caller's to report, never a reason to stop.
+// Command runs a slash command: the text to show, whether the session ended, and an error to report
 func (a *Agent) Command(ctx context.Context, line string) (text string, quit bool, err error) {
 	name, arg := commandName(line), strings.TrimSpace(strings.TrimPrefix(line, commandName(line)))
 	switch name {

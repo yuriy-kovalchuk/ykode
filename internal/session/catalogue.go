@@ -17,8 +17,7 @@ import (
 // firstAskChars is how much of an ask a listing shows before saying there is more.
 const firstAskChars = 70
 
-// Conversation is one saved session as a listing shows it: enough to pick it out again by what it
-// was about rather than by its id.
+// Conversation is one saved session as a listing shows it: enough to pick it out by what it was about
 type Conversation struct {
 	ID       string
 	Used     time.Time
@@ -27,9 +26,7 @@ type Conversation struct {
 	First    string
 }
 
-// Describe summarises the saved conversations, newest first. One with nothing to resume is left out:
-// a cleared conversation, a half-written file, an empty run. A file that cannot be read at all does
-// not sink the listing either - it is one conversation among many.
+// Describe summarises the saved conversations, newest first, skipping ones with nothing to resume
 func Describe(dir string, limit int) ([]Conversation, error) {
 	names, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
@@ -50,15 +47,13 @@ func Describe(dir string, limit int) ([]Conversation, error) {
 	return list, nil
 }
 
-// describe reads one conversation's shape without holding it in memory: its project, how many
-// messages a resume would read back, and the ask a resume would start from.
+// describe reads one conversation's shape without holding it in memory: project, size, and first ask
 func describe(path string) (Conversation, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Conversation{}, err
 	}
-	// a read whose file would not close has already given its lines: the catalogue is
-	// listing conversations, not writing one, so there is nothing unsent to lose
+	// a read whose file would not close has already given its lines, and nothing unsent is to lose here
 	defer func() { _ = f.Close() }()
 
 	c := Conversation{ID: strings.TrimSuffix(filepath.Base(path), ".jsonl")}

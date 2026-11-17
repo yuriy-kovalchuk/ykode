@@ -54,8 +54,7 @@ func TestTabTypesWhatTheCandidatesShare(t *testing.T) {
 	}
 }
 
-// a command reached by its other name is offered and completed under that name, not under the one
-// the list leads with
+// a command reached by its other name is offered and completed under that name
 func TestTypingTheOtherNameOfACommandCompletesThatName(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 90, 24
@@ -90,8 +89,7 @@ func TestEscClearsTheListAndKeepsTheLine(t *testing.T) {
 	}
 }
 
-// a screen with room lists every command it could still be; a short one lists what fits and says
-// what is left
+// a roomy screen lists every candidate; a short one lists what fits and says what is left
 func TestTheCommandListTakesTheRoomTheScreenHas(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 90, 40

@@ -8,9 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// helpScreen is /help: the commands and what each does. The command prints them as text that scrolls away
-// with the conversation; here they stay put, narrow to the one you half-remember, and enter puts it in
-// the prompt box, spelled out and ready to run or to finish typing.
+// helpScreen is /help: the commands stay put, narrow, and enter puts one in the prompt box
 type helpScreen struct {
 	chooser
 	commands []agent.CommandSpec
@@ -35,8 +33,7 @@ func (s *helpScreen) helpRows() []listRow {
 	}
 	rows := make([]listRow, len(s.commands))
 	for i, c := range s.commands {
-		// the command keeps the front of the row: what it does is the part a short terminal gives up,
-		// and the pane below says all of it
+		// the command keeps the front of the row; what it does is what a short terminal gives up
 		rows[i] = listRow{
 			id:   c.Name,
 			mark: markIf(c.Waits, "⏳"),

@@ -10,8 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// with no file of its own a change lands in the user's settings, and the project's folder is not
-// created on the way
+// with no file of its own a change lands in the user's settings, and no project folder appears
 func TestAChangeWithoutAProjectFileGoesToTheGlobalOne(t *testing.T) {
 	user := fakeHome(t)
 	root := t.TempDir()

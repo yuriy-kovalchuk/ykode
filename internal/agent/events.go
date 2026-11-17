@@ -59,8 +59,7 @@ func (k EventKind) String() string {
 	return "unknown"
 }
 
-// Event is one step of a run. Tool events may arrive from several goroutines at once, so a
-// consumer must not assume one ordering, and Emit must be safe to call concurrently.
+// Event is one step of a run: tool events come from several goroutines, so Emit must be safe
 type Event struct {
 	Kind    EventKind
 	Turn    int
@@ -88,9 +87,7 @@ type Sink interface {
 	Emit(Event) Decision
 }
 
-// Asker is a front end that can answer the model's own question in words and wait for the person to
-// give them. A Decision is only a yes or a no, which is no use for a question with choices in it. It
-// answers nothing once ctx is done, so stopping the run lets go of the question as well.
+// Asker answers the model's own question in words, and answers nothing once ctx is done
 type Asker interface {
 	Ask(ctx context.Context, ev Event) string
 }

@@ -1,5 +1,4 @@
-// Package tui is the full-screen front end: a scrolling transcript, an input box and a
-// status bar. It displays what the agent reports and answers the questions it asks.
+// Package tui is the full-screen front end: transcript, input box and status bar, driven by events
 package tui
 
 import (
@@ -14,14 +13,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
-// Hub is the agent's sink while the TUI is up: events go to the screen, and a question
-// waits for the answer the user types. A *Hub is handed to agent.New before the program
-// exists, so it must be safe to construct first and wire up afterwards.
-//
-// What a run reports is queued here and the screen is only told that something waits. The run never
-// stands still while a frame is drawn - a stream that waited for the screen would report the screen's
-// speed as the server's - and tokens that arrive faster than frames reach the screen joined, as one
-// piece of text rather than one message each.
+// Hub is the agent's sink while the screen is up: reports queue here, the screen hears, answers wait
 type Hub struct {
 	done chan struct{} // closed when the screen is gone: nobody is left to answer a question
 
@@ -33,16 +25,14 @@ type Hub struct {
 
 func NewHub() *Hub { return &Hub{done: make(chan struct{})} }
 
-// wire points the hub at the program that draws. It is set once, before any run starts, and read by
-// the run's goroutine for every event after that, so both go through the lock.
+// wire points the hub at the program that draws, set once before any run, so both take the lock
 func (h *Hub) wire(send func(tea.Msg)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.send = send
 }
 
-// close says the screen is gone. A run still waiting on a question gets no for an answer and ends,
-// instead of holding a command or an edit open for a screen that will never draw it.
+// close says the screen is gone: a run still awaiting an answer gets none and ends
 func (h *Hub) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -74,8 +64,7 @@ func (h *Hub) Emit(ev agent.Event) agent.Decision {
 	}
 }
 
-// Ask forwards the model's own question and waits for the answer in words. Nothing typed, a run
-// cancelled while it waited, and a screen that left all answer nothing.
+// Ask forwards the model's question and waits for words; no screen or a cancel answers nothing
 func (h *Hub) Ask(ctx context.Context, ev agent.Event) string {
 	reply := make(chan string, 1)
 	if !h.post(askMsg{ev: ev, reply: reply}) {
@@ -91,8 +80,7 @@ func (h *Hub) Ask(ctx context.Context, ev agent.Event) string {
 	}
 }
 
-// post queues a message for the screen; false means nothing is drawing yet. It returns at once: the
-// screen is woken from a goroutine of its own, one at a time however much is queued behind it.
+// post queues a message for the screen and returns at once; false means nothing draws yet
 func (h *Hub) post(msg tea.Msg) bool {
 	h.mu.Lock()
 	send := h.send
@@ -119,10 +107,7 @@ func (h *Hub) take() []tea.Msg {
 	return waiting
 }
 
-// joined adds a message to the queue, folding it into one already there when the two say one thing:
-// text into the text before it, a piece of a call into the piece before it, and the server's speeds
-// into the speeds already waiting, since only the newest of those is ever shown. The speeds may wait
-// anywhere in the queue - they move no text - so they never stand between two pieces of an answer.
+// joined folds a message into the one before it when they say one thing, speeds folded last
 func joined(queue []tea.Msg, msg tea.Msg) []tea.Msg {
 	next, ok := msg.(eventMsg)
 	if !ok {
@@ -173,8 +158,7 @@ func continues(before, next agent.Event) bool {
 	return false
 }
 
-// newerSpeeds lays a later report over an earlier one. A report says nothing about a speed by leaving
-// it at zero, so the earlier figure stands until a later one replaces it.
+// newerSpeeds lays a later report over an earlier one; zero says nothing was said
 func newerSpeeds(before, next agent.Stats) agent.Stats {
 	if next.DecodeTokSec > 0 {
 		before.DecodeTokSec, before.Estimated, before.OutputTokens = next.DecodeTokSec, next.Estimated, next.OutputTokens
@@ -185,44 +169,30 @@ func newerSpeeds(before, next agent.Stats) agent.Stats {
 	return before
 }
 
-// Run draws the session until the user quits or ctx ends. The screen never asks the terminal for the
-// pointer: selecting text and the terminal's own scrollback stay with the terminal, and the keys
-// (arrows, pgup/pgdn, ctrl+u/ctrl+d, end) move the transcript. A wheel report that arrives anyway -
-// a mode another program left switched on - still scrolls, and is never typed into the box.
+// Run draws the session until quit or ctx: the screen never takes the pointer, keys scroll
 func Run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) error {
 	return run(ctx, a, hub, cfg, os.Stdout, tea.WithAltScreen())
 }
 
-// mouseOff switches off every pointer-tracking mode a terminal knows, in the order they are set, and
-// the extended reports with them. Two things need it. A program that exits with one of these left on
-// hands the next one - a shell, an editor, ykode itself - raw escape reports where keystrokes belong:
-// the wheel stops scrolling the terminal's history, text stops being selectable, and the reports land
-// as characters typed into whatever box holds the cursor. And a mode a previous program left behind
-// would otherwise be read here as reports, so the screen clears them before drawing anything.
+// mouseOff switches off every pointer-tracking mode, since a leftover one corrupts the next program
 const mouseOff = "\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?1005l"
 
-// writeMouseOff runs last whatever happened first: a clean quit, a cancelled context, a panic
-// recovered inside bubbletea, an error return. It writes to the terminal the screen drew on, which
-// is the only stream that can have been left tracking the pointer.
+// writeMouseOff runs last whatever happened first, on the terminal the screen drew on
 func writeMouseOff(terminal io.Writer) {
 	_, _ = io.WriteString(terminal, mouseOff)
 }
 
-// run is Run with the program options a test needs: a fake terminal instead of a real one. The
-// terminal is named on the same writer the program draws to, so a test sees the tab being named too.
+// run is Run with the program options a test needs: a fake terminal, named on the same writer
 func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, opts ...tea.ProgramOption) error {
-	// before anything else that can return: no path out of here may leave the terminal tracking the
-	// pointer, whatever the program was doing when it ended
+	// before anything that can return: no path out may leave the terminal tracking the pointer
 	defer writeMouseOff(terminal)
 	// and nothing the last program left is allowed to survive into this one
 	writeMouseOff(terminal)
-	// Naming the tab is decoration: a terminal that will not take it still gets the session, and the
-	// program writes its own errors to the same place and reports them through Run.
+	// naming the tab is decoration: a terminal that refuses it still gets the session
 	_, _ = io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame
 	m := newModel(ctx, a, hub, cfg)
 	program := tea.NewProgram(m, opts...)
-	// everything a run reports reaches the screen through the hub: one wire, set before the
-	// program starts, so a finished turn can always report itself
+	// everything a run reports reaches the screen through the hub, set before the program starts
 	hub.wire(program.Send)
 	defer hub.close()
 	_, err := program.Run()

@@ -8,9 +8,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// modelScreen is a bare /model: what this run's server offers, and switching the run to the one under
-// the cursor. Today the command prints a numbered list and the switch means typing /model 7 back; a
-// number read off the screen is one step more than pointing at it.
+// modelScreen is a bare /model: the server's list, and switching to the one under the cursor
 type modelScreen struct {
 	chooser
 	models  []llm.ModelInfo
@@ -19,8 +17,7 @@ type modelScreen struct {
 	use     func(llm.ModelInfo)
 }
 
-// modelsFoundMsg is what the server's list turned out to be. The screen opens before the answer: a
-// server that has to load a model takes its time, and the session keeps running underneath.
+// modelsFoundMsg is the server's list: the box opens first, as a loading server takes its time
 type modelsFoundMsg struct {
 	models []llm.ModelInfo
 	err    error
@@ -75,8 +72,7 @@ func (s *modelScreen) modelRows() []listRow {
 	return rows
 }
 
-// modelDetail is the model the cursor is on: what it is called, the window it brings, and what choosing
-// it would do.
+// modelDetail is the cursor's model: its name, the window it brings, and what choosing does
 func (s *modelScreen) modelDetail(id string) []string {
 	if s.waiting {
 		return []string{"asking the server what it offers…"}

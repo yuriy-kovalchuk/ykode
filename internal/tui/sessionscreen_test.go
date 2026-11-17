@@ -15,16 +15,14 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// ownID, pickedID and foreignID are the three conversations a picker test starts with: this run's, one
-// of this project that went before it, and one another project wrote.
+// ownID, pickedID, foreignID: this run's, an earlier one here, and one another project wrote
 const (
 	ownID     = "s20260101-120000.000"
 	pickedID  = "s20260101-110000.000"
 	foreignID = "s20260101-100000.000"
 )
 
-// pickerModel is a screen whose run saves a conversation of its own and reads a folder holding two
-// more, the way a run that has been going a while does.
+// pickerModel is a screen that saves its own conversation and reads a folder holding two more
 func pickerModel(t *testing.T) (*model, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -65,8 +63,7 @@ func openList(t *testing.T, m *model) string {
 	return stripCodes(m.View())
 }
 
-// rowHolding is the first list row that says what it is looking for, so the mark beside a conversation
-// can be checked without naming where in the box it was drawn.
+// rowHolding is the first list row saying what it looks for, to check a mark without coordinates
 func rowHolding(view, want string) string {
 	for _, line := range strings.Split(view, "\n") {
 		if strings.Contains(line, want) {
@@ -113,8 +110,7 @@ func TestTypingNarrowsTheList(t *testing.T) {
 	}
 }
 
-// enter puts the conversation under the cursor in this run's place: the model reads it, the screen
-// draws it, and the run goes on saving to its file
+// enter gives the cursor's conversation to this run: the model reads it, the screen draws it
 func TestEnterContinuesTheConversationUnderTheCursor(t *testing.T) {
 	m, sessions := pickerModel(t)
 	openList(t, m)
@@ -187,8 +183,7 @@ func TestAnotherProjectsConversationIsNotContinued(t *testing.T) {
 	}
 }
 
-// continuing a conversation waits for the turn in flight: it would replace the history a request is
-// sending, so the list is not even opened over it
+// continuing waits for the turn in flight: it would replace history a request is sending
 func TestSessionsWaitsForTheTurnToFinish(t *testing.T) {
 	m, _ := pickerModel(t)
 	m.running = true

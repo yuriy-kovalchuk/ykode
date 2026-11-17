@@ -34,8 +34,7 @@ func modelScreenModel(t *testing.T, listing string) *model {
 
 const twoModels = `{"data":[{"id":"qwen-small","meta":{"n_ctx":32768}},{"id":"qwen-big","meta":{"n_ctx":131072}}]}`
 
-// openModels is /model typed at the prompt: the box opens at once and the command it returns is what
-// waits for the server, so a slow one never stops the session underneath.
+// openModels opens the box at once and returns the command that waits for the server
 func openModels(t *testing.T, m *model) string {
 	t.Helper()
 	m.input.SetValue("/model")

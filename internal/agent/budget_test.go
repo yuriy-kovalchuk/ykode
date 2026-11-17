@@ -16,8 +16,7 @@ func TestANoCapReplyGetsTheRoomTheWindowHasLeft(t *testing.T) {
 	if !ok {
 		t.Fatal("a known window must still bound the reply")
 	}
-	// the window minus the reserve is the ceiling; the prompt in front of it eats part of that room.
-	// The reserve is the margin asked for, but never more than a quarter of the window
+	// the window minus the reserve is the ceiling, and the reserve is never over a quarter of it
 	if maxTokens > 8000-8000/4 {
 		t.Errorf("max_tokens = %v: want at most the window minus the reserve", maxTokens)
 	}
@@ -121,8 +120,7 @@ func TestEveryRequestAsksForLiveTimings(t *testing.T) {
 	}
 }
 
-// the fold mark is the last moment a fold still fits, not a share of the window: a fixed share folded
-// a large window's whole results away while a fifth of it was still unused
+// the fold mark is the last moment a fold still fits, not a share of the window
 func TestTheFoldMarkIsTheLastMomentAFoldFits(t *testing.T) {
 	for _, tc := range []struct{ ctx, margin int }{{4096, 1024}, {32768, 4096}, {131072, 4096}} {
 		a := newForHistory(Options{CtxSize: tc.ctx, SafetyMargin: tc.margin})

@@ -2,9 +2,7 @@ package session
 
 import "strings"
 
-// Environment marks the note ykode adds to the end of an ask: the date and the state of the git tree
-// when it was asked. It is part of the message the model reads and the log keeps, and no part of what the
-// person typed, so anything that shows an ask to a person takes it off again.
+// Environment marks the note added to the end of an ask: date and git state, never part of the ask
 const (
 	EnvironmentOpen  = "\n\n<environment>\n"
 	EnvironmentClose = "\n</environment>"

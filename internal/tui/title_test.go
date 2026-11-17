@@ -28,8 +28,7 @@ func TestTheTitleNamesTheProjectFolder(t *testing.T) {
 	}
 }
 
-// a folder name built to reach past the title loses the characters that would have closed the
-// sequence early and handed the rest of the name to the terminal as escapes of its own
+// a folder name built to escape the title loses the characters that would close it early
 func TestATitleBuiltToEscapeIsHarmless(t *testing.T) {
 	hostile := "/srv/checkout\x1b]0;pwned\x07"
 	if got, want := titleSequence(hostile), "\x1b]0;ykode: checkout]0;pwned\x07"; got != want {
@@ -37,8 +36,7 @@ func TestATitleBuiltToEscapeIsHarmless(t *testing.T) {
 	}
 }
 
-// the session names the terminal's own tab, before a key is typed: the name is written as an escape
-// sequence, not as text on the screen
+// the session names the terminal's tab before any key: an escape sequence, not screen text
 func TestTheTabOfTheTerminalSaysWhichProjectItRuns(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "tiny-api")
 	if err := os.Mkdir(root, 0o755); err != nil {

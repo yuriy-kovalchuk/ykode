@@ -1,9 +1,4 @@
-// Package session keeps a run's conversation on disk so another run can pick it up.
-// The log is append-only: one JSON line per message, never edited, never trimmed. What a run does to
-// the conversation after it was said - shortening an old result, dropping a turn - is a line of its
-// own, so reading the file back gives the conversation as the run last sent it, byte for byte. That
-// is what a server's prompt cache compares: a resume that words one old message differently makes
-// the server read everything after it again.
+// Package session keeps a conversation on disk as an append-only log, so a resume sends the same bytes again
 package session
 
 import (
@@ -31,13 +26,10 @@ type Log struct {
 type header struct {
 	Root   string `json:"root"`
 	Format int    `json:"format,omitempty"` // how the rest of the file is written; 0 is a file from before this field
-	// A reader that cannot understand a newer format says so rather than rebuilding a conversation it
-	// cannot interpret, which is the difference between refusing to resume and resuming wrongly.
+	// a reader that cannot understand a newer format refuses, rather than resuming a conversation wrongly
 }
 
-// format is this program's session format. Lines added to it raise the number. Format 2 added
-// attachments to a message: an older reader would read such a line, lose the bytes quietly, and hand
-// back a conversation that looks whole and is not - which is what the number in the header is for.
+// format is this program's session format; lines that change how a line reads raise the number
 const format = 2
 
 // record is a message as the log keeps it, with the thinking that came with it beside it.
@@ -60,11 +52,7 @@ func (r record) message() llm.Message {
 	return r.Message
 }
 
-// A boundary line says the conversation before it no longer counts: a cleared one starts again, and
-// a folded one continues from the messages the fold kept. The log stays append-only either way: what
-// came before a boundary is still in the file, it is only no longer sent. A fold also says what it
-// did, so the file can be read on its own: the summary, the files the folded turns touched, and how
-// much it took away.
+// a boundary line says the conversation before it no longer counts, while the log stays append-only
 type boundary struct {
 	Boundary      string   `json:"boundary"`
 	Kept          []record `json:"kept,omitempty"`
@@ -91,10 +79,7 @@ const (
 	boundaryRewritten = "rewritten"
 )
 
-// change is a line that alters the conversation written so far without starting it over: one
-// message put in another's place, or a run of messages taken out. A position counts the messages
-// since the last boundary, from 0. A line of this kind can also carry what the run learned about the
-// server, which is no part of the conversation and is needed to carry it on the same way.
+// change alters the conversation so far without starting it over; a position counts from the last boundary
 type change struct {
 	Revised       *int    `json:"revised,omitempty"`
 	Message       *record `json:"message,omitempty"`
@@ -140,8 +125,7 @@ func (l *Log) Append(m llm.Message) error {
 	return nil
 }
 
-// Cleared marks the saved conversation as started over: a resume reads what follows the mark, not
-// what came before it.
+// Cleared marks the conversation as started over: a resume reads what follows the mark
 func (l *Log) Cleared() error {
 	if err := l.write(mustJSON(boundary{Boundary: boundaryCleared})); err != nil {
 		return err
@@ -152,8 +136,7 @@ func (l *Log) Cleared() error {
 	return nil
 }
 
-// Folded saves what a fold left standing, so a resume starts from the recap rather than reloading
-// the turns that were folded away and trimming them again.
+// Folded saves what a fold left standing, so a resume starts from the recap
 func (l *Log) Folded(f Fold) error {
 	kept := make([]record, len(f.Kept))
 	for i, m := range f.Kept {
@@ -169,11 +152,7 @@ func (l *Log) Folded(f Fold) error {
 	return nil
 }
 
-// Dropped takes a run of messages out of the conversation by position, which is what a trim does: it
-// deletes the oldest turns and writes nothing else. Saving the whole conversation for each one appends
-// a copy of everything - including the full text of every file read - to a file whose whole design is
-// to grow by one line at a time. A position outside what this log is tracking is an error rather than a
-// silent no: the caller then writes the conversation whole, which cannot delete the wrong turns.
+// Dropped removes a run of messages by position, which is what a trim does in one appended line
 func (l *Log) Dropped(from, to int) error {
 	if l == nil {
 		return nil
@@ -188,8 +167,7 @@ func (l *Log) Dropped(from, to int) error {
 	return nil
 }
 
-// Revised puts one message in another's place, by position: what a repair does when it replaces a
-// call's unreadable arguments with an empty object.
+// Revised puts one message in another's place by position: what a repair does to a bad call
 func (l *Log) Revised(at int, m llm.Message) error {
 	if l == nil {
 		return nil
@@ -201,8 +179,7 @@ func (l *Log) Revised(at int, m llm.Message) error {
 	return l.write(mustJSON(change{Revised: &at, Message: &r}))
 }
 
-// Rewritten saves the conversation whole, as it now stands: for a repair that moved messages about
-// rather than changing one.
+// Rewritten saves the conversation whole, for a repair that moved messages about
 func (l *Log) Rewritten(kept []llm.Message) error {
 	records := make([]record, len(kept))
 	for i, m := range kept {
@@ -217,15 +194,12 @@ func (l *Log) Rewritten(kept []llm.Message) error {
 	return nil
 }
 
-// Learned keeps how many bytes the server counted as one token. A run that comes back without it
-// measures the same conversation with a guess, and may trim what the first run had no need to.
+// Learned keeps the bytes the server counted as one token, so the next run measures with it
 func (l *Log) Learned(bytesPerToken float64) error {
 	return l.write(mustJSON(change{BytesPerToken: bytesPerToken}))
 }
 
-// write appends JSON lines, opening the file with its project header when it is new. The result is
-// named so the deferred Close can report a failure the write did not: on a network mount a write the
-// filesystem accepted and a close that then failed is a record that never reached the disk.
+// write appends JSON lines, naming the result so a deferred Close can report what the write did not
 func (l *Log) write(lines ...[]byte) (err error) {
 	if l == nil {
 		return nil
@@ -264,8 +238,7 @@ func (l *Log) Count() int {
 	return l.messages
 }
 
-// Load reads a conversation back for the project at root, refusing one another project started.
-// A half-written last line (the process was killed mid-write) is dropped rather than failing the resume.
+// Load reads a conversation for the project at root, refusing one another project started
 func Load(path, root string) ([]llm.Message, error) {
 	saved, err := LoadAll(path, root)
 	return saved.Messages, err
@@ -296,8 +269,7 @@ func load(path, root string, saved *Saved) ([]llm.Message, error) {
 				return nil, fmt.Errorf("session: %s belongs to %s; resume it with --root %s", filepath.Base(path), h.Root, h.Root)
 			}
 			if h.Format > format {
-				// a newer program wrote this one. Rebuilding it with the wrong reading of its lines gives back
-				// a conversation that looks fine and is wrong; saying so gives the user a run that works.
+				// a newer program wrote this: rebuilding it looks fine and is wrong, so refuse and say so
 				return nil, fmt.Errorf("session: %s was written by a newer ykode (format %d); this one reads %d", filepath.Base(path), h.Format, format)
 			}
 			continue
@@ -330,8 +302,7 @@ func load(path, root string, saved *Saved) ([]llm.Message, error) {
 	return messages, nil
 }
 
-// apply makes a change to the conversation read so far. A change that points outside it was written
-// by a run whose file lost lines since: it is left out rather than failing the whole resume.
+// apply skips a change pointing outside the conversation, rather than failing the whole resume
 func (c change) apply(messages []llm.Message) []llm.Message {
 	if c.Revised != nil && c.Message != nil && *c.Revised >= 0 && *c.Revised < len(messages) {
 		messages[*c.Revised] = c.Message.message()
@@ -350,8 +321,7 @@ func ID(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".jsonl")
 }
 
-// List names the saved conversations, newest first. The ids are stamped with the run time,
-// so name order is time order.
+// List names the saved conversations newest first: the ids are stamped with the run time
 func List(dir string) ([]string, error) {
 	names, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {

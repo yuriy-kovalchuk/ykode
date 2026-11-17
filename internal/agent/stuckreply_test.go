@@ -96,8 +96,7 @@ func TestAnEmptyReplyEndsTheAsk(t *testing.T) {
 	}
 }
 
-// a reply that ends after its thinking, with no call and no answer, stopped short: it is asked once to
-// go on, and the ask ends when it answers
+// a reply that ends after its thinking is asked once to go on, and the ask ends when it answers
 func TestAReplyThatOnlyThoughtIsAskedOnceToGoOn(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("Let me grep the lines.", "", "", nil, "stop"),

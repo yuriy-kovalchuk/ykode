@@ -25,30 +25,24 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		if m.running && (name == "/exit" || name == "/quit") {
 			m.cancelRun() // leaving cancels the turn rather than racing it
 		}
-		// One owner for the waiting rule: the table says which commands wait for the turn, and the gate
-		// runs before any handler, screen's own included. Each handler used to check m.running itself,
-		// which is eight places that had to remember, and a command added without one would act on a
-		// conversation a request is in the middle of sending.
+		// one owner for the waiting rule: the table says which commands wait, and the gate runs first
 		if m.running && !agent.CommandIsSafeDuringATurn(text) {
 			m.log.notice("that waits for the turn to finish: press esc to stop this one first")
 			m.refresh()
 			return m, nil
 		}
 		if name == "/compact" {
-			// the gate above is what keeps this from happening under a turn: the table marks /compact as
-			// waiting, and the fold replaces the turns a request is being built from
+			// the gate above holds /compact, since the fold replaces the turns a request is built from
 			return m, m.compact()
 		}
 		if name == "/create-local-setting" {
-			// the project gets its own settings file, and every change after this lands in it. The table
-			// marks it as waiting, so the gate above is what holds it while a turn runs.
+			// the project gets its own settings file here, and every change after this lands in it
 			m.createLocal()
 			m.refresh()
 			return m, nil
 		}
 		if name == "/settings" {
-			// the screen answers this one: it writes the settings file, and a bare /settings opens
-			// the server and model screen, the one a first run starts with
+			// the screen answers this: it writes the settings file, and a bare /settings opens the first screen
 			if strings.TrimSpace(text) == "/settings" {
 				m.openSettings()
 			} else {
@@ -58,16 +52,13 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if name == "/sessions" {
-			// the screen answers this one too: its list can put a saved conversation in this run's
-			// place, which a front end without a screen leaves to --continue. It would replace the
-			// history a request is in the middle of sending, so the gate above is what holds it.
+			// the screen answers this too: its list swaps in a saved conversation, so the gate above holds it
 			m.openSessions()
 			m.refresh()
 			return m, nil
 		}
 		if name == "/ctx" || name == "/usage" {
-			// the screen reads these itself: figures in a box the terminal cannot scroll away, with the
-			// window's fullness shown as a bar instead of a paragraph of them
+			// the screen reads these itself: figures in a box, the window's fullness shown as a bar
 			m.picker = m.sessionReport()
 			m.refresh()
 			return m, nil
@@ -97,8 +88,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if strings.TrimSpace(text) == "/model" {
-			// the screen lists what the server offers and switches to the model you pick; /model ID and
-			// /model NUMBER still answer in the transcript, for a model the server does not list
+			// the screen lists the server's models; /model ID and NUMBER still answer in the transcript
 			cmd := m.openModels()
 			m.refresh()
 			return m, cmd
@@ -118,8 +108,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	if m.running {
-		// the ask goes to the run, which takes it at the next round-trip; the rows under the prompt
-		// keep it in sight until then, so it never scrolls away
+		// the ask goes to the run for the next round-trip, staying in sight under the prompt until then
 		m.agent.Steer(text)
 		m.refresh()
 		return m, nil
@@ -127,8 +116,7 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 	return m, m.start(text)
 }
 
-// start runs one turn on its own goroutine: the screen keeps drawing and typing. The
-// goroutine always reports back, good or bad, or the screen would wait forever.
+// start runs one turn on its own goroutine, which always reports back, good or bad
 func (m *model) start(prompt string) tea.Cmd {
 	m.log.user(prompt, time.Now())
 	turnCtx, cancel := context.WithCancel(m.ctx)
@@ -148,8 +136,7 @@ func (m *model) begin() {
 	m.refresh()
 }
 
-// compact folds the older turns on its own goroutine: the model writes the summary, which is
-// the slowest thing in a session, and the screen must keep drawing and answering questions.
+// compact folds on its own goroutine: the summary is the slowest thing here, and the screen runs on
 func (m *model) compact() tea.Cmd {
 	turnCtx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
@@ -176,8 +163,7 @@ func (m *model) handle(ev agent.Event) {
 
 	switch ev.Kind {
 	case agent.Thinking, agent.Answer:
-		// what streams joins the session now and is drawn with the next frame: a frame per token is
-		// more frames than a reader sees
+		// what streams joins the session now and draws with the next frame: a frame per token is wasted
 		if ev.Kind == agent.Thinking {
 			m.log.thinking(ev.Text)
 		} else {
@@ -200,8 +186,7 @@ func (m *model) handle(ev agent.Event) {
 		if ev.Stats.PrefillTokSec > 0 {
 			m.prefill = ev.Stats.PrefillTokSec
 		}
-		// a timings chunk moves only the footer, and every draw builds the footer from what is
-		// here now, so the transcript is not drawn again for it
+		// a timings chunk moves only the footer, built from what is here now, so no transcript redraw
 		return
 	case agent.ToolStart:
 		m.log.toolStart(ev.Tool, ev.Args)

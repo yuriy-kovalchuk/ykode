@@ -91,8 +91,7 @@ func TestARecapIsDrawnWhereItHappened(t *testing.T) {
 	}
 }
 
-// the screen reads rows, and they are kept between draws: a change redraws its own block and the
-// rows around it stay as they were drawn
+// rows are kept between draws: a change redraws its block, its neighbours stay as drawn
 func TestTheRowsAreKeptBetweenDraws(t *testing.T) {
 	var log transcript
 	log.user("the first ask", time.Now())

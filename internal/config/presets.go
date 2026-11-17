@@ -12,8 +12,7 @@ func (c *Config) SamplingFor(model string) (thinking, noThink llm.Sampling) {
 	return s[0], s[1]
 }
 
-// Cards are every model a settings file gave sampling for, so a switch mid-run picks up the model it
-// is switching to rather than keeping the numbers of the one it is leaving.
+// Cards are every model a settings file gave sampling for, so a switch takes the new model's numbers
 func (c *Config) Cards() map[string]llm.ModelCard {
 	if len(c.modelSampling) == 0 {
 		return nil
@@ -25,8 +24,7 @@ func (c *Config) Cards() map[string]llm.ModelCard {
 	return cards
 }
 
-// builtinSettings are the defaults ykode ships with, in the shape of the file, so the
-// settings.yaml a first run writes cannot disagree with what the code would have done.
+// builtinSettings are the shipped defaults in the file's shape, so the seed cannot disagree with the code
 func builtinSettings() fileSettings {
 	d := defaults() // the same list the code resolves from, so the file cannot contradict it
 	var s fileSettings
@@ -38,10 +36,7 @@ func builtinSettings() fileSettings {
 	s.KeepSessions = p(hours(d.KeepSessions))
 	s.Tools.ExecTimeoutSec = p(int(d.ExecTimeout / time.Second))
 	s.StreamIdle = p(int(d.StreamIdle / time.Second))
-	// command_log_dir is left out rather than seeded empty: normalize turns an empty value into the
-	// folder under home, and the settings table then reads that resolved path as a value the file set -
-	// the one seeded key that does not repeat its default verbatim, and so the only one reported as
-	// chosen. A key left out is the file's own way of saying "use the default".
+	// command_log_dir is left out, not seeded empty: an empty value resolves and then reads as chosen
 	s.Tools.KeepCommandLogs = p(hours(d.KeepCommandLogs))
 	return s
 }

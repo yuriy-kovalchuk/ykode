@@ -12,8 +12,7 @@ var ansiRe = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]|\x1b\\][^\x07]*\x07"
 // rewriteRe matches a progress line that rewrote itself with carriage returns.
 var rewriteRe = regexp.MustCompile("[^\n]*\r")
 
-// cleanOutput strips what a terminal would have swallowed and drops all but the last frame of a
-// progress line, so a spinner does not spend the model's context on animation.
+// cleanOutput strips what a terminal swallows and keeps the last frame of a progress line
 func cleanOutput(out string) string {
 	out = ansiRe.ReplaceAllString(out, "")
 	out = rewriteRe.ReplaceAllStringFunc(out, func(frame string) string {

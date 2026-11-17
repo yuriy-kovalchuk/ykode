@@ -125,8 +125,7 @@ func defaults() Config {
 	}
 }
 
-// Reload reads the settings again after one was written, keeping what belongs to this run and not to
-// the file: the conversation it is writing, and what startup said.
+// Reload reads the settings again, keeping what belongs to this run rather than to the file
 func (c Config) Reload() (Config, error) {
 	fresh, err := Load(c.Args)
 	if err != nil {

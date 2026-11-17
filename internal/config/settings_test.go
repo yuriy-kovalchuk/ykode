@@ -70,8 +70,7 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	}
 }
 
-// What a project may set for itself still beats the user's file; the keys it may not are in
-// TestAProjectCannotSetWhatItWantsTrustedFor.
+// a project's own allowed keys still beat the user's file; the forbidden ones have their own test
 func TestProjectSettingsOverrideTheUserOne(t *testing.T) {
 	user := fakeHome(t)
 	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"max_turns": 5, "model": "user-model"}`)
@@ -160,8 +159,7 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 	}
 }
 
-// audit, audit_retention_days and verify name things ykode no longer does: a file that still sets
-// them has to load, or an upgrade would stop the run before it starts
+// keys for things ykode no longer does must still load, or an upgrade stops the run before it starts
 func TestARetiredSettingStillLoads(t *testing.T) {
 	user := fakeHome(t)
 	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"audit": false, "audit_retention_days": 30, "verify": false}`)
@@ -290,8 +288,7 @@ func TestThePerUserDirectoryIsPrivate(t *testing.T) {
 	}
 }
 
-// A project is something you clone. Its settings may say how the project works, but they do not
-// get to move the server, hold the key, or answer the asking on the user's behalf.
+// a cloned project's settings may say how the project works, not move the server or hold the key
 func TestAProjectCannotSetWhatItWantsTrustedFor(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
@@ -472,8 +469,7 @@ func TestTheStreamSilenceLimitIsASetting(t *testing.T) {
 	}
 }
 
-// settings are YAML now: the file is meant to be edited by hand, and YAML says what a key means with
-// far less punctuation than JSON
+// settings are YAML because the file is edited by hand, and YAML needs less punctuation than JSON
 func TestTheSettingsFileIsYaml(t *testing.T) {
 	user := fakeHome(t)
 	writeSettings(t, filepath.Join(user, "settings.yaml"), "max_turns: 7\nthinking_level: low\ntools:\n  read_lines: 20\n")
@@ -487,9 +483,7 @@ func TestTheSettingsFileIsYaml(t *testing.T) {
 	}
 }
 
-// the screen never takes the pointer, so selecting text and the terminal's own scrollback stay with the
-// terminal. The key is retired rather than deleted: a settings.yaml written by an older run still loads,
-// and the knob is simply gone from what can be set.
+// the pointer key is retired, not deleted: an older settings.yaml still loads, the knob is simply gone
 func TestARetiredMouseSettingLoadsAndIsIgnored(t *testing.T) {
 	user := fakeHome(t)
 	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\n")
@@ -505,9 +499,7 @@ func TestARetiredMouseSettingLoadsAndIsIgnored(t *testing.T) {
 	}
 }
 
-// a setting that cannot be right is refused, and the error names the file and the key so the fix is
-// one edit away: a misspelling (at the top or nested, in either format), a keep that would delete
-// everything, and a count that is not above zero
+// a setting that cannot be right is refused, naming the file and the key so the fix is one edit
 func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
 	cases := []struct{ what, file, body, key string }{
 		{"a misspelled key", "settings.yaml", `{"base_ url": "http://nowhere"}`, "base_ url"},

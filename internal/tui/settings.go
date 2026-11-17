@@ -12,8 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// settings answers /settings: what this run reads, one knob explained, or a change written to
-// settings.yaml. A change lands in the file and is read by the next run.
+// settings answers /settings: what this run reads, one knob explained, or a change written out
 func (m *model) settings(line string) string {
 	_, rest, _ := strings.Cut(line, " ")
 	key, value, hasValue := strings.Cut(strings.TrimSpace(rest), " ")
@@ -27,8 +26,7 @@ func (m *model) settings(line string) string {
 	}
 }
 
-// settingsTable is every knob the file can set. The ones nobody chose read as their default and say
-// nothing more, so what someone changed is what stands out.
+// settingsTable is every knob the file can set; the unchosen ones read as their default
 func (m *model) settingsTable() string {
 	list := m.cfg.Catalogue()
 	width := 0
@@ -47,8 +45,7 @@ func (m *model) settingsTable() string {
 	return strings.Join(rows, "\n")
 }
 
-// settingsOne explains a single knob: what it is for, what it is now, what it would be, and how to
-// change it.
+// settingsOne explains one knob: its purpose, its value, its default, and how to change it
 func (m *model) settingsOne(key string) string {
 	s, ok := find(m.cfg.Catalogue(), key)
 	if !ok {
@@ -62,8 +59,7 @@ func (m *model) settingsOne(key string) string {
 	return strings.Join(append(rows, fmt.Sprintf("  change it: /settings %s VALUE", s.Key)), "\n")
 }
 
-// settingsChange writes one knob and says what moved, naming the file that took it. The value is
-// checked by the settings package before the file is touched, so a bad one leaves the file as it was.
+// settingsChange writes one knob, naming the file; a bad value leaves the file untouched
 func (m *model) settingsChange(key, value string) string {
 	before, known := find(m.cfg.Catalogue(), key)
 	path, local, err := config.Set(m.cfg.Root, key, value)
@@ -81,12 +77,10 @@ func (m *model) settingsChange(key, value string) string {
 	return line
 }
 
-// noLocalFile warns that a project without its own settings file is having the file every project
-// reads changed.
+// noLocalFile warns that a project without its own file is changing everyone's file
 const noLocalFile = "no .ykode/settings.yaml in this project: this changes the global settings"
 
-// createLocal gives the project a settings file of its own, starting from the server and model this
-// run is using, and reads the settings again so the screen shows where each value comes from.
+// createLocal gives the project its own settings file, from this run, and reloads the settings
 func (m *model) createLocal() {
 	path, err := config.CreateLocal(m.cfg.Root, m.cfg.BaseURL, m.agent.Model())
 	if err != nil {
@@ -133,9 +127,7 @@ func orUnset(value string) string {
 	return value
 }
 
-// modalMsg gives the screen over the session its message. It reports whether the modal took it; a key
-// always goes to the modal, and so does what its own probe answered, while everything else is the
-// session's, which keeps running underneath.
+// modalMsg gives the overlay its message; keys go to the modal, the rest to the session below
 func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
 	case tea.KeyMsg, probeDoneMsg:
@@ -154,8 +146,7 @@ func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// applyEndpoint saves the choice to the settings file this project uses and switches the running
-// session to it, so the next request goes to the new server with the new model and its window.
+// applyEndpoint saves the choice to this project's file and switches the running session to it
 func (m *model) applyEndpoint(res SetupResult) {
 	path, local, err := config.SaveEndpoint(m.cfg.Root, res.BaseURL, res.APIKey, res.Model)
 	if err != nil {

@@ -101,9 +101,7 @@ func TestAResumeThatOverflowsTheWindowIsTrimmed(t *testing.T) {
 	}
 }
 
-// Resuming is not a turn: nothing has been asked, so nothing has to be made to fit. Trimming on load
-// skipped the shortening and folding a running conversation gets first, and shed work the model had not
-// been shown again yet.
+// resuming is not a turn: nothing was asked, so nothing has to be made to fit the window
 func TestResumingAloneShedsNothing(t *testing.T) {
 	dir := t.TempDir()
 	log := session.New(dir, "s1", dir)
@@ -138,8 +136,7 @@ func TestResumingAloneShedsNothing(t *testing.T) {
 }
 
 func TestTrimmingNeverEatsTheQuestionBeingAnswered(t *testing.T) {
-	// a conversation too big for the window sheds its oldest turns, but the question being asked
-	// stays: an honest "this does not fit" beats quietly answering something else
+	// an oversized conversation sheds its oldest turns but keeps the ask: answering else is worse
 	var saved []llm.Message
 	for i := 0; i < 6; i++ {
 		saved = append(saved, llm.Message{Role: "user", Content: strings.Repeat("o", 1200)})

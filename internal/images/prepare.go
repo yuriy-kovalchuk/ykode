@@ -1,6 +1,4 @@
-// Package images makes a file's bytes into something a model that reads images can be sent: a format a
-// vision encoder decodes, and small enough for the request it travels in. A picture too big for the
-// window is worse than a smaller one: the server refuses the whole conversation, not the picture.
+// Package images makes a file's bytes small enough for the request and in a format a vision encoder decodes
 package images
 
 import (
@@ -17,8 +15,7 @@ import (
 	"golang.org/x/image/webp"
 )
 
-// The ceiling a picture may reach once it is encoded. A vision encoder downsamples far before this,
-// so keeping under it costs nothing the model would have wanted back.
+// the ceiling a picture may reach once encoded; a vision encoder downsamples far before this
 const (
 	MimePng  = "image/png"
 	MimeJpeg = "image/jpeg"
@@ -32,9 +29,7 @@ const (
 	maxShrinkings = 4         // steps before the picture is given up on
 )
 
-// Kind is the mime type of the image these first bytes start with, or "" when they start no image this
-// package can prepare. The bytes after them are never looked at, so this is safe on a buffer that was
-// only read as far as the signatures.
+// Kind is the mime type these bytes start with, or "" for no image this package can prepare
 func Kind(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}):
@@ -56,9 +51,7 @@ type Prepared struct {
 	Note string // what was done to it, so a model can map what it sees back to the file
 }
 
-// Prepare decodes a picture, brings it inside the ceiling, and encodes it as whichever of png and jpeg
-// is smaller. It fails when the bytes are not a picture, or when no step of the ladder gets them under
-// the ceiling: the caller then says so in words instead of sending a request the server refuses.
+// Prepare decodes, shrinks, and encodes as whichever of png and jpeg is smaller; it fails when no step fits
 func Prepare(data []byte, mime string) (Prepared, error) {
 	src, err := decode(data, mime)
 	if err != nil {
@@ -87,8 +80,7 @@ func Prepare(data []byte, mime string) (Prepared, error) {
 	}
 }
 
-// decode reads a picture. webp keeps to itself: its decoder is not registered globally, because a jpeg
-// and a webp picture can carry the same bytes.
+// decode reads a picture; webp is registered here, not globally, since webp and jpeg can share bytes
 func decode(data []byte, mime string) (image.Image, error) {
 	if mime == MimeWebp {
 		return webp.Decode(bytes.NewReader(data))
@@ -116,8 +108,7 @@ func smallestUnder(pic image.Image) (Prepared, bool) {
 	return best, best.Data != ""
 }
 
-// describe is what went out, with a note when the picture the model sees is not the file as stored: a
-// model told where it stands then reads a screenshot without guessing at the scale.
+// describe is what went out, with a note when the picture the model sees is scaled from the file
 func describe(from string, best Prepared, w int, h int, scale float64) Prepared {
 	if scale == 1 && best.MIME == from {
 		return Prepared{MIME: best.MIME, Data: best.Data}

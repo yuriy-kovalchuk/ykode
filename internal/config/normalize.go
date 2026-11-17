@@ -66,8 +66,7 @@ func (c *Config) normalize() error {
 // sessionIDPattern guards against a --continue argument that is not an id but a path.
 var sessionIDPattern = regexp.MustCompile(`^s[0-9]{8}-[0-9]{6}(\.[0-9]{3})?$`)
 
-// minIDPart is how much of an id has to be typed before it is taken as one: an id is a timestamp to
-// the millisecond, and nobody remembers it, so enough of it to name one conversation is enough.
+// minIDPart is how much of an id must be typed to count as one: an id is a timestamp to the millisecond
 const minIDPart = 3
 
 // resumeID turns "last", an id, or enough of an id into a conversation that exists on disk.
@@ -110,8 +109,7 @@ func resumeID(homeDir, want string) (string, error) {
 	}
 }
 
-// partOfAnID says a --continue argument is the part of an id somebody remembered: digits, and the
-// dash an id puts between the date and the time.
+// partOfAnID says a --continue argument holds part of an id: digits, and the dash between date and time
 func partOfAnID(want string) bool {
 	digits := 0
 	for _, r := range want {

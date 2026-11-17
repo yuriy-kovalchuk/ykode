@@ -12,8 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// /sessions names the conversations that can be resumed, marking this project's and this run's,
-// because an id is a timestamp nobody picks out of a list
+// /sessions names the resumable conversations, marking this project's and this run's
 func TestSessionsNamesWhatCanBeResumed(t *testing.T) {
 	dir := t.TempDir()
 	sessions := filepath.Join(dir, "sessions")
@@ -79,8 +78,7 @@ func sessionsRow(listing, id string) string {
 	return ""
 }
 
-// coming back to a saved conversation takes the run over: the model reads that one, what follows is
-// saved to its file, and the conversation this run gave up is left whole to come back to again
+// coming back to a saved conversation takes the run over, leaving the one it gave up whole on disk
 func TestContinueFromTakesTheRunOver(t *testing.T) {
 	dir := t.TempDir()
 	sessions := filepath.Join(dir, "sessions")
@@ -179,10 +177,7 @@ func lastContent(messages []llm.Message) string {
 	return messages[len(messages)-1].Content
 }
 
-// A trim takes the oldest turns out of the conversation and writes the whole thing back each time, so a
-// session that trims a dozen times carries a dozen copies of itself. The partial record the format
-// already replayed is the fix: one line naming positions, and a resume that reads back exactly what the
-// run is holding.
+// a trim writes one line naming positions, not a fresh copy of the whole session each time
 func TestATrimSavesOneLineAndStillReadsBackWhole(t *testing.T) {
 	dir := t.TempDir()
 	sessions := filepath.Join(dir, "sessions")
@@ -222,8 +217,7 @@ func TestATrimSavesOneLineAndStillReadsBackWhole(t *testing.T) {
 	}
 }
 
-// A repaired call is a replacement at a position, not a new message: what the file reads back carries
-// the repair and nothing else has moved.
+// a repaired call is a replacement at a position, so nothing else in the file has moved
 func TestARepairedCallIsReadBackRepaired(t *testing.T) {
 	dir := t.TempDir()
 	sessions := filepath.Join(dir, "sessions")

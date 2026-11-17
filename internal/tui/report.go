@@ -7,17 +7,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// sessionReport is /ctx and /usage: what this run's window holds and what the conversation has cost the
-// server, as figures a reader can see rather than a paragraph of them. It is read, not chosen from, so it
-// is the plain half of the same box a list opens.
+// sessionReport is /ctx and /usage: figures a reader can see, in the plain half of the box
 type report struct {
 	title string
 	facts []reportFact
 	note  string
 }
 
-// reportFact is one figure: what it is called, what it is, and how full it is, which is the only thing
-// worth a bar. An empty gauge means the figure has no share of anything to show.
+// reportFact is one figure: its name, its value, and how full it is, the only part worth a bar
 type reportFact struct {
 	name  string
 	value string
@@ -31,8 +28,7 @@ func gauge(name, value string, pct int) reportFact {
 	return reportFact{name: name, value: value, gauge: fullness(pct).Render(bar(pct, 24))}
 }
 
-// sessionReport reads the figures from this run. Usage is what the last turn measured; the window is the
-// budget, so the two together say how much room is left before the conversation has to be folded.
+// sessionReport reads the run's figures: last turn's usage against the window, so room left shows
 func (m *model) sessionReport() *report {
 	u, ctxSize := m.agent.Usage(), m.agent.CtxSize()
 	facts := []reportFact{}

@@ -53,8 +53,7 @@ func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 			apply()
 		}
 	}
-	// --thinking and --no-think set one thing, so the shorthand is applied apart from the map: a depth
-	// spelled out wins whichever order the flags came in
+	// --thinking and --no-think set one thing: a depth spelled out wins whichever order they came in
 	if set["no-think"] && f.NoThink && !set["thinking"] {
 		c.ThinkingLevel = llm.ThinkingOff
 	}

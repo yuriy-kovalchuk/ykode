@@ -61,9 +61,7 @@ func Run(args []string, version string) error {
 	if err != nil {
 		return fmt.Errorf("open root %q: %w", cfg.Root, err)
 	}
-	// releasing the handle cannot fail in any way this run could act on by then, and there is no
-	// result to lose: every tool has finished and the run is returning. Named as a discard so the
-	// reading is that this was weighed, not that it was missed.
+	// releasing the handle cannot fail in a way this run could act on, so the error is named as discarded
 	defer func() { _ = root.Close() }()
 
 	instructions, err := agent.LoadInstructions(home.Dir(), cfg.Root, agent.InstructionBytes(ctxSize))
@@ -96,16 +94,12 @@ func Run(args []string, version string) error {
 	return nil
 }
 
-// resumeNote tells a leaving session where the conversation went, so it can be picked up again:
-// the file is written as you work, but nothing else says it is there. The command is spelled out to be
-// pasted as it stands. It names the conversation the run ended writing, which is not the one it started
-// with when the screen came back to another one halfway through.
+// resumeNote tells a leaving session where the conversation went, spelled out to be pasted as it stands
 func resumeNote(file, root string, saved int) string {
 	if saved == 0 || file == "" {
 		return ""
 	}
-	// --root belongs in the line: a saved conversation is read back only by the project it was written
-	// in, so without it the command works just from the one directory it was typed in
+	// --root belongs in the line: a saved conversation is read back only by the project it was written in
 	if strings.ContainsAny(root, ` "'`) {
 		root = strconv.Quote(root) // a pasted command breaks on a path with a space
 	}
@@ -135,8 +129,7 @@ func startupConfig(args []string, version string) (config.Config, bool, error) {
 	return cfg, err != nil, err
 }
 
-// askForServer saves the choice to the settings file this project uses; a flag or environment value
-// still wins next time.
+// askForServer saves the choice to this project's settings file; a flag or environment value still wins
 func askForServer(cfg config.Config, problem string) (config.Config, error) {
 	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Problem: problem})
 	if err != nil {
@@ -158,9 +151,7 @@ func askForServer(cfg config.Config, problem string) (config.Config, error) {
 	return cfg, nil
 }
 
-// connect finds the model and its window, and prints them unless the screen will show them. The note
-// says what was decided for the user that they did not ask for, such as a model swapped for the one the
-// server has.
+// connect finds the model and its window, printing what was decided for the user without being asked
 func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, string, error) {
 	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
 	client.Session = cfg.Session // so a proxy keeps one conversation on the slot holding its cache
@@ -183,10 +174,7 @@ func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, string, error)
 	return client, model, ctxSize, note, nil
 }
 
-// pickModel resolves an empty model to the server's first. A model a settings file pinned that this
-// server does not list is a leftover from another endpoint, so the server's own is used and the note
-// says so; one named by --model or the environment is kept, since a proxy may load a model it does not
-// list yet, and the note warns instead.
+// pickModel resolves an empty model to the server's first, keeping one named by --model or the environment
 func pickModel(ctx context.Context, client *llm.Client, cfg config.Config) (llm.ModelInfo, string, error) {
 	models, err := client.Models(ctx)
 	if err != nil {

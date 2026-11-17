@@ -133,8 +133,7 @@ func TestACDIntoTheProjectRootIsDropped(t *testing.T) {
 	}
 }
 
-// the rewrite happens to the arguments the rest of the run sees, so the row on the screen and the
-// allow list both read the command without the cd
+// the rewrite reaches the arguments the rest of the run sees, so screen and allow list agree
 func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
 	a := &Agent{opts: Options{Root: "/work/proj"}}
 	args := a.normalizedArgs("exec_command", []byte(`{"command":"cd /work/proj && go test ./...","timeout":30}`))
@@ -153,8 +152,7 @@ func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
 	}
 }
 
-// pictureFile writes a picture the run can read: the tests need a file of the right bytes, not a name
-// that only looks like one.
+// pictureFile writes a picture the run can read, of the right bytes rather than the right name
 func pictureFile(t *testing.T, dir, name string) {
 	t.Helper()
 	var out bytes.Buffer
@@ -194,8 +192,7 @@ func toolReply(t *testing.T, req map[string]any) string {
 	return ""
 }
 
-// a picture the read opened reaches the model that reads pictures, in the shape the chat API takes:
-// the tool reply keeps its text and the picture follows the run as a message of its own
+// a read picture reaches a model that reads pictures: the reply keeps its text, the picture follows
 func TestAPictureReadFromAFileReachesTheModelThatReadsPictures(t *testing.T) {
 	dir := t.TempDir()
 	pictureFile(t, dir, "shot.png")
@@ -224,8 +221,7 @@ func TestAPictureReadFromAFileReachesTheModelThatReadsPictures(t *testing.T) {
 	}
 }
 
-// a model with no image reader is sent the conversation as text, told why the picture is missing, and
-// the bytes stay in the conversation so a switch to a model that reads them sends them
+// a model with no image reader gets text, told why, and the bytes stay for a model that reads them
 func TestAPictureIsNotSentToAModelThatReadsNone(t *testing.T) {
 	dir := t.TempDir()
 	pictureFile(t, dir, "shot.png")

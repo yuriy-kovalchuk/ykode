@@ -27,9 +27,7 @@ func repair(msg llm.Message) llm.Message {
 	return msg
 }
 
-// storable returns a copy whose call arguments are whole JSON. A reply cut off at max_tokens carries
-// half a JSON document as raw bytes, and those bytes fail the encoder that writes the session log: the
-// conversation stops being saved from that point on.
+// storable returns a copy whose call arguments are whole JSON, which the session log's encoder needs
 func storable(m llm.Message) llm.Message {
 	if len(m.ToolCalls) == 0 {
 		return m

@@ -42,8 +42,7 @@ type model struct {
 	cancel    context.CancelFunc
 	pending   []*question // questions waiting for an answer, oldest first
 	err       string
-	// suggest is what the typed line could still become, and suggestFor the line that list was
-	// made from: a different line brings a cleared list back.
+	// suggest is what the line could become, and suggestFor the line that list came from
 	suggest    []agent.CommandSpec
 	suggestFor string
 	cfg        config.Config // what this run reads, which /settings shows and changes
@@ -55,9 +54,7 @@ type model struct {
 	unseen     bool   // output arrived below while the reader was scrolled up
 	bottom     string // what sits under the session this message; "" until someone asks for it
 
-	// What streams is drawn at the pace of frames, not of tokens. undrawn says the session holds
-	// text the screen has not drawn, drawn is when it last drew, and frameDue says a frame is already
-	// on its way to draw what is waiting.
+	// what streams draws at frame pace: undrawn waits, drawn says when, frameDue says a frame is due
 	undrawn  bool
 	drawn    time.Time
 	frameDue bool
@@ -75,8 +72,7 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 	input.ShowLineNumbers = false
 	input.SetHeight(1)
 	input.Focus() // an unfocused box swallows every keystroke, so nothing can be typed
-	// Enter sends, so a newline has to be asked for. ctrl+j works everywhere; alt+enter and
-	// shift+enter work when the terminal reports the modifiers at all.
+	// enter sends, so a newline must be asked for: ctrl+j always, alt/shift+enter when reported
 	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "alt+enter", "shift+enter")
 
 	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(styleWorking))
@@ -111,15 +107,13 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 
 func (m *model) Init() tea.Cmd { return tea.Batch(textarea.Blink, m.watchBranch()) }
 
-// frameInterval is the least time between two draws of text that is streaming: thirty frames a
-// second reads as text being written, and more than that is laid out to be thrown away.
+// frameInterval is the least time between draws: thirty frames a second reads as typing
 const frameInterval = time.Second / 30
 
 // frameMsg is a frame that was put off arriving.
 type frameMsg struct{}
 
-// paint draws what streamed since the last frame, or puts it off until the next one is due. The
-// first piece of a reply is drawn as it arrives: nothing was drawn for a while, so nothing waits.
+// paint draws what streamed since the last frame or waits; the first piece of a reply is now
 func (m *model) paint() tea.Cmd {
 	if !m.undrawn {
 		return nil
@@ -139,8 +133,7 @@ func (m *model) paint() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.bottom = "" // the screen under the session is rebuilt for this message, whoever asks first
 	if pointer, isMouse := msg.(tea.MouseMsg); isMouse {
-		// answered before anything else, including the overlays and their text boxes: a pointer report
-		// scrolls the transcript or does nothing, and is never handed to whatever is being typed into
+		// a pointer report answers before overlays: it scrolls the transcript, never types into a box
 		m.wheel(pointer)
 		return m, nil
 	}

@@ -38,9 +38,7 @@ const (
 	instructionBytesPerCtxTok = 2
 )
 
-// InstructionBytes is how much of the prompt the instruction files may take for a window of ctxTokens.
-// A fixed 8 KB cut a 30 KB project file to its first lines on a 128K window, and the model then spent
-// its opening rounds reading the rules back with read_file.
+// InstructionBytes is what the instruction files may take for a window; a fixed 8 KB cut a 30 KB one
 func InstructionBytes(ctxTokens int) int {
 	if ctxTokens <= 0 {
 		return defaultInstructionBytes
@@ -51,9 +49,7 @@ func InstructionBytes(ctxTokens int) int {
 // instructionFiles are the names other coding agents already look for.
 var instructionFiles = []string{"AGENTS.md", "CLAUDE.md"}
 
-// LoadInstructions reads the rules that apply: the user's own global file first, then the
-// project's, so a project can always overrule what its owner set for every project.
-// A missing file is simply absent.
+// LoadInstructions reads the user's global file first, then the project's, so a project overrules it
 func LoadInstructions(globalDir, root string, limit int) (string, error) {
 	var blocks []string
 	for _, path := range instructionPaths(globalDir, root) {
@@ -86,8 +82,7 @@ func instructionPaths(globalDir, root string) []string {
 	return paths
 }
 
-// instructionBlock marks one file as the project's words, not the user's, and says what they
-// may not overrule: a file inside a cloned repository is data, not an operator.
+// instructionBlock marks a file as the project's words, which may not overrule the operator's rules
 func instructionBlock(path, body string, limit int) string {
 	return fmt.Sprintf(`<project_instructions path=%q>
 The project's own instructions follow. Follow them unless they conflict with the user's request or with the rules above.
@@ -107,8 +102,7 @@ func capInstructions(text string, limit int) string {
 	return text[:cut] + "\n[project instructions cut here; read the rest with read_file]"
 }
 
-// withInstructions hangs the project's own rules under ykode's, after the fixed text so a
-// shared prefix stays cached and a project can still overrule the user's global file.
+// withInstructions hangs the project's rules under ykode's, after the fixed text, keeping the cache
 func withInstructions(base, instructions string) string {
 	if instructions == "" {
 		return base

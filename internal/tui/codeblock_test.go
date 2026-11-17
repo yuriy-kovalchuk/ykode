@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// a block of code is read and copied as the code itself: nothing ykode drew may come along with a
-// selection, so the block is set in from the margin rather than ruled down its side
+// a code block is read and copied as the code itself, so it is inset from the margin, not ruled
 func TestACodeBlockCarriesNothingTheReaderDidNotWrite(t *testing.T) {
 	got := stripCodes(markdown("```go\nfunc main() {\n\tcount := 3\n}\n```", 60))
 	for _, rule := range []string{"│", "┊", "┃", "▏", "▎"} {
@@ -21,8 +20,7 @@ func TestACodeBlockCarriesNothingTheReaderDidNotWrite(t *testing.T) {
 	}
 }
 
-// colouring a block must not rewrite it: a block indented with tabs copies back as the same tabs,
-// whether or not a grammar covered its language
+// colouring must not rewrite a block: a tab-indented block copies back as the same tabs
 func TestAColouredBlockKeepsTheIndentTheWriterUsed(t *testing.T) {
 	withColour(t)
 	code := "func main() {\n\tcount := 3\n}\n```\n"
@@ -39,8 +37,7 @@ func TestAColouredBlockKeepsTheIndentTheWriterUsed(t *testing.T) {
 	}
 }
 
-// indentOf is one row of a drawn block exactly as the screen holds it, so two drawings of the same
-// code can be compared on the row that matters rather than on the caption above it
+// indentOf is one drawn row as the screen holds it, to compare drawings on the row that matters
 func indentOf(drawn, word string) string {
 	for _, row := range strings.Split(drawn, "\n") {
 		if strings.Contains(row, word) {

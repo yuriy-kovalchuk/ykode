@@ -27,8 +27,7 @@ func asksSent(a *Agent) []string {
 	return notes
 }
 
-// a call the model wrote as text, whole and naming a tool this run has, is run as the call it is: a
-// model whose server does not read its markup back would otherwise stop after every second call
+// a call the model wrote as text, naming a tool this run has, is run as the call it is
 func TestACallWrittenAsTextRuns(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "Let me write it.\n<tool_call>\n<function=write_file>\n<parameter=path>\nnote.txt\n</parameter>\n<parameter=content>\nline one\nline two\n</parameter>\n</function>\n</tool_call>", "", nil, "stop"),
@@ -61,8 +60,7 @@ func TestACallWrittenAsTextRuns(t *testing.T) {
 	}
 }
 
-// the markup of a call is held back however the stream cuts it up, and words that only look like
-// the start of a tag come through
+// a call's markup is held back however the stream cuts it up, and look-alike words come through
 func TestTheMarkupOfACallIsNeverShown(t *testing.T) {
 	answer := "a < b and <b>bold</b>, then <tool_call>\n<function=read_file>\n</function>\n</tool_call> done <function=x>y</function>."
 	for size := 1; size <= len(answer); size++ {
@@ -115,8 +113,7 @@ func TestAReplyWithNoCallEndsTheAsk(t *testing.T) {
 	}
 }
 
-// tool results carry what the tool returned and nothing else: a line the program slipped into them
-// read to the model as an injected instruction
+// tool results carry what the tool returned and nothing else, which the model reads as instruction
 func TestAToolResultCarriesOnlyTheToolsOutput(t *testing.T) {
 	plan := tools.NewPlan()
 	scripts := []string{sse("", "", "plan", []string{`{"steps":[{"text":"look","status":"active"},{"text":"answer"}]}`}, "tool_calls")}
@@ -155,8 +152,7 @@ func TestOutOfRoundsStopsWithoutAnotherRequest(t *testing.T) {
 	}
 }
 
-// a server started with no flags has a window of four thousand tokens and ykode's default margin is
-// as many: the reserve gives way, and a turn still completes
+// a server with no flags has a 4k window and so does the margin: the reserve gives way
 func TestATurnCompletesInASmallWindow(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
 	a, done := newAgent(t, stub, Options{CtxSize: 4096, SafetyMargin: 4096, MaxTurns: 4}, &captureSink{})
@@ -169,8 +165,7 @@ func TestATurnCompletesInASmallWindow(t *testing.T) {
 	}
 }
 
-// whatever the drop leaves, the request that follows it can go: the mark it drops to and the check a
-// request makes are one rule
+// whatever a drop leaves, the next request can go: the drop mark and the request check are one rule
 func TestWhatDroppingLeavesCanBeSent(t *testing.T) {
 	for _, window := range []int{2048, 4096, 8192, 32768} {
 		a := New(nil, nil, "test-model", Options{CtxSize: window, SafetyMargin: 4096}, nil)
@@ -223,8 +218,7 @@ func TestAResumedFoldWaitsForNewWork(t *testing.T) {
 	}
 }
 
-// an overflow that cannot be folded drops the oldest messages and logs each drop once: the session
-// file is not written out whole again on top of the drops
+// an overflow that cannot be folded drops the oldest, logging each drop once, not the file whole
 func TestAnOverflowDropIsLoggedOnce(t *testing.T) {
 	asked := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

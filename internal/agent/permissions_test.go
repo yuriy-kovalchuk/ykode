@@ -170,8 +170,7 @@ func TestAnAlwaysAnsweredOnAnOutsideCallIsNotRemembered(t *testing.T) {
 	}
 }
 
-// An allow entry may name one file, which is the narrowest thing a person can consent to in advance.
-// The entry says one file; the run does not get to read it as the tool in general.
+// an allow entry may name one file, the narrowest consent, and is not read as the whole tool
 func TestAnAllowEntryForOneFileCoversThatFileOnly(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "edit_file", []string{`{"path":"a.go","old_text":"x","new_text":"y"}`}, "tool_calls"),
@@ -202,8 +201,7 @@ func TestAnAllowEntryForOneFileCoversThatFileOnly(t *testing.T) {
 	}
 }
 
-// The same file written a different way is the same file: an entry is not a string match on how the
-// path happened to be spelled.
+// the same file spelled differently is the same file: an entry is not a string match
 func TestAFileEntryMatchesTheSameFileHoweverItIsSpelled(t *testing.T) {
 	p := newPermissions([]string{"edit_file:src/a.go"})
 	for _, args := range []string{`{"path":"src/a.go"}`, `{"path":"./src/a.go"}`, `{"path":"src/./a.go"}`} {

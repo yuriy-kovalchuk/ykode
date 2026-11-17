@@ -60,8 +60,7 @@ func TestModelAcceptsOneTheServerDoesNotList(t *testing.T) {
 	}
 }
 
-// A settings file can recommend numbers per model. A switch moved the window and the model id and kept
-// sending the model it had left: the card for the model actually being asked for was never looked up.
+// a switch must look up the card for the model being asked for, not keep the old model's numbers
 func TestASwitchPicksUpTheModelItIsSwitchingTo(t *testing.T) {
 	a := agentOnAServerWithModels(t, Options{
 		CtxSize:  1000,
@@ -74,16 +73,14 @@ func TestASwitchPicksUpTheModelItIsSwitchingTo(t *testing.T) {
 	if got := a.opts.Thinking.Temperature; got == nil || *got != 0.9 {
 		t.Errorf("after /model small the sampling sent is %+v, want the temperature that model's card recommends", a.opts.Thinking)
 	}
-	// a model nothing was written about keeps what is in use: nothing is known about it, and the
-	// server's own default is not necessarily what had been working
+	// a model nothing was written about keeps what is in use, since nothing else is known
 	a.Command(context.Background(), "/model big")
 	if got := a.opts.Thinking.Temperature; got == nil || *got != 0.9 {
 		t.Errorf("a model with no card lost the numbers in use: %+v", a.opts.Thinking)
 	}
 }
 
-// A model the server does not list has no window of its own. The run keeps the one it had and says so,
-// rather than switching the budget off without a word.
+// an unlisted model has no window: the run keeps its own and says so, instead of muting the budget
 func TestAModelOffTheListKeepsTheWindowAndSaysSo(t *testing.T) {
 	a := agentOnAServerWithModels(t, Options{CtxSize: 1000})
 	text, _, _ := a.Command(context.Background(), "/model proxy-loaded")
@@ -95,8 +92,7 @@ func TestAModelOffTheListKeepsTheWindowAndSaysSo(t *testing.T) {
 	}
 }
 
-// a model the server does not list says nothing about itself, so the run keeps what it was told about
-// the model being left - the capability as well as the window
+// an unlisted model says nothing, so the leaving model's capability and window are both kept
 func TestASwitchToAnUnlistedModelKeepsWhatItCouldRead(t *testing.T) {
 	a := New(nil, nil, "seeing-model", Options{Vision: true}, nil)
 	a.UseModel(llm.ModelInfo{ID: "not-listed-by-this-server"}, false)

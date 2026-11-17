@@ -91,9 +91,7 @@ func TestALongWriteIsAskedAboutInWords(t *testing.T) {
 	}
 }
 
-// the footer's two rows sit above the rule, the prompt under it, with a blank row between
-// what the session reports sits under the prompt: the prompt is where the reader stops reading,
-// and the two rows of numbers are what is read last
+// the report sits under the prompt: reading stops at the prompt, and the numbers come last
 func TestTheReportSitsUnderThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -213,8 +211,7 @@ func TestTheKeysListNamesTheChordsInTheUse(t *testing.T) {
 	}
 }
 
-// an ask waiting for the next round-trip keeps its row above the prompt, however few rows the
-// screen has, and the session keeps its rows too
+// an ask waiting for the next round-trip keeps its row above the prompt, on any screen
 func TestAWaitingAskKeepsItsRowAboveThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 80, 12

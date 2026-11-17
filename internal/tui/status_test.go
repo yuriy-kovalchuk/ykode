@@ -131,8 +131,7 @@ func TestTheStatusLineTimesThePrompt(t *testing.T) {
 	}
 }
 
-// facts sit on the left and what is happening now on the right; a narrow screen drops the oldest
-// fact first, and how full the window is is the last thing it takes
+// facts left, activity right: a narrow screen drops facts from the front, window last
 func TestTheStatusLineKeepsActivityWhenNarrow(t *testing.T) {
 	s := status{usage: agent.Usage{Turns: 1, EstTok: 3000, PromptTok: 100, CachedTok: 50, TotalPrompt: 90000, GenTok: 17000},
 		ctxSize: 131072, running: true, elapsed: 5 * time.Second, spinner: "⠋", decode: 40, width: 100}
@@ -165,8 +164,7 @@ func TestTheFooterReadsWhatTheAgentKnows(t *testing.T) {
 	}
 }
 
-// the footer reads the agent's numbers as it draws, so a command that changed the conversation shows
-// on the next frame rather than on the next reply
+// the footer reads the agent's numbers as it draws, so a change shows on the next frame
 func TestTheFooterReadsTheAgentsNumbersAtDrawTime(t *testing.T) {
 	a := agent.New(nil, nil, "test-model", agent.Options{CtxSize: 8000}, nil)
 	m := newModel(context.Background(), a, NewHub(), config.Config{})
@@ -187,8 +185,7 @@ func TestAMeasuredSpeedCarriesATilde(t *testing.T) {
 	}
 }
 
-// what the ask had to do to fit the conversation in shows beside the working prompt, where the long
-// clock is: a reader wonders why the round-trip is taking so long, not what it cost
+// what the ask did to fit the window shows beside the working prompt, where the clock is
 func TestWhatMadeRoomShowsBesideTheWorkingPrompt(t *testing.T) {
 	work := strings.Join(statusActivity(status{running: true, spinner: "⠋", elapsed: 42 * time.Second,
 		room: "summarising older turns"}), " ")

@@ -7,10 +7,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// The waiting rule has one owner: the table says which commands wait for the turn, and the screen's
-// gate is what holds all of them, its own handlers included. A command whose handler checked for a
-// running turn by hand was a rule kept in eight places, and one added without the check would have
-// acted on a conversation a request is in the middle of sending.
+// the waiting rule has one owner: the table says which commands wait, and the gate holds them all
 func TestEveryCommandThatWaitsIsHeldOutOfATurn(t *testing.T) {
 	for _, spec := range agent.Commands() {
 		if !spec.Waits {
@@ -29,8 +26,7 @@ func TestEveryCommandThatWaitsIsHeldOutOfATurn(t *testing.T) {
 	}
 }
 
-// The commands that do not wait answer straight away: a rule applied too broadly turns a running
-// session into one where nothing can be read.
+// commands that do not wait answer at once: a rule applied too broadly hides everything
 func TestACommandThatDoesNotWaitAnswersMidTurn(t *testing.T) {
 	for _, name := range []string{"/help", "/tools", "/ctx", "/usage", "/plan"} {
 		m, _ := pickerModel(t)
@@ -43,8 +39,7 @@ func TestACommandThatDoesNotWaitAnswersMidTurn(t *testing.T) {
 	}
 }
 
-// A command nobody described is not assumed harmless by accident: the gate asks the table, so a
-// command that waits cannot read as safe whatever its name is spelled like.
+// a command nobody described is not assumed harmless: the gate asks the table, not the name
 func TestACommandThatWaitsIsNeverReportedSafe(t *testing.T) {
 	for _, spec := range agent.Commands() {
 		for _, spelled := range []string{spec.Name, spec.Also} {

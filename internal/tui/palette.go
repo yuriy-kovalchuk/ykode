@@ -32,15 +32,12 @@ var (
 	styleBorder  = lipgloss.NewStyle().Foreground(colorBorder)
 	styleRail    = lipgloss.NewStyle().Foreground(colorTool)
 	styleGutter  = lipgloss.NewStyle().Foreground(colorThink)
-	// a change marks its side with one coloured glyph. The words on the row keep the terminal's own
-	// colour: a whole line of red or green is noise, and nothing on it reads.
+	// a change marks its side with one coloured glyph; the words keep the terminal's own colour
 	styleAddMark = lipgloss.NewStyle().Foreground(colorOK)
 	styleDelMark = lipgloss.NewStyle().Foreground(colorBad)
 	styleCode    = lipgloss.NewStyle().Foreground(colorCyan)
 	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
-	// A block of code marks only what a reader is looking for and leaves the rest the terminal's own
-	// colour. Each keeps the source's own tabs: a style that expanded them would rewrite the code a
-	// reader copies.
+	// code marks only what a reader looks for, keeping the source's tabs so a copy is the source
 	styleCodeDefault = lipgloss.NewStyle().TabWidth(-1)
 	styleCodeKeyword = lipgloss.NewStyle().TabWidth(-1).Foreground(colorTool).Bold(true)
 	styleCodeString  = lipgloss.NewStyle().TabWidth(-1).Foreground(colorOK)
@@ -48,8 +45,7 @@ var (
 	styleCodeName    = lipgloss.NewStyle().TabWidth(-1).Foreground(colorCyan)
 )
 
-// card is text inside a rounded frame the width of the screen, a title at the left of its top edge
-// and a label at the right. The body rows are expected to fit width-4 columns.
+// card is text in a rounded frame, title left, label right; body rows fit width-4 columns
 func card(title, label string, body []string, width int) []string {
 	inner := width - 4
 	if inner < 1 {
@@ -72,10 +68,7 @@ func card(title, label string, body []string, width int) []string {
 	return append(rows, styleBorder.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
 
-// diffSurfaces are the grounds a change sits on: a shade for the side that came in and one for the
-// side that went, and a stronger shade of each for the words that differ inside a line. They are
-// picked for the terminal the screen runs in: deep on a dark one, pale on a light one, so the words
-// on them keep the terminal's own colour and stay readable.
+// diffSurfaces are the four change grounds, deep or pale by the terminal, words left its own
 type diffSurfaces struct{ add, del, addWord, delWord lipgloss.Style }
 
 var diffSides = sync.OnceValue(func() diffSurfaces {

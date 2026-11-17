@@ -31,8 +31,7 @@ func inputModel(width int) *model {
 
 const sentence = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau"
 
-// a long line wraps onto new rows and the box grows to hold them: the start of what was typed stays
-// in the box at every keystroke, instead of scrolling out of sight above it
+// a long line wraps and the box grows, keeping the start of what was typed in view
 func TestTheStartOfWhatIsTypedStaysVisibleAsTheLineWraps(t *testing.T) {
 	m := inputModel(40)
 	for i, r := range sentence {
@@ -97,8 +96,7 @@ func TestTypingInTheMiddleOfTheTextKeepsTheStartInView(t *testing.T) {
 	}
 }
 
-// past the most the box grows to it scrolls, with the cursor's row in view, and it comes back whole
-// when the text fits again
+// past the box's maximum it scrolls with the cursor's row in view, and returns whole when it fits
 func TestAVeryLongTextScrollsAndComesBackWholeWhenItFitsAgain(t *testing.T) {
 	m := inputModel(40)
 	long := strings.Repeat("word ", 90) // about eleven or twelve rows at this width

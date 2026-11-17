@@ -16,8 +16,7 @@ func answerWithTimings(answer string, promptN, cacheN, predictedN int) string {
 			promptN, cacheN, predictedN)
 }
 
-// answerWithUsage is one streamed answer plus the counts a server sends when it counts tokens but
-// has no timings of its own; it says nothing about how fast the reply was.
+// answerWithUsage is an answer plus the counts of a server that counts tokens but sends no timings
 func answerWithUsage(answer string, promptN, cachedN, completionN int) string {
 	return fmt.Sprintf(`data: {"choices":[{"index":0,"delta":{"content":%q},"finish_reason":"stop"}]}`, answer) +
 		fmt.Sprintf("\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":%d,"+
@@ -231,9 +230,7 @@ func TestAGeneratedCountIsEstimatedWhereTheServerCountsNothing(t *testing.T) {
 	}
 }
 
-// the total is kept as the conversation grows, not walked: an estimate called several times a
-// round-trip and once per message in the trim loop must not reread every message each time. The count
-// of messages is what proves the incremental path is the one taken.
+// the total is kept as the conversation grows, not walked: the message count proves which path ran
 func TestTheByteTotalIsKeptRatherThanRewalked(t *testing.T) {
 	a := newForHistory(Options{})
 	a.add(llm.Message{Role: "user", Content: "one"})
@@ -252,9 +249,7 @@ func TestTheByteTotalIsKeptRatherThanRewalked(t *testing.T) {
 	}
 }
 
-// A fold and a drop take messages out of a conversation the server already counted, so the count it
-// gave is still true for what is left: it shrinks rather than being thrown away. Zeroing it sent every
-// later estimate back to a byte ratio over the whole conversation, which is where the guess comes from.
+// a fold and a drop leave the server's count true for what is left, so it shrinks rather than goes
 func TestAFoldKeepsTheCountTheServerGave(t *testing.T) {
 	a := newForHistory(Options{CtxSize: 8000})
 	a.meter.bytesPerTok = 4
@@ -272,8 +267,7 @@ func TestAFoldKeepsTheCountTheServerGave(t *testing.T) {
 	}
 }
 
-// A refusal that names the size it rejected is the one exact number available at the moment the
-// estimate is known to be wrong, so it becomes the count instead of nudging the ratio.
+// a refusal naming the size it rejected is exact, so it replaces the count instead of nudging ratios
 func TestARefusalThatNamesASizeBecomesTheCount(t *testing.T) {
 	a := newForHistory(Options{})
 	a.meter.toldByServer(9000, 36000)

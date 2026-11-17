@@ -12,14 +12,12 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// newForHistory is an agent with no tools and no server, for walking a conversation through what the
-// window rules do to it.
+// newForHistory is an agent with no tools and no server, for walking the window rules
 func newForHistory(opts Options) *Agent {
 	return New(nil, nil, "test-model", opts, nullSink{})
 }
 
-// an image enters the window as what the vision encoder makes of it, not as the length of its base64:
-// counting the bytes would fold and drop conversation for a screenshot the server would have taken.
+// an image enters the window as what the vision encoder makes of it, not as its base64 length
 func TestAnImageIsNotCountedByWhatItEncodesTo(t *testing.T) {
 	a := newForHistory(Options{})
 	before := a.estimateTokens()
@@ -51,8 +49,7 @@ func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
 	}
 }
 
-// paired says the history is something a server accepts: every tool reply has the call it answers,
-// and every call has the replies it is owed.
+// paired says the history a server accepts: every reply has its call, every call its replies
 func paired(history []llm.Message) bool {
 	owed := map[string]bool{}
 	for _, m := range history {
@@ -112,8 +109,7 @@ func TestASmallWindowDropsTheOldestToolCallWhole(t *testing.T) {
 	}
 }
 
-// the drop keeps what it must: a fold's recap, the ask being answered and the newest call, and it
-// leaves the estimate under the ceiling
+// the drop keeps what it must: the recap, the ask being answered, and the newest call
 func TestADropKeepsTheRecapTheTaskAndTheNewestCall(t *testing.T) {
 	history := []llm.Message{{Role: "system", Content: SystemPrompt},
 		{Role: "user", Content: FoldMark + "\nGoal: the work so far"},
@@ -251,8 +247,7 @@ func TestTheConversationIsReadableBack(t *testing.T) {
 	}
 }
 
-// The server says how many tokens the conversation it just read was. Guessing the whole conversation
-// again from a byte ratio throws that number away every turn, and the error grows with the conversation.
+// the server counted the conversation: re-guessing it each turn throws that number away
 func TestTheWindowIsMeasuredFromWhatTheServerCounted(t *testing.T) {
 	dir := t.TempDir()
 	a, done := newAgentIn(t, &stubServer{}, Options{CtxSize: 4000}, &captureSink{}, dir)
@@ -271,8 +266,7 @@ func TestTheWindowIsMeasuredFromWhatTheServerCounted(t *testing.T) {
 	}
 }
 
-// the marks exist so a summary, not a deletion, is what pays for room: a long run at a real window
-// size must never lose a whole call that a fold could still have written down
+// the marks exist so a summary, not a deletion, pays for room, even at a real window size
 func TestALongRunPaysForRoomWithFoldsNotDeletions(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe reading goes on\n", "", nil, "stop")}}
 	sink := &captureSink{}
@@ -311,8 +305,7 @@ func TestALongRunPaysForRoomWithFoldsNotDeletions(t *testing.T) {
 	}
 }
 
-// a dropped call is only survivable if the model is told what went: it can redo that call on purpose
-// instead of finding a hole in its memory and guessing at it
+// a dropped call survives only if the model is told what went, so it can redo it on purpose
 func TestTheDropNamesWhatItTookAway(t *testing.T) {
 	sink := &captureSink{}
 	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
@@ -348,8 +341,7 @@ func TestTheDropNamesWhatItTookAway(t *testing.T) {
 	}
 }
 
-// the estimate runs inside the loop that drops messages, so the tool list is described to the agent
-// once and its size kept: rebuilding five descriptions per message dropped is work nobody reads
+// the estimate runs inside the drop loop, so the tool list is described once and its size kept
 func TestTheEstimateNeverRedescribesTheToolList(t *testing.T) {
 	described := 0
 	a := New(nil, tools.NewRegistry(&countingTool{described: &described}), "m", Options{}, nullSink{})
@@ -383,8 +375,7 @@ func (c *countingTool) Run(_ context.Context, _ json.RawMessage) (string, error)
 	return "read", nil
 }
 
-// a drop makes room for more than the next result: dropping one message per round moved the start of
-// the prompt every round, and the server read the whole conversation again each time
+// a drop frees more than the next result: one message per round re-read the whole conversation
 func TestADropLeavesRoomForTheNextRounds(t *testing.T) {
 	history := []llm.Message{{Role: "system", Content: SystemPrompt}, {Role: "user", Content: "read them all"}}
 	call := func(i int) []llm.Message {

@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// Lines are not a measure of size. A minified file is one very long line, so a change to it is the
-// whole file twice over and the line cap never engages: this is the case where the screen was handed
-// four megabytes to hold for the life of the run under one row.
+// a minified file is one very long line, so the line cap never engages and the byte cap has to
 func TestAChangeOfVeryLongLinesIsCappedInBytes(t *testing.T) {
 	before := strings.Repeat("a", 2_000_000)
 	after := strings.Repeat("b", 2_000_000)
@@ -25,8 +23,7 @@ func TestAChangeOfVeryLongLinesIsCappedInBytes(t *testing.T) {
 	}
 }
 
-// A change that fits is handed over whole, with no notice on it: the cap is for the case nobody can
-// read, not for the ordinary one a reviewer checks line by line.
+// a change that fits is handed over whole: the cap is for what nobody can read line by line
 func TestAnOrdinaryChangeIsNotCutAtAll(t *testing.T) {
 	var before, after strings.Builder
 	for i := 0; i < 400; i++ {
@@ -42,8 +39,7 @@ func TestAnOrdinaryChangeIsNotCutAtAll(t *testing.T) {
 	}
 }
 
-// The cut lands on a line break where one is nearby: half a line of minified code reads as a mistake
-// rather than as a cut.
+// the cut lands on a line break where one is near: half a line of minified code reads as a mistake
 func TestAByteCutLandsOnALineBreak(t *testing.T) {
 	var b strings.Builder
 	for b.Len() < 600_000 {

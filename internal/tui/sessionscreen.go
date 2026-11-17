@@ -10,9 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// sessionsScreen is /sessions: the conversations this project has saved, and putting one of them in this
-// run's place. The list, the filter and the box are the screen's shared ones; what a row says, what the
-// pane says about one and what choosing it does are this command's.
+// sessionsScreen is /sessions: this project's saved conversations, and choosing one for this run
 type sessionsScreen struct {
 	chooser
 	conversations []session.Conversation
@@ -22,12 +20,10 @@ type sessionsScreen struct {
 	take          func(id string) error // what the run does with a chosen conversation: continue it
 }
 
-// sessionLimit is how many saved conversations the list reads. They come newest first, so this is the
-// oldest one the screen can reach; --continue still takes an id typed by hand.
+// sessionLimit is how many conversations the list reads, newest first; --continue takes an id
 const sessionLimit = 100
 
-// openSessions puts the saved conversations on the screen. The list is read once, when the screen opens:
-// nothing else saves a conversation while it is up.
+// openSessions shows the saved conversations, reading the list once as the screen opens
 func (m *model) openSessions() {
 	list, err := session.Describe(m.cfg.SessionDir, sessionLimit)
 	if err != nil {
@@ -61,8 +57,7 @@ func (s *sessionsScreen) view(width, height int) string {
 	return s.chooser.view(width, height, s.sessionDetail)
 }
 
-// sessionRows are the conversations in date order, each with when it was written, how much is in it,
-// which project it belongs to and what it started with.
+// sessionRows are the conversations in date order: when, how much, which project, what it began
 func (s *sessionsScreen) sessionRows() []listRow {
 	rows := make([]listRow, len(s.conversations))
 	for i, c := range s.conversations {
@@ -90,9 +85,7 @@ func (s *sessionsScreen) markFor(c session.Conversation) string {
 	return "*"
 }
 
-// sessionHead says which conversation the pane is about and when it was last written: the whole date when
-// there is room for it, an age when there is not - this is the one row that says whether the conversation
-// is from today or from before the machine was rebuilt.
+// sessionHead says which conversation the pane is about and when it was last written
 func (s *sessionsScreen) sessionHead(c session.Conversation) string {
 	full := fmt.Sprintf("%s · %d messages · last written %s", c.ID, c.Messages, c.Used.Format("02 Jan 2006 15:04"))
 	if s.inner < listWide {
@@ -101,8 +94,7 @@ func (s *sessionsScreen) sessionHead(c session.Conversation) string {
 	return full
 }
 
-// sessionDetail is the conversation the cursor is on: its id to continue it by hand, when and where it was
-// written, and the ask it started with.
+// sessionDetail is the cursor's conversation: its id, when and where written, and its first ask
 func (s *sessionsScreen) sessionDetail(id string) []string {
 	c := s.conversation(id)
 	if c.ID == "" {
@@ -131,8 +123,7 @@ func (s *sessionsScreen) conversation(id string) session.Conversation {
 	return session.Conversation{}
 }
 
-// pick puts the chosen conversation in this run's place, or leaves the reason on the box: a conversation
-// written in another project is only read back by that project, and this run's own has nowhere to go.
+// pick puts the chosen conversation in this run's place, or leaves the reason on the box
 func (s *sessionsScreen) pick(id string) (tea.Cmd, overlayNext) {
 	c := s.conversation(id)
 	switch {
@@ -150,9 +141,7 @@ func (s *sessionsScreen) pick(id string) (tea.Cmd, overlayNext) {
 	return nil, closeOverlay
 }
 
-// continueWith takes a saved conversation over as this run's: the model reads it, the screen draws it,
-// and what comes next is saved to its file. The conversation the run gave up is left whole, so it can be
-// picked out of the list again.
+// continueWith takes a saved conversation over; the one given up stays whole for the list
 func (m *model) continueWith(id string) error {
 	if err := m.agent.ContinueFrom(m.cfg.SessionDir, id); err != nil {
 		return err
@@ -167,8 +156,7 @@ func (m *model) continueWith(id string) error {
 	return nil
 }
 
-// trimProject keeps the last part of a project path: the whole path is in the pane, and a row has room
-// for the conversation, not for where it lives three levels deep.
+// trimProject keeps the last path part: the row has room for the conversation, not the path
 func trimProject(root string) string {
 	if base := filepath.Base(root); base != "." && base != "/" && base != root {
 		return base
@@ -176,8 +164,7 @@ func trimProject(root string) string {
 	return shortenHome(root)
 }
 
-// relTime is when a conversation was last written, close enough to say which one it was: minutes and
-// hours while they are recent, days after that.
+// relTime is when a conversation was last written: minutes and hours, then days
 func relTime(d time.Duration) string {
 	switch {
 	case d < time.Minute:

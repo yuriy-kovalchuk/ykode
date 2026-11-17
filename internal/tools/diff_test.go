@@ -189,8 +189,7 @@ func TestTheWholeChangeIsNotCapped(t *testing.T) {
 	}
 }
 
-// a file rewritten whole is given as what went and what came, without lining the two up, and a
-// change past what a screen is handed says how much it left out
+// a whole-file rewrite says what went and what came, and a change past the cap says what is missing
 func TestAFileRewrittenWholeIsStillAChange(t *testing.T) {
 	var before, after strings.Builder
 	for i := 0; i < changeMaxLines; i++ {

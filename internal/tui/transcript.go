@@ -20,8 +20,7 @@ const (
 	whoSummary // what the older turns were folded into, in the model's own lines
 )
 
-// entry is one block of the transcript: a question, a run of thinking, an answer,
-// one tool call, or something the run did without being asked.
+// entry is one block: a question, a run of thinking, an answer, one tool call, or a notice
 type entry struct {
 	who    kind
 	text   string // user, thinking, answer, notice
@@ -36,16 +35,13 @@ type entry struct {
 
 	state draftState // what has been read of a call the model is still writing; see draft.go
 
-	// What a block that is still arriving keeps between two draws of it. It grows a token at a time
-	// and is drawn many times a second, so neither the text nor its rows are built again from nothing.
+	// what a block still arriving keeps between draws, since it grows a token at a time
 	arriving *strings.Builder // the text or the arguments, while more is on its way
 	laid     layout           // an answer's blocks, laid out once each
 	thought  flow             // thinking's paragraphs, wrapped once each
 }
 
-// write adds a piece to text that is still arriving and returns the whole of it. Joining two strings
-// copies both, and an answer of a hundred kilobytes arrives in tens of thousands of pieces: the pieces
-// are gathered in one buffer instead, and the text is read out of it without a copy.
+// write adds a piece to arriving text; the pieces gather in one buffer, so joining never copies
 func (e *entry) write(sofar, piece string) string {
 	if e.arriving == nil {
 		e.arriving = &strings.Builder{}
@@ -55,10 +51,7 @@ func (e *entry) write(sofar, piece string) string {
 	return e.arriving.String()
 }
 
-// transcript is what has been said so far. Rendering is separate so the rules can be tested without
-// a screen. The rows it drew are kept between draws and only rebuilt from the block that changed:
-// a streamed token redraws the screen while only the block still open has new text in it, and a
-// session of eight thousand rows must not be drawn again to add one.
+// transcript is what has been said; rows are kept and rebuilt only from the block that changed
 type transcript struct {
 	entries []entry
 	stale   int    // the first entry that may need drawing again; len(entries) when none do
@@ -92,9 +85,7 @@ func (t *transcript) notice(text string) {
 	t.entries = append(t.entries, entry{who: whoNotice, text: text})
 }
 
-// failed ends a call that did not run or did not finish. The call's own row is waiting for an answer,
-// so the failure lands on it: a row left asking forever beside a second one that says why is two
-// rows for one call.
+// failed ends a call that did not run, landing the failure on the row already waiting
 func (t *transcript) failed(name, args, why string) {
 	c := call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}
 	for i := len(t.entries) - 1; i >= 0; i-- {
@@ -125,16 +116,14 @@ func (t *transcript) open(who kind, text string) {
 	t.entries = append(t.entries, entry{who: who, text: text})
 }
 
-// mark says an entry has changed since it was drawn. Entries are only ever added at the end or
-// changed in place, so naming the earliest one changed covers the rest: drawing starts there.
+// mark says an entry changed since it was drawn, naming the earliest so drawing starts there
 func (t *transcript) mark(at int) {
 	if at < t.stale {
 		t.stale = at
 	}
 }
 
-// forget empties the transcript: the run came back to another conversation, and what the screen holds
-// was said in the one it gave up. The rows it had drawn go with it, so nothing is left to redraw.
+// forget empties the transcript and its drawn rows when the run moves to another conversation
 func (t *transcript) forget() {
 	t.entries, t.stale = nil, 0
 	t.rowsCache, t.rowStart = nil, nil
@@ -160,9 +149,7 @@ func newDraft(call int, tool, args string) *entry {
 	return &entry{who: whoDraft, tool: tool, args: args, callID: call, state: newDraftState()}
 }
 
-// dropDrafts removes the calls being written once the reply is done: the tool rows take their
-// place. Every row after the first one removed moves up, so the drawing starts again from there -
-// and only from there: a reply ends once per round-trip, and the session above it has not changed.
+// dropDrafts removes calls being written when the reply ends, redrawing from the first removed
 func (t *transcript) dropDrafts() {
 	first := -1
 	kept := t.entries[:0]
@@ -182,18 +169,15 @@ func (t *transcript) dropDrafts() {
 }
 
 func (t *transcript) toolStart(name, args string) {
-	// the row is worded once, when the call begins, and again when it answers: a call being drawn a
-	// hundred times a second is not parsed a hundred times a second
+	// the row is worded when the call begins and when it answers, not once per redraw
 	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args, asked: true,
 		call: call{note: noteFor(name, args, "", false, t.root)}})
 }
 
-// toolEnd fills the call it belongs to. Parallel reads mean the reply may not be the last
-// row added, so it finds the newest unfinished call with the same tool and arguments.
+// toolEnd fills its call: parallel reads mean it may not be the newest row added
 func (t *transcript) toolEnd(name, args, result string) { t.changed(name, args, result, "") }
 
-// changed is toolEnd for a call that also handed over the whole of the change it made: the result
-// holds the short copy the model was sent, and the screen draws the whole one in its place.
+// changed is toolEnd with the whole change: the model got the short copy, the screen the full one
 func (t *transcript) changed(name, args, result, change string) {
 	read := func() call {
 		if change == "" {

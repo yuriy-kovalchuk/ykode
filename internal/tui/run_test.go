@@ -10,8 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// an ask typed into a running turn goes to that run, which takes it at the next round-trip, and
-// stays on the screen until it does
+// an ask typed into a running turn goes to that run and stays on screen until it is taken
 func TestAnAskTypedIntoARunningTurnWaitsAboveThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 80, 24
@@ -146,8 +145,7 @@ func TestCompactingDoesNotStopTheScreen(t *testing.T) {
 	if w.m.running {
 		t.Fatal("the summary never reported back")
 	}
-	// this session has nothing old enough to fold, so the honest answer is that nothing was folded: the
-	// report used to say "about 0 tokens smaller", a saving that never happened
+	// nothing here is old enough to fold, so the answer says nothing was folded, not "0 tokens"
 	if !strings.Contains(w.m.log.render(80), "nothing was folded") {
 		t.Errorf("compaction reported a saving it did not make:\n%s", w.m.log.render(80))
 	}
@@ -195,8 +193,7 @@ func TestANewRunClearsTheErrorRow(t *testing.T) {
 	}
 }
 
-// a call being written is drawn once per frame, not once per token: a file of a hundred kilobytes
-// is tens of thousands of fragments
+// a call being written draws once per frame, not per token: a big file is thousands of fragments
 func TestACallBeingWrittenWaitsForTheFrameToBeDrawn(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
@@ -238,8 +235,7 @@ func BenchmarkWriteAFileToken(b *testing.B) {
 	}
 }
 
-// a conversation that was cleared leaves the server's numbers behind: the report describes the
-// conversation there is now, not the one that went
+// a cleared conversation keeps the server's numbers: the report describes what is there now
 func TestStartingOverForgetsWhatTheServerWasDoing(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 90, Height: 30})

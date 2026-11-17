@@ -17,9 +17,7 @@ const (
 	planClose         = "</plan>"
 )
 
-// noteFiles adds the files the folded turns touched to the lists the run keeps. The lists accumulate
-// across folds, so after the third one they still say what the whole session read and changed, which is
-// what a summary of the last stretch alone could not.
+// noteFiles adds the folded turns' files to lists that accumulate across folds
 func (a *Agent) noteFiles(folded []llm.Message) {
 	for _, m := range folded {
 		for _, call := range m.ToolCalls {
@@ -77,8 +75,7 @@ func (a *Agent) readOnlyFiles() []string {
 	return only
 }
 
-// fileBlocks is the end of a recap: the files the session read and the files it changed, in blocks a
-// resumed run can read back.
+// fileBlocks is the end of a recap: the files read and the files changed, in blocks to read back
 func (a *Agent) fileBlocks() string {
 	var b strings.Builder
 	if read := a.readOnlyFiles(); len(read) > 0 {
@@ -90,8 +87,7 @@ func (a *Agent) fileBlocks() string {
 	return b.String()
 }
 
-// recapOf reads a fold's message back: the summary without the file blocks, which are returned to the
-// lists by restoreFiles instead of being summarised again.
+// recapOf reads a fold's message back: the summary without the file blocks restoreFiles returns
 func recapOf(m llm.Message) (string, bool) {
 	text, ok := strings.CutPrefix(m.Content, FoldMark)
 	if !ok || m.Role != "user" {
@@ -105,8 +101,7 @@ func recapOf(m llm.Message) (string, bool) {
 	return strings.TrimSpace(text), true
 }
 
-// restoreFiles reads the file lists out of a resumed conversation's recap, so the next fold carries on
-// from them rather than starting a list of its own.
+// restoreFiles reads the file lists out of a resumed recap, so the next fold carries on from them
 func (a *Agent) restoreFiles(history []llm.Message) {
 	for _, m := range history {
 		if _, ok := recapOf(m); !ok {
@@ -127,8 +122,7 @@ func block(text, open, end string) []string {
 	return strings.Split(body, "\n")
 }
 
-// planBlock is the plan at the end of a recap, so a fold that drops the call which wrote it does not
-// leave the model without the list it is working through.
+// planBlock is the plan at the end of a recap, so a fold keeps the list the model is working through
 func (a *Agent) planBlock() string {
 	if len(a.opts.Plan.Steps()) == 0 {
 		return ""
@@ -136,9 +130,7 @@ func (a *Agent) planBlock() string {
 	return "\n\n" + planOpen + "\n" + a.opts.Plan.Report() + "\n" + planClose
 }
 
-// restorePlan finds the plan in a resumed conversation: the newest plan call that ran, or else the one
-// a fold carried in its recap. The model wrote it and a front end shows it, so it has to be back before
-// either looks.
+// restorePlan finds the plan in a resumed conversation: the newest call that ran, or the recap's
 func (a *Agent) restorePlan(history []llm.Message) {
 	ran := map[string]bool{} // a call whose answer was an error left the plan as it was
 	for _, m := range history {

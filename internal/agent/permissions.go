@@ -7,8 +7,7 @@ import (
 	"sync"
 )
 
-// permissions remembers what the user agreed to keep allowing. It is per run unless the same
-// entries are put in settings.yaml, and it is deliberately narrow: a tool, or a command's words.
+// permissions remembers what the user agreed to keep allowing, per run and deliberately narrow
 type permissions struct {
 	mu      sync.Mutex // an "always" answered by one parallel call is read by the others
 	allowed map[string]bool
@@ -24,8 +23,7 @@ func newPermissions(seeds []string) *permissions {
 	return p
 }
 
-// entryKey is one allow entry in its canonical form: "edit_file", or "exec:go test". A chained
-// command is refused as an entry: whoever wrote it meant a second command to run without asking.
+// entryKey is one allow entry as canonical text: "edit_file", or "exec:go test", never a chain
 func entryKey(entry string) string {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
@@ -53,8 +51,7 @@ func entryKey(entry string) string {
 	return tool + ":" + strings.Join(words, " ")
 }
 
-// jsonQuoteInner puts a path from settings.yaml into a JSON string's inside, so the same reader takes
-// both a call's arguments and an entry written by hand.
+// jsonQuoteInner puts a settings.yaml path inside a JSON string, so one reader takes both sources
 func jsonQuoteInner(s string) string {
 	raw, err := json.Marshal(s)
 	if err != nil || len(raw) < 2 {
@@ -74,8 +71,7 @@ func commandOf(args string) string {
 	return in.Command
 }
 
-// callKey is what a call would be allowed by exactly. A line that chains, substitutes or
-// redirects has no key: what runs is not what its opening words promise.
+// callKey is what a call would be allowed by exactly; a chained line has none
 func callKey(name, args string) string {
 	if name != "exec_command" {
 		return name
@@ -87,10 +83,7 @@ func callKey(name, args string) string {
 	return entryKey("exec:" + command)
 }
 
-// pathKey is the narrow form of a file entry: the tool and one file. An "always" answered on screen is
-// remembered at tool level, which is what the person answering was shown; a settings.yaml entry may be
-// written narrower still, and a run that was told to edit one file is not thereby told to edit every
-// file it reaches.
+// pathKey is the narrow file entry: the tool and one file, never widened to every file it reaches
 func pathKey(name, args string) (string, bool) {
 	var in struct {
 		Path string `json:"path"`
@@ -107,14 +100,12 @@ func pathKey(name, args string) (string, bool) {
 	return name + ":" + filepath.ToSlash(filepath.Clean(in.Path)), true
 }
 
-// chainable says whether a shell line does more than run one command: another command, a
-// substitution, or a file opened by the shell instead of by a tool.
+// chainable says whether a shell line does more than run one command
 func chainable(command string) bool {
 	return strings.ContainsAny(command, ";|&<>`\n\r") || strings.Contains(command, "$(")
 }
 
-// allows says whether this call is already covered. An entry may be shorter than the command, so
-// "exec:ls" covers "ls -la src"; it never reaches past the words it was written with.
+// allows says whether a call is covered; an entry may be shorter, but never reaches past its words
 func (p *permissions) allows(name, args string) bool {
 	if p == nil {
 		return false
@@ -161,8 +152,7 @@ func startsWithWords(words, want []string) bool {
 	return true
 }
 
-// add remembers a call for the rest of the run. What is remembered is the whole line the user
-// was shown, never a shortened verb: only settings.yaml may write a broad entry on purpose.
+// add remembers the whole line the user was shown, never a shortened verb, for the rest of the run
 func (p *permissions) add(name, args string) {
 	if p == nil {
 		return

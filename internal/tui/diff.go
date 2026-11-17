@@ -8,10 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// A change is shown whole under the call that made it: the rows are drawn once and kept, and a frame
-// only ever copies the ones in view, so a long change costs the session rows to scroll past, not
-// time. (Measured: three to four milliseconds for every thousand lines, once, and again when the terminal
-// changes width.) The tool that made the change decides how much of a very long one it hands over.
+// a change is drawn once and kept, a frame copying the rows in view, so length costs rows not time
 const (
 	diffLead = "    " // a change sits under the call row that made it
 	diffTab  = "   "
@@ -27,8 +24,7 @@ func summaryLine(result string) string {
 	return head
 }
 
-// diffLine is one line of a change as it is read out of the hunks: which side it is on, what it says,
-// and where it sits in the file.
+// diffLine is one line of a change: its side, its text, and where it sits in the file
 type diffLine struct {
 	side   byte   // ' ' unchanged, '-' went, '+' came, '@' the gap between two hunks, '#' a note the tool left
 	text   string // tabs already opened out
@@ -36,8 +32,7 @@ type diffLine struct {
 	strong [2]int // the bytes of text the line it was changed from, or to, does not share
 }
 
-// readChange reads the hunks of a unified diff into lines that know their numbers. A change with no
-// hunk headers - one put together from a call's arguments, before the file was touched - has none.
+// readChange reads a diff's hunks into lines with numbers; one from arguments has none
 func readChange(change string) []diffLine {
 	var lines []diffLine
 	before, after, hunks := 0, 0, 0
@@ -113,8 +108,7 @@ func changeSize(change string) string {
 	return strings.Join(size, " ")
 }
 
-// markWords finds, where lines that went are followed by as many that came, what changed inside each
-// pair: an edit is most often a word or two on a line, and that is where the eye should land.
+// markWords finds what changed inside a went/came pair, which is where the eye should land
 func markWords(lines []diffLine) {
 	for i := 0; i < len(lines); {
 		went := i
@@ -139,9 +133,7 @@ func markWords(lines []diffLine) {
 	}
 }
 
-// changedSpans is the part of each of two lines the other does not share: what is left between the
-// words they begin with in common and the words they end with in common. Two lines with little in
-// common are two different lines, and marking most of each would mark nothing.
+// changedSpans is what two lines do not share, between their common first and last words
 func changedSpans(a, b string) (inA, inB [2]int) {
 	head := sharedWords(a, b, false)
 	tail := sharedWords(a[head:], b[head:], true)
@@ -152,8 +144,7 @@ func changedSpans(a, b string) (inA, inB [2]int) {
 	return [2]int{head, len(a) - tail}, [2]int{head, len(b) - tail}
 }
 
-// sharedWords is how many bytes two lines share at their start, or at their end, counted in whole
-// words: "timeout=500" and "timeout=100" share "timeout=", not that and half a number.
+// sharedWords counts the whole words two lines share at their start or end, in bytes
 func sharedWords(a, b string, fromEnd bool) int {
 	at := func(s string, i int) byte {
 		if fromEnd {
@@ -191,17 +182,12 @@ func sharedWords(a, b string, fromEnd bool) int {
 	}
 }
 
-// wordByte says a byte is part of a word. Every byte of a character outside ASCII counts, so a span
-// never begins or ends inside one.
+// wordByte says whether a byte is part of a word, so a span never splits a character
 func wordByte(c byte) bool {
 	return c == '_' || c >= 0x80 || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-// changeRows draws the change a call made the way a review tool does: every line with its number in
-// the file, a line that went on a red ground and one that came on a green one, each running to the
-// edge of the screen, and the words that differ between a line and the one that replaced it on a
-// stronger shade of the same ground. Unchanged lines around them are left as they are.
-// limit is the most rows drawn, for a place with little room, and 0 draws them all.
+// changeRows draws a change as a review tool does, numbered, sided, marking the words that differ
 func changeRows(change string, limit int, width int) []string {
 	if change == "" {
 		return nil
@@ -245,8 +231,7 @@ func changeRows(change string, limit int, width int) []string {
 	return rows
 }
 
-// diffRow is one changed line: its number and its sign, then its words, on a ground that runs to the
-// edge of the screen. The words that differ from the other side sit on the stronger shade.
+// diffRow is one changed line, numbered and signed, on a ground running to the screen edge
 func diffRow(ground, strong lipgloss.Style, lead string, line diffLine, width int) string {
 	room := max(width-len(diffLead)-len(lead)-1, 1) // the last column is left clear for the cursor
 	text := cutToWidth(line.text, room)
@@ -269,8 +254,7 @@ func diffRow(ground, strong lipgloss.Style, lead string, line diffLine, width in
 	return row
 }
 
-// diffText keeps a source line as long as the screen can read it: tabs are what made the columns,
-// and a tab counted as one cell moves every row of the change out of line.
+// diffText keeps a line as long as the screen reads it, expanding tabs that would move the columns
 func diffText(text string) string {
 	return strings.ReplaceAll(text, "\t", diffTab)
 }

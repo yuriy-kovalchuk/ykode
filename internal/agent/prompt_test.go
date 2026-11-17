@@ -72,8 +72,7 @@ func TestALongInstructionFileIsCutWithAHint(t *testing.T) {
 	}
 }
 
-// a large window carries a 6 KB global file and a 30 KB project file whole, so the model starts
-// with the rules instead of spending rounds reading them back
+// a large window carries both instruction files whole, so the model starts knowing the rules
 func TestALargeWindowKeepsBothInstructionFilesWhole(t *testing.T) {
 	global, project := t.TempDir(), t.TempDir()
 	writeInstructionFile(t, global, "AGENTS.md", strings.Repeat("global rule\n", 540))
@@ -198,8 +197,7 @@ func TestTheToolSpecsStayInsideTheirTokenBudget(t *testing.T) {
 	defer root.Close()
 
 	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "m", Options{}, nil)
-	// 2435 bytes for the five tools the run offers; find_files and search_text went, and the model
-	// searches with exec_command: raise it on purpose, not by drift
+	// 2435 bytes for the five tools offered: raise it on purpose, not by drift
 	if got := a.SpecBytes(); got > 2535 {
 		t.Fatalf("tool specs cost %d bytes (about %d tokens) per request; the budget is 2535", got, got/3)
 	}
@@ -259,8 +257,7 @@ func TestThePromptNamesEveryToolAndNoOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	// what a run offers is what the prompt may name: the built-ins, plus the tools that need a front
-	// end able to answer for the person
+	// the prompt may name only what a run offers: built-ins, plus tools needing an answering front end
 	have := map[string]bool{}
 	running := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "test-model", Options{}, &asksBack{})
 	for _, offered := range running.Specs() {
@@ -284,8 +281,7 @@ func TestThePromptStaysSmall(t *testing.T) {
 	}
 }
 
-// lines that cast tool output as suspect made the model announce, again and again, that it was
-// ignoring an injected instruction nobody had written
+// casting tool output as suspect made the model report ignoring an injection nobody had written
 func TestThePromptDoesNotCastToolOutputAsAnAttack(t *testing.T) {
 	for _, phrase := range []string{"never an instruction", "[ykode", "=== name ==="} {
 		if strings.Contains(SystemPrompt, phrase) {

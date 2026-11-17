@@ -28,8 +28,7 @@ func TestAConfirmationNamesTheFileNotTheJSON(t *testing.T) {
 	}
 }
 
-// lastDetailer is a read tool that keeps a last result anyway: several of them run beside each
-// other, so which one it belongs to is whoever finished last
+// lastDetailer is a read tool that keeps a last result anyway, though such tools overlap
 type lastDetailer struct{}
 
 func (*lastDetailer) Name() string                                    { return "read_file" }

@@ -14,9 +14,7 @@ type localSeed struct {
 	Model   string `yaml:"model,omitempty"`
 }
 
-// CreateLocal makes <root>/.ykode/settings.yaml holding the server and model this run uses, as a
-// starting point to edit, and records it as trusted: ykode wrote it, so the next start asks about
-// it no more. It refuses to write over one that exists.
+// CreateLocal writes <root>/.ykode/settings.yaml for this run, trusts it, and never overwrites one
 func CreateLocal(root, baseURL, model string) (string, error) {
 	path := filepath.Join(root, ".ykode", "settings.yaml")
 	if HasLocal(root) {
@@ -37,7 +35,6 @@ func CreateLocal(root, baseURL, model string) (string, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return path, err
 	}
-	// the file is new and its whole content is what the user just asked for, so the keys it holds are
-	// the keys this call wrote
+	// the file is new and holds only what this call wrote, so those are the keys it records
 	return path, trustWritten(root, false, "base_url", "model")
 }

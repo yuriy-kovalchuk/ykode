@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// steerSink adds an ask to the run as soon as it sees the event it waits for, which is the
-// mid-turn moment a front end would be typing at.
+// steerSink adds an ask at the event it waits for, the mid-turn moment a front end types at
 type steerSink struct {
 	captureSink
 	wait  EventKind
@@ -25,8 +24,7 @@ func (s *steerSink) Emit(ev Event) Decision {
 	return s.captureSink.Emit(ev)
 }
 
-// what was typed while a turn ran reaches the model at the next round-trip, not after the whole
-// turn: the round-trip already in flight and the tools already running are not interrupted
+// what was typed mid-turn reaches the model at the next round-trip, interrupting nothing running
 func TestASteeredAskJoinsTheNextRoundTrip(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "", "read_file", []string{`{"path":"seeded.txt"}`}, "tool_calls"),

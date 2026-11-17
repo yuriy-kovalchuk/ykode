@@ -7,8 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// refresh keeps a reader who scrolled up in place and marks the output arriving below. The mark is
-// decided before the rows under the session are built, because it is one of the things they say.
+// refresh keeps a scrolled-up reader in place and marks output arriving below, before rows are built
 func (m *model) refresh() {
 	m.undrawn, m.drawn = false, time.Now()
 	atBottom := m.view.atBottom()
@@ -25,13 +24,10 @@ func (m *model) refresh() {
 	}
 }
 
-// topRows is a blank row between the terminal's top edge and the session, so the first row of an
-// answer does not sit against the border. It is taken off the session's height wherever that height
-// is worked out, so the screen stays exactly as tall as the terminal.
+// topRows is a blank row under the terminal's top edge, taken off the session's height
 const topRows = 1
 
-// layout shrinks the transcript, because the question, the keys and the input can all grow. A
-// reader at the end of the session stays there: the box growing must not lift them off it.
+// layout shrinks the transcript, since question, keys and input grow; a reader at the end stays
 func (m *model) layout() {
 	atBottom := m.view.atBottom()
 	m.view.height = max(m.height-lipgloss.Height(m.screenBottom())-topRows, 3)
@@ -40,9 +36,7 @@ func (m *model) layout() {
 	}
 }
 
-// screenBottom is everything under the session, built once per message: the layout needs its height
-// and View draws the same rows, so building it twice measures the whole prompt area again for
-// nothing. It is empty between messages, and what is drawn is never empty.
+// screenBottom is everything under the session, built once per message for layout and for View
 func (m *model) screenBottom() string {
 	if m.bottom == "" {
 		m.bottom = m.bottomArea()
@@ -60,7 +54,6 @@ func (m *model) View() string {
 	if m.picker != nil {
 		return m.picker.view(m.width, m.height)
 	}
-	// stacked by hand: both blocks already stop at the screen's edge, and JoinVertical measures
-	// every row of both again to find that out
+	// stacked by hand: both blocks already stop at the edge, so JoinVertical would remeasure them
 	return strings.Repeat("\n", topRows) + m.view.view() + "\n" + m.screenBottom()
 }

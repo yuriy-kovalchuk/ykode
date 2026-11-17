@@ -5,9 +5,7 @@ import (
 	"sync"
 )
 
-// contextWork is what the last operation that made room in the context window did, in the few words a
-// front end can put beside its working prompt. The session itself gets the whole sentence; a reader
-// watching the clock only wants to know why this round-trip is taking longer.
+// contextWork is what the last operation that made room did, in words for the working prompt
 type contextWork struct {
 	mu    sync.Mutex
 	label string // what made room last; empty until the next ask
@@ -48,6 +46,5 @@ func counted(n int, one, several string) string {
 	return strconv.Itoa(n) + " " + several
 }
 
-// RoomMade is what this ask has had to do to fit the conversation into the window - "summarising
-// older turns", "folded 12 older turns" - and "" when nothing has had to.
+// RoomMade is what this ask had to do to fit the window, or "" when nothing had to
 func (a *Agent) RoomMade() string { return a.work.since() }

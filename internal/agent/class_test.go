@@ -7,8 +7,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// every tool states what it does to the project: that one answer decides whether calls overlap,
-// whether what was read before still holds the answer, and whether the arguments may be dropped
+// every tool says what it does to the project, which decides overlap, reuse and dropped arguments
 func TestEveryToolStatesItsClass(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
@@ -43,8 +42,7 @@ func TestEveryToolStatesItsClass(t *testing.T) {
 	}
 }
 
-// a resumed conversation can name a tool this run no longer offers: it reads as a change, run on its
-// own, since nothing is known about it
+// a resumed conversation may name a tool this run dropped: it reads as a change, run alone
 func TestAToolNobodyOffersReadsAsAChange(t *testing.T) {
 	a := New(nil, tools.NewRegistry(), "m", Options{}, &captureSink{})
 	if !a.changesProject("old_tool") {

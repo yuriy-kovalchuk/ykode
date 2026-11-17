@@ -67,8 +67,7 @@ func TestFormatResultCountsExactlyWhatItDropped(t *testing.T) {
 
 var omittedMarker = regexp.MustCompile(`(?s)^(.*)\[\.\.\. (\d+) bytes omitted \.\.\.\]\n\n(.*)$`)
 
-// A cap smaller than the marker that explains a cut has nothing to split: it answers with the marker
-// alone rather than asking for a head and tail of negative length.
+// a cap smaller than the cut marker answers with the marker alone, not a cut of negative length
 func TestACapSmallerThanTheMarkerStillAnswers(t *testing.T) {
 	long := strings.Repeat("y", 5000)
 	for _, cap := range []int{1, 10, 40, 63} {

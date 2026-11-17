@@ -12,9 +12,7 @@ import (
 const (
 	compactKeep = 2               // the newest tool calls always stay in full, one where that is all there is
 	foldGap     = compactKeep + 4 // new calls between folds: each fold costs a request and the whole prompt cache
-	// the summary is the only memory of everything folded away, so it is told what that memory is for
-	// and what shape to keep it in. It is asked for over the conversation itself, so a fold after the
-	// first updates the summary sitting at the front of it instead of starting over.
+	// the summary is the only memory of the folded turns, so it is told what it is for and what shape
 	compactPrompt = `The conversation above is about to leave your context window. Write the memory you will carry on from: the summary below is all that is kept of it, plus the newest messages.
 
 Write these sections in this order, in markdown. Write "none" under a section that has nothing.
@@ -58,16 +56,12 @@ Write the summary now, starting with "## Goal". Do not call a tool.`
 	maxListedFiles   = 60   // files one list names; the newest win
 )
 
-// FoldMark starts the message a fold leaves in the conversation: the recap of what was put away. A
-// front end that draws a whole conversation reads it to tell a recap from something the user typed.
+// FoldMark starts the recap a fold leaves behind, so a screen can tell it from what the user typed
 const FoldMark = "[ykode compacted the earlier turns into this summary]"
 
-// Compact replaces the older turns with a summary the model writes over them, keeping the newest calls
-// intact. It returns the tokens freed; a summary that cannot be made leaves the conversation as it was,
-// and makeRoom is the one that has to fit it then.
+// Compact replaces older turns with a summary the model writes, keeps the newest calls, and frees tokens
 func (a *Agent) Compact(ctx context.Context) int {
-	// A fold rewrites the conversation, so it owns the run while it lasts. Called from inside a turn it
-	// is already owned, and this leaves the flag for that turn to clear.
+	// a fold rewrites the conversation, so it owns the run unless a turn already owns it
 	if owns := a.turnRunning.CompareAndSwap(false, true); owns {
 		defer a.turnRunning.Store(false)
 	}
@@ -95,8 +89,7 @@ func (a *Agent) Compact(ctx context.Context) int {
 	a.noteFiles(dropped)
 	kept := []llm.Message{{Role: "user", Content: FoldMark + "\n" + summary + a.fileBlocks() + a.planBlock()}}
 	if task > 0 {
-		// the job in hand is kept word for word: a summary is for what happened, and a model
-		// working from a paraphrase of the request starts answering a question nobody asked
+		// the job in hand is kept word for word: a summary is for what happened, not for the ask's wording
 		kept = append(kept, a.history[task])
 	}
 	a.history = append(a.history[:1:1], append(kept, a.history[start:]...)...)
@@ -122,15 +115,12 @@ func callBlocks(messages []llm.Message) int {
 	return blocks
 }
 
-// foldOverdue says enough calls have piled up since the last fold to be worth another one. A long
-// run empties the window more than once, and folding the turns again is the only thing that earns
-// its request.
+// foldOverdue says enough calls have piled up since the last fold to be worth another one
 func (a *Agent) foldOverdue() bool {
 	return a.compactedAt < 0 || callBlocks(a.history)-a.compactedAt >= foldGap
 }
 
-// dropping is what the summary replaces: everything before the kept calls except the message
-// compactCut picked out to survive in its own words.
+// dropping is what the summary replaces: all but the kept calls and the one ask kept verbatim
 func (a *Agent) dropping(start, task int) []llm.Message {
 	if task <= 0 {
 		return a.history[1:start]
@@ -138,18 +128,12 @@ func (a *Agent) dropping(start, task int) []llm.Message {
 	return append(append([]llm.Message{}, a.history[1:task]...), a.history[task+1:start]...)
 }
 
-// canCompact says there is a call to fold and one to keep: with a single call the choice is between
-// summarising the ask alone and keeping everything, and keeping everything is the better one.
+// canCompact says there is a call to fold and one to keep: with one call, keep everything
 func (a *Agent) canCompact() bool {
 	return callBlocks(a.history) >= 2
 }
 
-// compactCut picks where the kept part starts. The newest compactKeep tool calls are always kept; where
-// the run knows how much room the recent work should have (KeepRecentTokens), the kept part reaches
-// back until it holds that much, so a fold never throws away what the model was reading a moment ago.
-// A cut never lands on a tool result: a call and its replies always move together. It also picks the
-// newest user message in the part being folded away, which is kept for its wording rather than
-// summarised. The second value is the index of that message, or 0 when the folded part holds none.
+// compactCut picks where the kept part starts, never between a call and its replies
 func (a *Agent) compactCut() (start, task int) {
 	var blocks []int
 	for i, m := range a.history {
@@ -160,8 +144,7 @@ func (a *Agent) compactCut() (start, task int) {
 	if len(blocks) < 2 {
 		return 0, 0
 	}
-	// a small window holds few calls, each one big: keeping the newest two there would leave nothing
-	// worth folding, so it keeps the newest one. A fold that frees something beats a deletion.
+	// a small window holds few big calls, so it keeps the newest one: a fold that frees something wins
 	keep := compactKeep
 	if len(blocks) <= compactKeep {
 		keep = 1
@@ -195,9 +178,7 @@ func (a *Agent) compactCut() (start, task int) {
 	return start, 0
 }
 
-// summarise asks for the summary of history[:start] by sending exactly those messages, as every
-// request before it sent them, and one instruction after them. The server already holds that prefix,
-// so the request costs the summary and little else.
+// summarise sends history[:start] exactly as before, plus one instruction, so the cache covers it
 func (a *Agent) summarise(ctx context.Context, start int) (string, error) {
 	prefix := a.history[:start]
 	if a.opts.CtxSize > 0 {
@@ -209,14 +190,12 @@ func (a *Agent) summarise(ctx context.Context, start int) (string, error) {
 	}
 	messages := append(append([]llm.Message{}, prefix...), llm.Message{Role: "user", Content: compactPrompt})
 	var why error
-	// first exactly as a normal request, so the cached prefix matches; then with tools refused, for a
-	// model that answered the first one with a call
+	// asked first as a normal request so the cached prefix matches, then with tools refused
 	for _, choice := range []string{"auto", "none"} {
 		turn, err := a.client.ChatStream(ctx, llm.ChatRequest{
 			Model: a.model, Messages: messages, Tools: a.specs(), ToolChoice: choice,
 			MaxTokens: a.compactRoom(), Sampling: a.opts.NoThink,
-			// a summary needs no thinking phase, and thinking costs the window being freed; the
-			// sampling of a thinking-off request comes from the model's own card, whose values differ
+			// a summary needs no thinking phase, and its sampling comes from the model's own card
 			ChatTemplateKwargs: map[string]any{"enable_thinking": false},
 		}, nil)
 		if err != nil {
@@ -236,15 +215,12 @@ func (a *Agent) summarise(ctx context.Context, start int) (string, error) {
 	return "", why
 }
 
-// compactRoom is what the summary itself may cost: its cap, unless the window is too small to give
-// it that much - the share rule the response reserve follows, so a fold is possible in a small window
-// too instead of always being refused.
+// compactRoom is what the summary may cost, shrunk in a small window so a fold stays possible
 func (a *Agent) compactRoom() int {
 	return min(compactMaxTokens, max(a.opts.CtxSize/8, minResponseTok))
 }
 
-// keepSummary caps a runaway summary without flattening the sections it was written in: the model
-// answers in short blocks, and a screen reads them better than one long line.
+// keepSummary caps a runaway summary without flattening the short blocks it was written in
 func keepSummary(text string) string {
 	text = strings.TrimSpace(text)
 	if len(text) <= maxSummaryChars {
@@ -253,8 +229,7 @@ func keepSummary(text string) string {
 	return strings.TrimRight(string([]rune(text)[:maxSummaryChars]), " \n") + "…"
 }
 
-// checkSummary refuses a reply that is not a summary. A model shown calls and results may go on
-// writing them, and a recap made of that would replace real context with noise.
+// checkSummary refuses a reply that is not a summary, which would replace real context with noise
 func checkSummary(summary string) error {
 	switch {
 	case summary == "":

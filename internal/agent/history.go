@@ -12,18 +12,14 @@ import (
 func (a *Agent) estimateTokens() int {
 	rate := max(a.meter.bytesPerTok, minBytesPerTok)
 	bytes := a.sendingBytes()
-	// the server counted the conversation it just read; only what has moved since then needs guessing, so
-	// the error of a byte ratio is not paid again over the whole conversation every turn
+	// the server counted what it read, so only what moved since then needs guessing
 	if a.meter.anchorTokens > 0 && bytes >= a.meter.anchorBytes {
 		return a.meter.anchorTokens + int(float64(bytes-a.meter.anchorBytes)/rate)
 	}
 	return int(float64(bytes)/rate) + 4*len(a.history)
 }
 
-// makeRoom is the last resort: when the conversation is over the ceiling even after a fold had its
-// turn, the oldest messages go, whole, until a quarter of the window is free below the ceiling. Dropping
-// only enough for this round moved the start of the prompt every round, and the server read the whole
-// conversation again each time.
+// makeRoom is the last resort: oldest messages go whole until a quarter of the window is free
 func (a *Agent) makeRoom() {
 	if a.opts.CtxSize <= 0 || a.estimateTokens() <= a.ceiling() {
 		return
@@ -43,8 +39,7 @@ func (a *Agent) makeRoom() {
 		return
 	}
 	a.work.made(roomDropped(messages))
-	// naming what went is the difference between a model redoing a call on purpose and one that
-	// merely finds a hole in its memory and guesses at it
+	// naming what went is the difference between redoing a call and guessing at a hole in memory
 	named := gone
 	if len(named) > namedDrops {
 		named = append(append([]string{}, named[:namedDrops]...), "...")
@@ -56,8 +51,7 @@ func (a *Agent) makeRoom() {
 // dropShare is the part of the window one drop frees below the ceiling: one in four.
 const dropShare = 4
 
-// namedDrops is how many of the dropped calls the notice names: enough for the model to see the kind
-// of what went, short enough to read while a request runs.
+// namedDrops is how many dropped calls the notice names: enough to see the kind, short enough to read
 const namedDrops = 3
 
 // unitWords says what one dropped unit was, in the words the screen would have shown for the call.
@@ -77,9 +71,7 @@ func unitWords(unit []llm.Message) string {
 	return first.Role
 }
 
-// dropOldestUnit removes the oldest message that may go: a call goes with its replies. What stays
-// whatever happens: the system prompt, a fold's recap, the ask being answered, and the newest call
-// with everything after it.
+// dropOldestUnit removes the oldest removable message, a call going with its replies
 func (a *Agent) dropOldestUnit() []llm.Message {
 	tail := len(a.history)
 	for i := len(a.history) - 1; i > 0; i-- {
@@ -111,12 +103,7 @@ func (a *Agent) dropOldestUnit() []llm.Message {
 	return nil
 }
 
-// sendingBytes counts every byte a request carries; the system prompt already sits at the head of history.
-// The total is kept as the conversation grows rather than walked, because the estimate runs several times
-// a round-trip and once per message inside the trim loop. It is trusted only while the number of messages
-// still matches: a path that rebuilds the conversation whole, or assigns to it directly, is caught by the
-// count and measured again. A total quietly disagreeing with the history would drive the fold decision and
-// the response cap off a number nothing measured, and that is worth one comparison to rule out.
+// sendingBytes counts what a request carries, kept as it grows and re-checked against the message count
 func (a *Agent) sendingBytes() int {
 	if a.histCount != len(a.history) {
 		a.recountBytes()
@@ -124,10 +111,7 @@ func (a *Agent) sendingBytes() int {
 	return a.wireSpecBytes() + a.histBytes
 }
 
-// logDropped writes the one line that says history[from:to] went, rather than a copy of everything
-// left standing: each copy carries every file the model read. The system prompt is never saved, so
-// history[i] sits at position i-1 in the log - but only while the log was in step with the history
-// before the drop. Otherwise the conversation is written whole, which cannot delete the wrong turns.
+// logDropped writes one line saying history[from:to] went, not a copy of everything standing
 func (a *Agent) logDropped(from, to int, inStep bool) {
 	if inStep && a.opts.Session.Dropped(from-1, to-1) == nil {
 		return
@@ -135,15 +119,10 @@ func (a *Agent) logDropped(from, to int, inStep bool) {
 	a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
 }
 
-// attachmentBytes is what one attachment costs the window, whatever the file behind it: a vision
-// encoder turns an image into a fixed count of tokens, so its base64 length measures nothing the
-// server counts. Counting the length would read a screenshot as tens of thousands of tokens and throw
-// away conversation the server would have taken happily; the server's own count re-anchors the
-// estimate one reply later.
+// attachmentBytes is what an attachment costs the window, not the length of its base64
 const attachmentBytes = 4000 // about 1200 tokens at the 3.3 bytes a token of prose measures
 
-// messageBytes is what one message costs a request: the fields that go on the wire, which is what the
-// server counts.
+// messageBytes is what one message costs: the fields that go on the wire, which the server counts
 func messageBytes(m llm.Message) int {
 	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.Reasoning) + len(m.Attachments)*attachmentBytes
 	for _, c := range m.ToolCalls {
@@ -165,10 +144,7 @@ func historyBytes(history []llm.Message) int {
 	return bytes
 }
 
-// Conversation returns the turns the model is being sent, system prompt first: a run that came back
-// to a saved conversation draws what it already knows. The call list is copied rather than shared:
-// the run repairs a cut-off call's arguments inside the stored message, and a reader holding the copy
-// would otherwise watch one of its own strings change underneath it.
+// Conversation returns the turns the model is sent, system prompt first, with the calls copied
 func (a *Agent) Conversation() []llm.Message {
 	said := make([]llm.Message, len(a.history))
 	copy(said, a.history)

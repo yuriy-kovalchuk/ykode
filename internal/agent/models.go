@@ -12,9 +12,7 @@ import (
 
 const modelsTimeout = 10 * time.Second // /model asks the server, and a server that is loading a model may be slow to answer
 
-// modelCommand answers /model: with no argument, every model the server offers with the one in use
-// marked; with an id or the number from that list, a switch to it. A model the server does not list is
-// still accepted, because a proxy may load models it does not advertise.
+// modelCommand answers /model: the list with the current one marked, or a switch to an id or number
 func (a *Agent) modelCommand(ctx context.Context, arg string) string {
 	models, err := a.ServerModels(ctx)
 	if arg == "" {
@@ -27,10 +25,7 @@ func (a *Agent) modelCommand(ctx context.Context, arg string) string {
 	a.UseModel(chosen, listed)
 	switch {
 	case !listed && err == nil:
-		// an unlisted model carries no window. The one already in use is kept rather than replaced by
-		// "unknown": a window of unknown switches the budget off and lets the history grow until the
-		// server refuses, which is worse than a guess that was working. The line says which number is
-		// being kept, so the guess is not mistaken for the model's own size.
+		// an unlisted model carries no window, so the one in use is kept and the line says which was kept
 		return fmt.Sprintf("model: %s (the server does not list it; keeping the %s window from the model you left; "+
 			"the next request asks for it anyway)\n", chosen.ID, windowText(a.opts.CtxSize))
 	case !listed:
@@ -72,8 +67,7 @@ func (a *Agent) ServerModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return a.client.Models(ctx)
 }
 
-// resolve finds the model asked for: a number from the server's list, an id the server lists, or an id
-// it does not, which a proxy may still load.
+// resolve finds the model asked for: a list number, a listed id, or an id a proxy may still load
 func (a *Agent) resolve(ctx context.Context, arg string) (llm.ModelInfo, bool) {
 	models, _ := a.ServerModels(ctx)
 	chosen, listed := llm.ModelInfo{ID: arg}, false
@@ -88,12 +82,10 @@ func (a *Agent) resolve(ctx context.Context, arg string) (llm.ModelInfo, bool) {
 	return chosen, listed
 }
 
-// UseModel points the run at a model, bringing its own window unless --ctx fixed one, and what it takes
-// as input. A front end that listed the models asks for the switch without asking the server again.
+// UseModel points the run at a model, with its window unless --ctx fixed one, and its input modes
 func (a *Agent) UseModel(model llm.ModelInfo, listed bool) {
 	if !listed {
-		// an unlisted model says nothing about itself: the model being left is the only thing known about
-		// it, so the run keeps its capability rather than trading it for silence, as it keeps its window
+		// an unlisted model says nothing, so the leaving model's capability is kept, as its window was
 		model.Vision = a.opts.Vision
 	}
 	a.SetEndpoint(a.client, model, a.windowFor(model, listed))

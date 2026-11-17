@@ -27,8 +27,7 @@ func diffLines(t *testing.T, result string, width int) []string {
 	return rows
 }
 
-// a change is drawn as a review tool draws one: each line with its number in the file, the side that
-// went on one ground and the side that came on another, each running to the edge of the screen
+// a change is drawn like a review tool: numbered lines, one ground per side, to the screen edge
 func TestAChangeIsNumberedAndSitsOnItsSidesGround(t *testing.T) {
 	withColour(t)
 	rows := diffLines(t, "edited a.go\n@@ -8,3 +8,3 @@\n ctx\n-timeout=500, rate=0.001\n+timeout=100, rate=0.001\n last\n", 80)
@@ -56,8 +55,7 @@ func TestAChangeIsNumberedAndSitsOnItsSidesGround(t *testing.T) {
 	}
 }
 
-// the words that differ between a line and the one that replaced it sit on a stronger shade, and
-// only those: what the two lines share stays on the side's own ground
+// only the words that differ sit on the stronger shade; what the lines share keeps its ground
 func TestTheWordsThatChangedStandOut(t *testing.T) {
 	withColour(t)
 	rows := diffLines(t, "edited a.go\n@@ -1,1 +1,1 @@\n-timeout=500, rate=0.001\n+timeout=100, rate=0.001\n", 80)
@@ -132,8 +130,7 @@ func TestAFailureTailLeavesOutItsOwnNote(t *testing.T) {
 	}
 }
 
-// a command that left badly is not marked as one that succeeded, and what it printed last is what
-// explains it
+// a command that left badly is not marked as one that succeeded, and its last lines explain
 func TestACommandThatLeftBadlyReadsAsOne(t *testing.T) {
 	var log transcript
 	args := `{"command":"python3 toy_llm/train.py"}`
@@ -179,8 +176,7 @@ func TestANoteTheToolLeftIsNotALineOfTheChange(t *testing.T) {
 	}
 }
 
-// BenchmarkALongChangeDrawn is what a change of three thousand lines costs to draw, which happens
-// once when it arrives and again when the terminal changes width.
+// BenchmarkALongChangeDrawn is what three thousand change lines cost to draw, twice over
 func BenchmarkALongChangeDrawn(b *testing.B) {
 	var change strings.Builder
 	change.WriteString("@@ -1,1500 +1,1500 @@\n")

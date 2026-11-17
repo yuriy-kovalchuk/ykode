@@ -33,8 +33,7 @@ func TestTruncatingARowKeepsWholeCharacters(t *testing.T) {
 	}
 }
 
-// what matters for a row is how much screen it takes, not how many bytes or runes it holds: a CJK
-// glyph or an emoji is two columns wide
+// a row is measured in screen columns: a CJK glyph or an emoji is two wide
 func TestARowOfWideCharactersStopsAtTheScreenEdge(t *testing.T) {
 	row := oneLine("コードをかく · проверка работы · 🧪 a long argument for the tool that writes files", 30)
 	if got := lipgloss.Width(stripCodes(row)); got > 30 {
@@ -42,8 +41,7 @@ func TestARowOfWideCharactersStopsAtTheScreenEdge(t *testing.T) {
 	}
 }
 
-// a long one-line tool result is cut on every redraw, so cutting is measured once and not again
-// for every character dropped.
+// a long one-line result is cut on every redraw, so the measure is not redone per character
 func BenchmarkCuttingARow(b *testing.B) {
 	line := strings.Repeat("x", 6000)
 	for b.Loop() {
@@ -51,8 +49,7 @@ func BenchmarkCuttingARow(b *testing.B) {
 	}
 }
 
-// text in characters with no spaces between them still stops at the edge of the screen: it is
-// broken at the column rather than kept as one word that runs off it.
+// text with no spaces still stops at the edge: broken at the column, not kept as one word
 func TestTextWithoutSpacesIsBrokenAtTheEdge(t *testing.T) {
 	rows := wrap(strings.Repeat("你", 30), 20)
 	if len(rows) != 3 {

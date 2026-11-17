@@ -30,8 +30,7 @@ const (
 	kindList // written as a list; a new value is added to what is there
 )
 
-// knob is one thing settings.yaml can change: the key as the file spells it (dotted when it sits
-// inside a section), what it is for, and the kind of value it takes.
+// knob is one thing settings.yaml can change: its key, what it is for, and the kind of value it takes
 type knob struct {
 	key     string
 	note    string
@@ -41,10 +40,7 @@ type knob struct {
 	live    bool // a running session takes this up at once; the rest wait for its next start
 }
 
-// knobs are every setting the file can set, in the order a reader would look for them: the server,
-// then the model, then the tools, then what is kept. This is the one place a key is described - the
-// screen prints this list, Set checks a written value against it, and the live column says which of
-// them a session already running takes up. A key described anywhere else is a list that can disagree.
+// knobs are every setting the file can set, the one place a key is described: screens and checks read it
 func knobs() []knob {
 	return []knob{
 		{"base_url", "the server ykode asks; a first session asks for it", kindText, nil,
@@ -83,8 +79,7 @@ func knobs() []knob {
 	}
 }
 
-// LiveKnobs are the settings a running session takes up at once, named by the list above rather than
-// kept as a second list of the same keys.
+// LiveKnobs are the settings a running session takes up at once, named from the list above
 func LiveKnobs() map[string]bool {
 	live := map[string]bool{}
 	for _, k := range knobs() {
@@ -95,8 +90,7 @@ func LiveKnobs() map[string]bool {
 	return live
 }
 
-// Setting is one knob as a screen shows it: the key, what it is for, what it is now, what it would
-// be with nothing set, and who set it.
+// Setting is one knob as a screen shows it: key, purpose, current value, default, and who set it
 type Setting struct {
 	Key     string
 	Note    string
@@ -125,8 +119,7 @@ func (c Config) Catalogue() []Setting {
 	return list
 }
 
-// where says who set a knob: a flag beats the environment, which beats a settings file (the
-// project's first), which beats the built-in.
+// where says who set a knob: flag, then environment, then settings file, then the built-in
 func (c Config) where(key string, global, project map[string]bool) string {
 	if flag, ok := flagFor[key]; ok && c.flagsGiven[flag] {
 		return FromFlag
@@ -158,9 +151,7 @@ var envFor = map[string]string{
 	"model":    "LOCAL_LLM_MODEL",
 }
 
-// fileKeys are the knobs each settings file sets, dotted as the catalogue names them: the user's own
-// file and the project's. The files are read again here because the screen asks now, not when the run
-// started.
+// fileKeys are the knobs each settings file sets, read again here because the screen asks now
 func fileKeys(c Config) (global, project map[string]bool) {
 	global, project = map[string]bool{}, map[string]bool{}
 	for _, each := range []struct {
@@ -190,9 +181,7 @@ func walkKeys(node *yaml.Node, prefix string, into map[string]bool) {
 		case yaml.MappingNode:
 			walkKeys(node.Content[i+1], name+".", into)
 		case yaml.ScalarNode:
-			// A key written with nothing in it is the file's way of leaving a choice to the program, not
-			// of making it: a settings file seeded before this key was dropped from the seed says so, and
-			// the program resolves an empty folder to its own, which the table then reported as chosen.
+			// a key written with nothing in it leaves the choice to the program, it does not make one
 			if node.Content[i+1].Value == "" {
 				continue
 			}
@@ -225,8 +214,7 @@ func count(n int) string {
 	return fmt.Sprint(n)
 }
 
-// shownKey keeps a token out of the screen that lists settings: the file may hold it, the screen
-// should not repeat it.
+// shownKey keeps a token out of the screen that lists settings, though the file itself may hold it
 func shownKey(key string) string {
 	if key == "" {
 		return ""
@@ -234,8 +222,7 @@ func shownKey(key string) string {
 	return "set (not shown)"
 }
 
-// ModelFromFile says the model in use was pinned by a settings file, not named by a flag or the
-// environment: a flag is a request for that model, a pin in a file is only a remembered choice.
+// ModelFromFile says the model came from a settings file, a remembered choice rather than a request
 func (c Config) ModelFromFile() bool {
 	global, project := fileKeys(c)
 	switch c.where("model", global, project) {

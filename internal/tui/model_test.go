@@ -27,9 +27,7 @@ func TestAScreenThatWasNeverResizedStillDraws(t *testing.T) {
 	}
 }
 
-// newWiredModel is a session whose run reports back to a queue the test feeds to Update,
-// the way a running program's event loop would.
-// wired is a session plus the queue its run reports into, so a test can be the event loop.
+// newWiredModel reports into a queue the test feeds to Update, the way an event loop would
 
 // answered says whether a question was replied to, without waiting forever if it was not.
 
@@ -42,8 +40,7 @@ func quits(cmd tea.Cmd) bool {
 	return ok
 }
 
-// aLongSession is a session the length of a working afternoon: the frame it costs is what the
-// screen pays for every few tokens.
+// aLongSession is a working afternoon long: its frame is paid for every few tokens
 func aLongSession(calls int) transcript {
 	var log transcript
 	for i := 0; i < calls; i++ {
@@ -55,8 +52,7 @@ func aLongSession(calls int) transcript {
 	return log
 }
 
-// the frame the screen pays must not grow with the session: only the rows in view are drawn, and
-// only the block that changed is drawn again.
+// the frame must not grow with the session: only rows in view, only the block that changed
 func BenchmarkAFrameOfALongSession(b *testing.B) {
 	for _, calls := range []int{50, 300, 1200} {
 		a := agent.New(nil, nil, "test-model", agent.Options{}, nil)

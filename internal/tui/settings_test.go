@@ -153,8 +153,7 @@ func TestSettingsIsAnsweredWhileATurnRuns(t *testing.T) {
 	}
 }
 
-// modalKeys sends keys to the session the way the terminal does, running the probe command a key
-// returns so the model list arrives as it would.
+// modalKeys sends keys as the terminal does, running the probe command a key returns
 func modalKeys(m *model, keys ...tea.KeyMsg) {
 	for _, k := range keys {
 		_, cmd := m.Update(k)
@@ -398,8 +397,7 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 	}
 }
 
-// on the thinking level the screen shows what every level lets the model think for, with the selected
-// one marked, and the mark follows the cursor of a choice as it cycles
+// the thinking level shows every level's budget, the selected one marked, following the cursor
 func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
 	settingsHome(t, "")
 	withColour(t)
@@ -441,8 +439,7 @@ func TestTheSettingsBoxDoesNotChangeHeightWithTheCursor(t *testing.T) {
 	}
 }
 
-// the screen names the file it writes: the project's own when it has one, and a warning before it
-// changes the file every project reads
+// the screen names the file it writes, and warns before touching the file every project reads
 func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
 	settingsHome(t, "max_turns: 30\n")
 	m := settingsModel(t)
@@ -497,10 +494,7 @@ func TestGroupDigits(t *testing.T) {
 	}
 }
 
-// A typed value belongs to the row it was started on. Deciding which knob to write when enter is
-// pressed, rather than when typing began, means the value lands on whichever row the cursor has
-// reached - and a value is only checked against the kind of the knob it lands on, so a number meant
-// for one setting is accepted by any other setting of the same kind.
+// a typed value belongs to the row it started on, since only that knob's kind checks it
 func TestATypedValueGoesToTheRowItStartedOn(t *testing.T) {
 	dir := settingsHome(t, "")
 	m := newTestModel()

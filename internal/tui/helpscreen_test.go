@@ -28,8 +28,7 @@ func TestHelpListsTheCommands(t *testing.T) {
 	}
 }
 
-// typing narrows to the command you half-remember, and enter writes it in the prompt box, spelled out,
-// so it can be run as it stands or finished typing from there
+// typing narrows to the half-remembered command, and enter writes it spelled out in the box
 func TestHelpWritesTheChosenCommandInThePromptBox(t *testing.T) {
 	m := newTestModel()
 	m.Update(window92)

@@ -173,8 +173,7 @@ func TestCompactStopsWhenTheCallerCancels(t *testing.T) {
 	}
 }
 
-// the list a front end completes from and the list /help prints are the same list, and it says
-// which commands wait for the turn in flight
+// the completion list and the list /help prints are one list, saying which commands wait for a turn
 func TestTheCommandListIsWhatHelpAndSafetyUse(t *testing.T) {
 	a := New(nil, nil, "m", Options{}, nil)
 	help, _, err := a.Command(context.Background(), "/help")

@@ -11,8 +11,7 @@ import (
 // describeChars is how much of a command fits in a description before it is cut.
 const describeChars = 120
 
-// Describe says what a call asks for in the words a person reads before deciding: the file, the
-// pattern, the command. The JSON is what the model wrote; this is the screen's copy.
+// Describe words a call for a person to read before deciding: the file, the pattern, the command
 func Describe(name, args string) string {
 	switch name {
 	case "read_file":
@@ -46,8 +45,7 @@ func Describe(name, args string) string {
 	return brief(args)
 }
 
-// describeWith reads a call's arguments as T and words them; arguments that cannot be read are shown
-// as they came, cut short.
+// describeWith reads a call's arguments as T and words them; unreadable ones show as they came
 func describeWith[T any](args string, words func(T) string) string {
 	var in T
 	if err := json.Unmarshal([]byte(args), &in); err != nil {

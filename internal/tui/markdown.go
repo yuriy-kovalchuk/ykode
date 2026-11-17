@@ -14,20 +14,13 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// answers parses the CommonMark a model writes, with the tables, struck-out text and checklists
-// models write as well. The drawing stays ours: the palette and the screen's width are ykode's
-// business, and a fence the model has not closed yet parses as code running to the end, which is what
-// an answer arriving a token at a time needs.
+// answers parses the CommonMark models write, with tables and checklists, drawn by ykode's palette
 var answers = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Strikethrough, extension.TaskList))
 
-// codeGutter indents the lines of a fenced block. It marks nothing: a rule down the side of code
-// cannot be selected away, so every copy of a block would carry it.
+// codeGutter indents a fenced block; a rule down its side would come along on every copy
 const codeGutter = "    "
 
-// layout is an answer as the screen last laid it out. An answer arrives a token at a time and is
-// drawn many times a second while it does, but text added at the end only ever changes the last block
-// of it: every block before that is laid out once and its rows kept. So a frame costs the block being
-// written, not the answer so far.
+// layout is an answer as last laid out: text added at the end changes only its last block
 type layout struct {
 	width   int
 	lead    string
@@ -36,9 +29,7 @@ type layout struct {
 	code    codeCache // the coloured code of this answer
 }
 
-// draw lays out the model's answer: headings, lists, tables and fenced code given their shape, and
-// the marks the model wrote turned into the terminal's own words. Every row starts with lead, and a
-// blank row stays blank.
+// draw lays out an answer: headings, lists, tables and code given shape, marks as words
 func (l *layout) draw(source string, width int, lead string) []string {
 	if l.width != width || l.lead != lead {
 		*l = layout{width: width, lead: lead, code: l.code} // the colours do not depend on the width
@@ -77,8 +68,7 @@ func (l *layout) draw(source string, width int, lead string) []string {
 func block(node ast.Node, src []byte, width int, code *codeCache) []string {
 	switch n := node.(type) {
 	case *ast.Heading:
-		// the title of an answer is underlined, its sections bold, and what is under those bold and
-		// slanted: three levels are as many as a terminal can tell apart
+		// the answer's title is underlined, its sections bold, and what is under them bold and slanted
 		return wrap(inline(n, src, ink{bold: true, underline: n.Level == 1, italic: n.Level > 2}), width-2)
 	case *ast.FencedCodeBlock:
 		return codeRows(n, src, width, string(n.Language(src)), fenceClosed(n, src), code)
@@ -100,17 +90,14 @@ func block(node ast.Node, src []byte, width int, code *codeCache) []string {
 	case *extast.Table:
 		return tableRows(n, src, width)
 	case *ast.HTMLBlock:
-		// what the answer wrapped in raw html: the tags kept rather than dropped, so nothing the model
-		// wrote goes missing on the way to the screen
+		// raw html in an answer keeps its tags, so nothing the model wrote goes missing on the way
 		return gutterRows(sourceLines(n.Lines(), src), width, "")
 	default:
 		return wrap(inline(node, src, ink{}), width-2)
 	}
 }
 
-// listRows are a list's entries: a bullet or the entry's number in a column, each entry wrapped under
-// itself, and any block an entry holds indented beneath it. A list inside an entry sits under that
-// entry's words, with a bullet of its own kind.
+// listRows are entries with their bullet or number, wrapped under themselves, blocks indented
 func listRows(list *ast.List, src []byte, width int, code *codeCache, nested bool) []string {
 	margin, bullet := "  ", "•"
 	if nested {
@@ -145,9 +132,7 @@ func listRows(list *ast.List, src []byte, width int, code *codeCache, nested boo
 	return rows
 }
 
-// codeRows are the lines of a code block, with the language named once above them. A block that names
-// a language we have a grammar for is coloured, while it is still arriving as much as once it closed;
-// one that names nothing, or a language nobody has a grammar for, is drawn exactly as the model wrote it.
+// codeRows are a block's lines, language named once, coloured when a grammar knows it
 func codeRows(node ast.Node, src []byte, width int, language string, closed bool, cache *codeCache) []string {
 	var rows []string
 	if language != "" {
@@ -164,9 +149,7 @@ func codeRows(node ast.Node, src []byte, width int, language string, closed bool
 	return append(rows, gutterRows(lines, width, codeGutter)...)
 }
 
-// fenceClosed says whether a fence has been shut by its closing ``` yet. goldmark reads the rest of the
-// answer as the block when it has not, so an unterminated one ends where the answer does: its last line
-// runs to the end of the source.
+// fenceClosed says whether a fence has shut: goldmark reads the rest of the answer as the block
 func fenceClosed(node ast.Node, src []byte) bool {
 	lines := node.(*ast.FencedCodeBlock).Lines()
 	if lines.Len() == 0 {
@@ -175,9 +158,7 @@ func fenceClosed(node ast.Node, src []byte) bool {
 	return lines.At(lines.Len()-1).Stop < len(src)
 }
 
-// withoutClosingFence drops the closing fence while it is still arriving: its first backtick is, for
-// the length of a token, the last line of the code, and a block that ends in a stray ` for a frame
-// reads as a flicker.
+// withoutClosingFence drops a closing fence still arriving, which would flicker for a token
 func withoutClosingFence(code string) string {
 	at := strings.LastIndexByte(code, '\n') + 1
 	last := strings.TrimSpace(code[at:])
@@ -187,8 +168,7 @@ func withoutClosingFence(code string) string {
 	return strings.TrimRight(code[:at], "\n")
 }
 
-// blockText is the source a block's lines hold, joined as it was written. A block written with the
-// carriage returns of a windows file is read as the same lines the screen shows elsewhere.
+// blockText is a block's source joined as written, carriage returns read as the same lines
 func blockText(segments *text.Segments, src []byte) string {
 	var joined strings.Builder
 	for i := 0; i < segments.Len(); i++ {
@@ -221,9 +201,7 @@ func gutterRows(lines []string, width int, mark string) []string {
 	return rows
 }
 
-// ink is how a run of words inside a block is written. Marks nest - bold around code, a link inside
-// emphasis - and a style closed in the middle of another would switch the outer one off with it, so
-// each run of words is written once, with everything that holds for it.
+// ink writes a run of words once with all that holds for it, since marks nest and styles leak
 type ink struct{ bold, italic, code, struck, underline bool }
 
 func (k ink) write(words string) string {
@@ -235,8 +213,7 @@ func (k ink) write(words string) string {
 		style = style.Inherit(styleCode)
 	}
 	written := style.Render(words)
-	// a line under the words or through them is opened by hand: lipgloss draws either a character at a
-	// time, an escape before and after each, and a heading would be ten times its own length
+	// underline and strike are opened by hand: lipgloss writes an escape per character
 	lines := ""
 	if k.underline {
 		lines += "\x1b[4m"
@@ -290,8 +267,7 @@ func inline(node ast.Node, src []byte, in ink) string {
 		case *ast.Text:
 			out.WriteString(in.write(textWords(n, src)))
 			if n.SoftLineBreak() || n.HardLineBreak() {
-				// a break the model typed is a break on the screen: it writes a value a line, a step a
-				// line, and run together into one paragraph they stop being readable as data
+				// a break the model typed is a break on screen: merged into one paragraph, data stops reading
 				out.WriteString("\n")
 			}
 		case *ast.RawHTML:
@@ -316,8 +292,7 @@ func textWords(text *ast.Text, src []byte) string {
 	return string(util.UnescapePunctuations(segment.Value(src)))
 }
 
-// leafText is what a run of inlines says in its own words, markdown escapes already dropped and
-// a line break the model typed turned into a space the row wraps at.
+// leafText is a run of inlines in its own words, escapes dropped, a break turned into a space
 func leafText(node ast.Node, src []byte) string {
 	var out strings.Builder
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
@@ -339,10 +314,7 @@ func leafText(node ast.Node, src []byte) string {
 // tableMinColumn is the narrowest a column of a table is drawn: under this a cell is a letter a row.
 const tableMinColumn = 4
 
-// tableRows draw a table as a grid: a rule around it and between its columns, the heading bold over a
-// rule of its own. A table wider than the screen has its widest columns narrowed and their cells
-// wrapped inside them; one that still cannot fit - more columns than the screen has room to rule -
-// is written as records instead, each row's cells under each other with their headings beside them.
+// tableRows draw a grid, narrowing wide cells, or writing records when it cannot fit at all
 func tableRows(table *extast.Table, src []byte, width int) []string {
 	var cells [][]string
 	var natural []int
@@ -425,9 +397,7 @@ func tableRows(table *extast.Table, src []byte, width int) []string {
 	return rows
 }
 
-// fitColumns narrows the columns of a table until they fit the room, taking from the widest first:
-// a column of numbers keeps its width and the column of prose beside it gives. It answers nil when
-// even columns at their narrowest would not fit.
+// fitColumns narrows the widest columns first, answering nil when even those would not fit
 func fitColumns(natural []int, room int) []int {
 	widths := append([]int(nil), natural...)
 	total := 0
@@ -450,8 +420,7 @@ func fitColumns(natural []int, room int) []int {
 	return widths
 }
 
-// tableRecords is a table too wide to rule, written a row at a time: each cell on a line of its own
-// under the heading of its column, a blank row between two rows of the table.
+// tableRecords is a table too wide to rule: a row at a time, each cell under its heading
 func tableRecords(cells [][]string, width int) []string {
 	var rows []string
 	for i, line := range cells[1:] {

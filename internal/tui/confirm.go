@@ -6,15 +6,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// confirm asks once before something that cannot be undone: /reset forgets the conversation the run has
-// been building. It is the same box the lists open, with two keys, because the question is one word long.
+// confirm asks once before something that cannot be undone, in the same box the lists use
 type confirm struct {
 	title, ask string
 	yes        func()
 }
 
-// confirmCommand puts the question on the screen with the command that answers it: yes runs it exactly as
-// typing it would, and its answer lands in the transcript as usual.
+// confirmCommand puts the question with the command that answers it, which runs as typed would
 func (m *model) confirmCommand(line, title, ask string) {
 	m.picker = &confirm{
 		title: title,

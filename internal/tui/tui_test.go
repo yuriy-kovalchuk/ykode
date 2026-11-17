@@ -74,8 +74,7 @@ func waitFor(t *testing.T, screen *lockedBuffer, want string) {
 	t.Fatalf("the screen never showed %q:\n%s", want, stripCodes(screen.String()))
 }
 
-// TestTwoPromptsInARowBothRun drives the real wiring: keys in, a turn on its own goroutine,
-// the screen redrawn from what that turn reported.
+// TestTwoPromptsInARowBothRun drives the real wiring: keys in, a turn, redraw from its reports
 
 func writeKeys(t *testing.T, keys *os.File, burst string) {
 	t.Helper()
@@ -165,10 +164,7 @@ func TestTheHubWaitsForWhatTheScreenAnswers(t *testing.T) {
 
 // stubAnswers answers each request with its own text, the way a server would.
 
-// The screen must never ask a terminal to report the pointer, on any path out: a run that ends with a
-// tracking mode switched on hands the next program raw escape reports where keystrokes belong, which is
-// what makes text unselectable and pastes wheel bytes into whatever box has the cursor. So the screen
-// switches the modes off before it draws and again when it leaves, whatever happened in between.
+// the screen must never leave a pointer mode on, so it clears them before drawing and on exit
 func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
 	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one"}})
 	defer server.Close()
@@ -212,10 +208,7 @@ func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
 	}
 }
 
-// A pointer report that reaches the program because some other program left a mode switched on has to
-// be read as a report and dropped. If a fragment of it is read as keystrokes instead, the wheel writes
-// characters into the box: this feeds the bytes a terminal really sends, burst by burst, the way a
-// terminal sends them, and checks that none of them is ever drawn as text.
+// a stray pointer report is read as a report and dropped, never as keystrokes into the box
 func TestPointerBytesSentToTheProgramReachNothing(t *testing.T) {
 	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one"}})
 	defer server.Close()
@@ -268,8 +261,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	hub := NewHub()
 	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
-	// the program reads keys from a file descriptor, so an os pipe paces it the way a
-	// terminal does: one burst per step of the test
+	// the program reads keys from a descriptor, so an os pipe paces it the way a terminal does
 	in, keys, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -299,8 +291,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	}
 }
 
-// stubPaused holds its first reply open until the test lets it go, so the test can type into a
-// turn that is provably still running.
+// stubPaused holds its first reply open, so the test types into a provably running turn
 type stubPaused struct {
 	mu       sync.Mutex
 	release  chan struct{}
@@ -348,8 +339,7 @@ func (s *stubPaused) carries(text string) bool {
 	return false
 }
 
-// an ask typed into a turn that is still running reaches the model inside that turn, rather than
-// waiting for the whole turn to end
+// an ask typed into a running turn reaches the model inside it, not after the turn ends
 func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 	stub := &stubPaused{release: make(chan struct{})}
 	server := httptest.NewServer(stub)

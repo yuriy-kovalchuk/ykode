@@ -19,9 +19,7 @@ const (
 // draftBody names the argument each tool's preview shows; other tools show their raw arguments.
 var draftBody = map[string]string{"write_file": "content", "edit_file": "new_text", "exec_command": "command"}
 
-// draftState is what the screen has read of a call's arguments while the model writes them. The
-// arguments only grow, so each read starts where the last one stopped: a file of a hundred kilobytes
-// is read once as it is written, not again for every redraw.
+// draftState is what the screen read of a call's arguments so far; they only grow, so reads resume
 type draftState struct {
 	path    string
 	pathEnd int // where the path's text ends in args; -1 while the model has not finished it
@@ -45,8 +43,7 @@ type draft struct {
 	state draftState
 }
 
-// drafted reads whatever has been written since the last look, in place on the entry, and shows the
-// call: its path, how much of it is there, and the newest lines.
+// drafted reads what arrived since the last look: the path, how much is there, and the newest tail
 func drafted(e *entry) draft {
 	readDraft(&e.state, e.tool, e.args)
 	return draft{call: e.callID, tool: e.tool, args: e.args, state: e.state}
@@ -54,8 +51,7 @@ func drafted(e *entry) draft {
 
 // readDraft keeps the reading of a call's arguments up to date without reading them again.
 func readDraft(st *draftState, tool, args string) {
-	// the path comes first in the arguments: it is looked for while they are short, then settled, so
-	// what the model writes later cannot be mistaken for it
+	// the path comes first in the arguments, so what is written later cannot be mistaken for it
 	if st.pathEnd < 0 && len(args) <= draftLookBytes {
 		if at, ok := valueStart(args, "path"); ok {
 			if end := closingQuote(args[at:]); end >= 0 {
@@ -67,8 +63,7 @@ func readDraft(st *draftState, tool, args string) {
 	if !known {
 		return
 	}
-	// finished text the model has moved past: a second edit, another field. The newest occurrence is
-	// the one being written now.
+	// text the model has moved past: the newest occurrence is the one being written now
 	movedOn := st.bodyEnd >= 0 && len(args) > st.bodyEnd
 	if st.bodyAt < 0 || movedOn {
 		if !huntIsDue(args, st.hunted) {
@@ -98,15 +93,12 @@ func readDraft(st *draftState, tool, args string) {
 	}
 }
 
-// huntIsDue says whether the arguments have grown enough to be worth reading again in search of a
-// key. Half a kilobyte of new arguments at a time is enough: a key that was not in the newest part
-// is not about to turn up at the end of a file being written.
+// huntIsDue says whether the arguments grew enough to be worth searching again for a key
 func huntIsDue(args string, hunted int) bool {
 	return len(args) <= draftLookBytes || len(args) >= hunted+draftLookBytes
 }
 
-// scanValue counts the escaped line breaks in a piece of a JSON string and says where its closing
-// quote is, or -1 while the model is still writing the string.
+// scanValue counts escaped line breaks in a JSON string and finds its closing quote, or -1
 func scanValue(piece string) (breaks, quote int) {
 	for i := 0; i < len(piece); i++ {
 		switch piece[i] {
@@ -147,8 +139,7 @@ func (d draft) preview() (lines []string, total, bytes int) {
 	return tail(shownTail(raw)), total, len(raw)
 }
 
-// shownTail decodes the end of the text being written: the beginning of a big file is off the screen
-// either way, and decoding it for every redraw costs the whole file.
+// shownTail decodes only the end: the start is off screen, and decoding all costs the file
 func shownTail(raw string) string {
 	from := raw
 	if len(raw) > draftTailBytes {
@@ -170,9 +161,7 @@ func lineCount(text, newline string) int {
 	return n
 }
 
-// draftHead is the one-line head of a call being written: its target and how much is written so
-// far. It reports numbers the preview already counted, since a call of a hundred kilobytes is
-// redrawn while it grows.
+// draftHead is a call's one-line head: target and how much is written, from counted numbers
 func draftHead(target string, lines, bytes int) string {
 	parts := []string{}
 	if target != "" {
@@ -192,8 +181,7 @@ func tail(text string) []string {
 	return lines
 }
 
-// valueStart is where a string field's text begins in arguments that may stop anywhere. Everything
-// it drops is a prefix, so what is left keeps its place in args.
+// valueStart is where a string field's text begins in arguments that may stop anywhere
 func valueStart(args, key string) (int, bool) {
 	at := strings.LastIndex(args, `"`+key+`"`)
 	if at < 0 {

@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// the session starts one row below the terminal's top edge, and the screen is still exactly as tall
-// as the terminal: the row the margin takes comes off what the session reads
+// the session starts a row below the top edge, and the screen stays the terminal's height
 func TestTheSessionStartsBelowTheTopEdge(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

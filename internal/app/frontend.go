@@ -38,10 +38,7 @@ func (f FrontEnd) Run(a *agent.Agent, cfg config.Config, ctxSize int) error {
 	return tui.Run(context.Background(), a, f.hub, cfg)
 }
 
-// answerOnce runs one task to completion, for scripts. The answer goes to stdout and the log to stderr,
-// and a script judges the run by its exit code - so a write that did not land is a failure of the run,
-// not decoration to be lost. A broken pipe on stdout is the exception the runtime handles its own way,
-// by killing the process with SIGPIPE, which is at least an exit code a script can branch on.
+// answerOnce runs one task for scripts: answer to stdout, log to stderr, a write that did not land fails it
 func answerOnce(a *agent.Agent, cfg config.Config, view *cli.View) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -50,8 +47,7 @@ func answerOnce(a *agent.Agent, cfg config.Config, view *cli.View) error {
 		return err
 	}
 	if view != nil {
-		// the answer was produced and could not be delivered: say what failed, on the stream that may
-		// still work, and fail the run rather than reporting success
+		// the answer was produced but not delivered: say so on the stream that may work, and fail the run
 		if werr := view.Err(); werr != nil {
 			return fmt.Errorf("the answer could not be written: %w", werr)
 		}

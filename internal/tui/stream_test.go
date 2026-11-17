@@ -13,8 +13,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// tokens that arrive faster than the screen looks reach it joined: one piece of text per kind, in
-// the order they were written, with the server's speeds folded into one report
+// tokens faster than the screen arrive joined: one piece per kind, in order, speeds folded
 func TestWhatStreamsFasterThanFramesArrivesJoined(t *testing.T) {
 	hub := NewHub()
 	woken := make(chan tea.Msg, 8)
@@ -79,8 +78,7 @@ func TestBeingWokenDrawsWhatTheRunReported(t *testing.T) {
 	}
 }
 
-// what streams is drawn at the pace of frames: the first piece at once, a piece that follows it
-// inside the same frame with the frame that is due
+// what streams draws at frame pace: the first piece at once, the rest with the frame due
 func TestWhatStreamsIsDrawnOncePerFrame(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
@@ -105,8 +103,7 @@ func TestWhatStreamsIsDrawnOncePerFrame(t *testing.T) {
 	}
 }
 
-// aStreamedAnswer is an answer the length a model writes when asked to explain and show: prose,
-// lists and blocks of code, a few times over.
+// aStreamedAnswer is an answer as a model writes one: prose, lists and code, a few times over
 func aStreamedAnswer(sections int) string {
 	var b strings.Builder
 	for i := 0; i < sections; i++ {
@@ -120,9 +117,7 @@ func aStreamedAnswer(sections int) string {
 	return b.String()
 }
 
-// BenchmarkAnAnswerStreamed is a whole answer arriving: four bytes a token, a frame every twenty
-// tokens, the code in it coloured as it is written. What it reports per op is the screen's share of
-// the reply, start to end.
+// BenchmarkAnAnswerStreamed is a whole answer arriving; per op is the screen's share of it
 func BenchmarkAnAnswerStreamed(b *testing.B) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	b.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
@@ -211,8 +206,7 @@ func TestAnEscapedEmojiIsOneCharacter(t *testing.T) {
 	}
 }
 
-// the note beside a suggested command has the room the screen has, counted in columns: the colour
-// of the command's name takes bytes and no room
+// the note beside a suggested command is counted in columns: colour takes bytes, no room
 func TestASuggestionKeepsItsNoteWhenColoured(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
@@ -225,8 +219,7 @@ func TestASuggestionKeepsItsNoteWhenColoured(t *testing.T) {
 	}
 }
 
-// a run waiting on a question is let go when the screen leaves: it is refused, not left holding a
-// command for a screen that will never draw it
+// a run waiting on a question is let go when the screen leaves: refused, not left holding it
 func TestAQuestionIsRefusedWhenTheScreenLeaves(t *testing.T) {
 	hub := NewHub()
 	hub.wire(func(tea.Msg) {}) // a screen that takes the question and never answers it

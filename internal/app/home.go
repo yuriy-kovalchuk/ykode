@@ -12,9 +12,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// PrepareHome makes the per-user directory ready: the settings file a first run never wrote,
-// and no leftovers from runs that finished long ago (spilled command output, the result dirs
-// of finished runs).
+// PrepareHome makes the per-user directory ready: settings a first run never wrote, and no stale leftovers
 func PrepareHome(cfg config.Config) {
 	if err := config.SeedSettings(); err != nil {
 		fmt.Fprintln(os.Stderr, "ykode:", err)
@@ -35,9 +33,7 @@ func PrepareHome(cfg config.Config) {
 	removed("conversation(s)", n, err)
 }
 
-// pruneSessions removes the conversations past their keep. One entry that cannot be read or removed is
-// passed over rather than ending the sweep: it is one conversation among many, and stopping here would
-// leave everything after it on disk at every future start.
+// pruneSessions drops old conversations, passing over an entry it cannot remove instead of stopping
 func pruneSessions(cfg config.Config) (int, error) {
 	entries, err := os.ReadDir(cfg.SessionDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) { // nothing saved yet is not an error

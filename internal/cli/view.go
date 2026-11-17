@@ -10,9 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// View is one consumer of the agent's events: thinking and tool progress go to the log,
-// answers to stdout, so redirecting stdout stays clean. It answers nothing: a run with no screen
-// has nobody at the keyboard.
+// View is one consumer of the agent's events: thinking and tool progress to the log, answers to stdout
 type View struct {
 	mu       sync.Mutex // tools may report from several goroutines
 	out      io.Writer
@@ -20,10 +18,7 @@ type View struct {
 	colored  bool
 	thinking bool
 	answered bool
-	// failed is the first write that did not land. Every write here is checked and kept rather than
-	// dropped, because a run piped into something that stops reading early loses its answer in silence:
-	// the writer fails, nothing is said, and the exit code says the task went fine. One error is enough
-	// to say so with - after the first EPIPE every later write fails the same way.
+	// failed keeps the first write that did not land, so a piped run that lost its answer does not exit 0
 	failed error
 }
 
@@ -31,8 +26,7 @@ func NewView(out, log io.Writer) *View {
 	return &View{out: out, log: log, colored: isTerminal(log)}
 }
 
-// Err is the first write that failed, nil when everything reached its stream. A caller that can report
-// a failure - the single-task path, which has an exit code to set - asks this after the run.
+// Err is the first write that failed, nil when everything reached its stream
 func (v *View) Err() error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -127,10 +121,7 @@ func (v *View) reset() string {
 // IsTerminal reports whether a stream is an interactive one, so a script can know nobody will answer.
 func IsTerminal(f *os.File) bool { return isTerminal(f) }
 
-// nullInfo is what the null device looks like, taken once: a stream that is the null device is a
-// character device and so passes the mode test, but nobody reads what is written to it and nothing
-// arrives on the one read from it. That is the opposite of interactive, and it is what a test binary or
-// a `ykode < /dev/null` run hands us.
+// nullInfo is the null device's stat: writing reaches nobody, so it is never interactive
 var nullInfo = func() os.FileInfo {
 	info, err := os.Stat(os.DevNull)
 	if err != nil {
@@ -151,8 +142,7 @@ func isTerminal(w io.Writer) bool {
 	if nullInfo != nil && os.SameFile(nullInfo, info) {
 		return false
 	}
-	// the fallback for the case where the null device could not be stat'ed at all: a stream opened on it
-	// by its own name is the same thing, named
+	// the fallback when the null device could not be stat'ed: a stream opened on it by name, named
 	return file.Name() != os.DevNull
 }
 

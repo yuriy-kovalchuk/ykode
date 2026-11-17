@@ -19,8 +19,7 @@ func planned(t *testing.T, p *Plan, steps string) string {
 	return out
 }
 
-// the model sends the whole list every time, so the answer is the plan as it now stands and the
-// screen reads the same steps
+// the model sends the whole list each time, so the answer is the plan as it now stands
 func TestAPlanCallReplacesTheListAndReadsBack(t *testing.T) {
 	p := NewPlan()
 	planned(t, p, `{"steps":[{"text":"read the loop","status":"done"},{"text":"write the panel","status":"active"},{"text":"test it"}]}`)
@@ -36,8 +35,7 @@ func TestAPlanCallReplacesTheListAndReadsBack(t *testing.T) {
 	}
 }
 
-// a status the model made up is a step that has not started, and a step with nothing written in it
-// is not a step
+// a made-up status is a step not started, and an empty step is not a step
 func TestAPlanReadsWhatItWasNotGiven(t *testing.T) {
 	p := NewPlan()
 	planned(t, p, `{"steps":[{"text":"one","status":"nearly-there"},{"text":"  ","status":"done"},{"text":"two","status":"failed"}]}`)
@@ -80,8 +78,7 @@ func TestALongPlanIsCutToAScreen(t *testing.T) {
 	}
 }
 
-// a step that failed has an outcome, so a plan that ended badly is settled; one with work left is not,
-// and a plan no one wrote is not settled either
+// a failed step is an outcome: a plan that ended badly is settled, one with work left is not
 func TestAPlanIsSettledWhenEveryStepHasAnOutcome(t *testing.T) {
 	for _, c := range []struct {
 		what     string
@@ -185,8 +182,7 @@ func TestAPlanCanBeReadBackFromItsCallAndItsReport(t *testing.T) {
 	}
 }
 
-// a plan with work left says to come back to it, one that is over does not, and steps past what a
-// plan holds are said to have been left out rather than dropped quietly
+// a plan with work left says to return to it, and steps left out are said to be left out
 func TestAPlanSaysWhatTheModelShouldKnow(t *testing.T) {
 	p := NewPlan()
 	if got := planned(t, p, `{"steps":[{"text":"one","status":"done"},{"text":"two","status":"failed"}]}`); strings.Contains(got, "call plan again") {

@@ -14,9 +14,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// heldServer answers only when told to, so a turn can be caught in flight. The rule that the history
-// belongs to the goroutine answering was written in comments and enforced by nothing: this is what the
-// guard has to be provable against.
+// heldServer answers only when told to, so a turn can be caught in flight
 type heldServer struct {
 	release chan struct{}
 	once    sync.Once
@@ -39,9 +37,7 @@ func (h *heldServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *heldServer) done() { h.once.Do(func() { close(h.release) }) }
 
-// A change that belongs between turns refuses while one is running, and says so in words the user can
-// act on. The methods used to trust their callers to have checked; one front end forgetting it was
-// enough to replace the conversation a request was being built from.
+// a between-turns change refuses while a turn runs, and says so in words the user can act on
 func TestAChangeBetweenTurnsRefusesWhileOneRuns(t *testing.T) {
 	held := &heldServer{release: make(chan struct{})}
 	server := httptest.NewServer(held)
@@ -105,9 +101,7 @@ func TestAChangeBetweenTurnsRefusesWhileOneRuns(t *testing.T) {
 	}
 }
 
-// A fold started on its own owns the run, since it rewrites the conversation; a fold called from inside
-// a turn must not steal the flag from the turn that owns it, or the turn's own release would clear a
-// busy run and let a second one in.
+// a fold inside a turn must not steal the busy flag from the turn that owns the run
 func TestAFoldOwnsTheRunOnlyWhenItStartedTheRun(t *testing.T) {
 	stub := &stubServer{scripts: []string{answerWithTimings("a recap of the older turns", 10, 5, 5)}}
 	a, done := newAgent(t, stub, Options{CtxSize: 8000}, &captureSink{})
@@ -127,8 +121,7 @@ func TestAFoldOwnsTheRunOnlyWhenItStartedTheRun(t *testing.T) {
 	a.turnRunning.Store(false)
 }
 
-// The escape hatch: a second turn cannot be started over one that is running, because both would write
-// the same conversation.
+// a second turn cannot start over a running one: both would write the same conversation
 func TestATurnCannotBeStartedOverOneAlreadyRunning(t *testing.T) {
 	held := &heldServer{release: make(chan struct{})}
 	server := httptest.NewServer(held)
@@ -194,12 +187,10 @@ func waitUntil(ok func() bool, within time.Duration) bool {
 	return false
 }
 
-// The screen draws the conversation from a copy. The run repairs a cut-off call's arguments inside the
-// stored message, so a copy sharing the call list showed the reader a string change underneath it.
+// the screen draws from a copy, so repairing stored arguments must not change what the copy shows
 func TestAReadersCopyDoesNotMoveUnderIt(t *testing.T) {
 	a := newForHistory(Options{})
-	// written straight into the conversation, as a resumed one is: a message coming through add is
-	// repaired on the way in and would never reach the repair below
+	// written straight in, as a resumed conversation is, so it reaches the repair instead of bypassing it
 	a.history = append(a.history, llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1",
 		Function: llm.FunctionCall{Name: "read_file", Arguments: []byte(`{"path":"f`)}}}})
 

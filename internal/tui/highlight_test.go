@@ -30,8 +30,7 @@ func TestAFenceNamingALanguageIsColoured(t *testing.T) {
 	}
 }
 
-// a block written in prose or in a language nobody has a grammar for stays exactly as it came:
-// guessing at a language colours a sentence
+// prose and languages without a grammar stay exactly as they came: guessing colours a sentence
 func TestAFenceNobodyNamedIsLeftAlone(t *testing.T) {
 	withColour(t)
 	for _, c := range []struct{ what, answer string }{
@@ -51,8 +50,7 @@ func TestAFenceNobodyNamedIsLeftAlone(t *testing.T) {
 	}
 }
 
-// what the model thought is shown as it thought it: a fence inside it is code, but the screen's
-// colouring of code belongs to the answer, where a reader goes to see a shape
+// thinking shows as it was thought: a fence in it is code, coloured code belongs to the answer
 func TestThinkingIsNeverColoured(t *testing.T) {
 	withColour(t)
 	var log transcript
@@ -62,8 +60,7 @@ func TestThinkingIsNeverColoured(t *testing.T) {
 	}
 }
 
-// a fence that has not been shut yet is coloured as it arrives: code that turns up plain and gains
-// its colours when the block ends reads as the screen falling behind
+// an open fence is coloured as it arrives, so the screen never seems to fall behind
 func TestAFenceStillArrivingIsColoured(t *testing.T) {
 	withColour(t)
 	var log transcript
@@ -83,8 +80,7 @@ func TestAFenceStillArrivingIsColoured(t *testing.T) {
 	}
 }
 
-// a block still arriving is read a chunk at a time: the lines already written are settled, and a
-// frame reads only what follows them, however long the block has grown
+// a block still arriving is read a chunk at a time: the settled lines are not read again
 func TestALongBlockArrivingIsReadInChunks(t *testing.T) {
 	withColour(t)
 	line := "func pad() int { return 1 } // a line of the block\n"
@@ -151,8 +147,7 @@ func TestAColouredRowStaysInsideTheScreen(t *testing.T) {
 	}
 }
 
-// a closed block is read once and asked for by what it says after that: a screen that changes width
-// draws every answer again, and must not read every block again to do it
+// a closed block is read once and fetched by its text, since a width change redraws every answer
 func TestEachBlockOfAnAnswerIsColouredOnce(t *testing.T) {
 	withColour(t)
 	var blocks codeCache
@@ -201,8 +196,7 @@ func TestAColouredAnswerKeepsItsBlocksAcrossRedraws(t *testing.T) {
 	}
 }
 
-// a change the reader is shown is not an answer: the code of a call keeps the colours of a diff, and
-// its own rules about which lines to show
+// a change shown to the reader is not an answer: a call keeps the diff's colours and rules
 func TestACallIsNotColouredAsAnAnswer(t *testing.T) {
 	withColour(t)
 	var log transcript

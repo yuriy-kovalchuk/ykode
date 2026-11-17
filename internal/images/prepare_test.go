@@ -75,8 +75,7 @@ func TestAPictureWiderThanTheLimitIsSentSmallerAndSaysSo(t *testing.T) {
 	}
 }
 
-// the note is read beside the bytes it describes, so the kind it names first has to be the kind those
-// bytes are: a screenshot stored as a png and handed over as a jpeg is a jpeg to whatever reads it
+// the note is read beside the bytes it describes, so the kind it names first is the kind those bytes are
 func TestTheNoteNamesTheKindThatTravelsNotOnlyTheKindInTheFile(t *testing.T) {
 	got, err := Prepare(picture(3000, 600, true), MimePng)
 	if err != nil {
@@ -90,8 +89,7 @@ func TestTheNoteNamesTheKindThatTravelsNotOnlyTheKindInTheFile(t *testing.T) {
 	}
 }
 
-// a picture made of noise compresses badly: the choice between png and jpeg is what keeps it inside
-// what one image may cost, and jpeg wins when png cannot
+// noise compresses badly: jpeg wins when png cannot stay inside what one image may cost
 func TestAPictureIsNotSentPastWhatAnImageMayCost(t *testing.T) {
 	got, err := Prepare(picture(2000, 2000, true), MimePng)
 	if err != nil {

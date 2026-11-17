@@ -7,8 +7,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
-// only the screen has someone at the keyboard, so only it is offered ask_user: a -p run would stall
-// on a question nobody can answer.
+// only the screen is offered ask_user: a -p run would stall on a question nobody can answer
 func TestOnlyTheScreenIsAsked(t *testing.T) {
 	offered := func(sink agent.Sink) bool {
 		_, canAnswer := sink.(agent.Asker)

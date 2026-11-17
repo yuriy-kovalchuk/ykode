@@ -223,8 +223,7 @@ func TestTimingsAreReportedWhileStreaming(t *testing.T) {
 	}
 }
 
-// a server with no timings of its own still says what the request cost, in the stream's last chunk:
-// the prompt's size and the part of it the cache served are read from there
+// a server with no timings still says what the request cost, in the stream's last chunk
 func TestAServerThatOnlyCountsUsageStillReportsTheCache(t *testing.T) {
 	acc := newStreamAccumulator()
 	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n" +
@@ -239,9 +238,7 @@ func TestAServerThatOnlyCountsUsageStillReportsTheCache(t *testing.T) {
 	}
 }
 
-// A server may send its counts in one chunk and its speeds in another, in either order. Assigning a
-// timings block whole threw the counts away, which left the run with no window budget on a server that
-// had reported one perfectly well.
+// counts may come in one chunk and speeds in another, either order: assigning a block whole lost the counts
 func TestCountsSurviveATimingsChunkThatCarriesOnlySpeeds(t *testing.T) {
 	acc := newStreamAccumulator()
 	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n" +
@@ -260,8 +257,7 @@ func TestCountsSurviveATimingsChunkThatCarriesOnlySpeeds(t *testing.T) {
 	}
 }
 
-// The same in the other order, and with a server that reports a cached share but no total: the part
-// that was never said stays unknown rather than being invented.
+// the other order, with a cached share but no total: what was never said stays unknown
 func TestCountsArrivingInEitherOrder(t *testing.T) {
 	acc := newStreamAccumulator()
 	stream := "data: {\"choices\":[],\"timings\":{\"cache_n\":120,\"prompt_n\":900,\"predicted_n\":5,\"prompt_per_second\":400}}\n\n" +
@@ -283,8 +279,7 @@ func TestCountsArrivingInEitherOrder(t *testing.T) {
 	}
 }
 
-// A server that writes the stream error as a bare string was a decode failure before: the message a
-// user needed became a JSON type error, and the phrase the retry path explains was never seen.
+// a stream error written as a bare string was a decode failure before, hiding the message the user needed
 func TestAStreamErrorWrittenAsAStringStillReachesTheUser(t *testing.T) {
 	acc := newStreamAccumulator()
 	err := readSSE(strings.NewReader("data: {\"error\":\"the model is loading\"}\n\n"), acc, nil)

@@ -16,8 +16,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// rawStub records the exact bytes of every request body, because a cache compares bytes, not meaning.
-// It answers with scripted streams.
+// rawStub records the exact bytes of every request body, since a cache compares bytes not meaning
 type rawStub struct {
 	scripts []string
 	bodies  [][]byte
@@ -82,8 +81,7 @@ func TestAResumedRequestRepeatsTheLiveOneByteForByte(t *testing.T) {
 	}
 	resReq := shape(t, resumed.bodies[0])
 
-	// the server's cache matches from the first token, so a resume that words anything differently,
-	// even an argument's spacing, makes the server read the whole conversation again
+	// the cache matches from the first token, so a resume wording anything differently re-reads it all
 	if string(liveReq.Tools) != string(resReq.Tools) {
 		t.Error("the tool definitions differ after a resume")
 	}
@@ -97,8 +95,7 @@ func TestAResumedRequestRepeatsTheLiveOneByteForByte(t *testing.T) {
 	}
 }
 
-// crowded is a session whose window fills while it works: every read is a few kilobytes and the
-// window holds a few of them, so the run folds the older turns and drops what still does not fit.
+// crowded is a session whose window fills as it works, so the run folds and drops to keep going
 func crowded(t *testing.T, dir string, stub *rawStub, log *session.Log) (*Agent, func()) {
 	a, done := stub.agent(t, dir, log)
 	a.opts.CtxSize, a.opts.MaxTokens = 4000, 128
@@ -114,9 +111,7 @@ func asJSON(t *testing.T, v any) string {
 	return string(raw)
 }
 
-// what a run does to its conversation to make it fit - folding the older turns, dropping a call - is
-// in the saved conversation too: a run that comes back sends what the first one last sent, so the
-// server still has it, instead of the conversation as it was before any of that
+// what a run did to fit the window is saved too, so a resume sends exactly what was last sent
 func TestAResumeOfACrowdedSessionSendsWhatTheSessionLastSent(t *testing.T) {
 	dir := t.TempDir()
 	scripts := []string{}

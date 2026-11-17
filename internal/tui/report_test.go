@@ -11,8 +11,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
-// /ctx and /usage are read from a panel that stays on the screen, with the window's fullness drawn as a
-// bar rather than written as a percentage in a sentence
+// /ctx and /usage stay on screen, with the window's fullness drawn as a bar, not a sentence
 func TestCtxOpensTheFiguresPanel(t *testing.T) {
 	a := agent.New(nil, nil, "test-model", agent.Options{CtxSize: 32768}, nil)
 	m := newModel(context.Background(), a, NewHub(), config.Config{})

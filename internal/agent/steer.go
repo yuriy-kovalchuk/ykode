@@ -2,17 +2,14 @@ package agent
 
 import "github.com/yuriy-kovalchuk/ykode/internal/llm"
 
-// Steer offers an ask to the run in progress: it joins the conversation at the next round-trip
-// rather than waiting for the whole turn to end. The round-trip already in flight and the tools
-// already running are not interrupted.
+// Steer offers an ask to the running turn: it joins at the next round-trip, interrupting nothing
 func (a *Agent) Steer(text string) {
 	a.waitingMu.Lock()
 	defer a.waitingMu.Unlock()
 	a.waiting = append(a.waiting, text)
 }
 
-// Waiting is what has been typed but has not reached the model yet, for a front end to keep on
-// screen and, once the run ends, to start as an ordinary prompt.
+// Waiting is what was typed but has not reached the model yet, for a front end to keep on screen
 func (a *Agent) Waiting() []string {
 	a.waitingMu.Lock()
 	defer a.waitingMu.Unlock()
@@ -31,8 +28,7 @@ func (a *Agent) NextWaiting() (string, bool) {
 	return ask, true
 }
 
-// takeWaiting is the loop's seam: everything typed since the last round-trip, in the words the
-// model reads.
+// takeWaiting is the loop's seam: everything typed since the last round-trip
 func (a *Agent) takeWaiting() []llm.Message {
 	a.waitingMu.Lock()
 	defer a.waitingMu.Unlock()

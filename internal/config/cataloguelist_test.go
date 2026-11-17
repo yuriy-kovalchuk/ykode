@@ -7,9 +7,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// The screen lists keys from one table and the loader accepts keys from another, and the loader is
-// strict about the difference. So a knob the screen will happily write can be one the next start refuses
-// to read: the program would write a settings file that makes itself unstartable.
+// the screen's list and the loader's must agree, or the program writes a settings file it refuses to read
 func TestEverySettingTheScreenWritesIsOneTheLoaderReads(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir() // no .ykode here, so each change lands in the user's own file
@@ -37,9 +35,7 @@ func TestEverySettingTheScreenWritesIsOneTheLoaderReads(t *testing.T) {
 	}
 }
 
-// The live column is a column of the same table, not a second list of the same keys: a key that is
-// live but not listed would be applied to a running session and never shown, and a listed key left out
-// of the column is a change that waits for a restart in silence.
+// the live column comes from the same table: a key in one list and not the other is applied unseen
 func TestTheLiveKnobsAreKeysFromTheSameList(t *testing.T) {
 	live := LiveKnobs()
 	listed := map[string]bool{}
@@ -80,8 +76,7 @@ func sampleFor(k knob) string {
 	return ""
 }
 
-// A settings file the loader cannot read must name the file and the key rather than fail as a wall of
-// yaml: this is the one error a person is most likely to meet by editing the file ykode wrote.
+// an unreadable settings file names the file and the key, rather than failing as a wall of yaml
 func TestASettingsFileThatCannotBeReadNamesTheFileAndTheKey(t *testing.T) {
 	fakeHome(t)
 	writeSettings(t, home.Settings(), "max_turns: plenty\n")

@@ -48,9 +48,7 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 	}
 }
 
-// the arrows still walk the history: only the wheel changed meaning
-// the arrows and the wheel move the session; the earlier prompts are reached with ctrl+p, so a
-// scroll gesture cannot write one into the box
+// the arrows and the wheel move the session; earlier prompts come from ctrl+p, never a scroll
 func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 	m := longSession(t)
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
@@ -92,9 +90,7 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	}
 }
 
-// the screen never asks the terminal for the pointer, so a wheel report can only be something another
-// program left switched on: the wheel still scrolls, and a click, a drag or a release does nothing at
-// all rather than arriving in the box as keystrokes.
+// the screen never asks for the pointer, so a wheel report is a leftover mode: it still scrolls
 func TestAPointerReportNeverWritesIntoTheBox(t *testing.T) {
 	m := longSession(t)
 	m.input.SetValue("a prompt half typed")
@@ -119,8 +115,7 @@ func TestAPointerReportNeverWritesIntoTheBox(t *testing.T) {
 	m.scrollWithOverlayOpen(t, wheel(tea.MouseButtonWheelUp))
 }
 
-// scrollWithOverlayOpen checks that a wheel report reaches the transcript while the settings list is
-// open over the session, and writes nothing into the box that list is reading.
+// scrollWithOverlayOpen checks the wheel reaches the transcript under an open list, typing nothing
 func (m *model) scrollWithOverlayOpen(t *testing.T, msg tea.MouseMsg) {
 	t.Helper()
 	m.input.SetValue("/settings")

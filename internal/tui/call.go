@@ -10,9 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// What one call leaves on the screen: a row's words, and at most one body under it. The rest of what
-// a call returned stays where it belongs — the file it changed, the log a command wrote, the context
-// the model is reading. Nothing is held for a screen that is not going to draw it.
+// what a call leaves on screen: a row's words and at most one body; the rest stays on disk
 const (
 	tailKept     = 1200 // bytes of a failure's last lines
 	tailShown    = 8    // rows of a failure the screen takes
@@ -28,8 +26,7 @@ type call struct {
 	tail   string // a failure's last lines, capped; empty when nothing failed
 }
 
-// readCall is what a finished call leaves behind: its sentence, then either the change it made or,
-// when it went wrong, the lines that say why.
+// readCall is a finished call's row, then the change it made or the lines saying why it failed
 func readCall(tool, args, result string, failed bool, root string) call {
 	c := call{note: noteFor(tool, args, result, failed, root)}
 	if holdsDiff(result) {
@@ -47,9 +44,7 @@ func (c *call) holds(change string) {
 	c.note = strings.TrimPrefix(c.note+" · "+changeSize(change), " · ")
 }
 
-// noteFor says a call in one line. While it runs, that is what it was asked for. Once it answers, the
-// tool's own sentence carries the row — it already names the file it touched — and what the call was
-// asked for is added only when that sentence forgot to.
+// noteFor says a call in one line: the ask while it runs, the tool's sentence once it answers
 func noteFor(tool, args, result string, failed bool, root string) string {
 	what := described(tool, args, root)
 	if result == "" {
@@ -80,8 +75,7 @@ func noteFor(tool, args, result string, failed bool, root string) string {
 	}
 }
 
-// described puts a call's arguments in words, and says nothing when they cannot be read: the row is
-// better quiet than a strip of JSON.
+// described puts a call's arguments in words, and stays quiet when they cannot be read
 func described(tool, args, root string) string {
 	if args == "" || !json.Valid([]byte(args)) {
 		return ""
@@ -100,8 +94,7 @@ func namedFile(args, root string) string {
 	return shorten(in.Path, root)
 }
 
-// exitSaid is how a command ended, read from the note the tool leaves at the end of its output. An
-// empty string means it simply ran and printed.
+// exitSaid is how a command ended, from the note ending its output; "" means it simply ran
 func exitSaid(result string) string {
 	for _, line := range strings.Split(result, "\n") {
 		switch {
@@ -127,8 +120,7 @@ func printedSaid(result string) string {
 	return fmt.Sprintf("%d lines", len(strings.Split(strings.TrimRight(result, "\n"), "\n")))
 }
 
-// withoutItsNote drops the line the tool adds about how the command left: the row already says it, and
-// repeating it under the row is noise where the explanation should be.
+// withoutItsNote drops the tool's exit line from the body, since the row already says it
 func withoutItsNote(result string) string {
 	lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
 	for len(lines) > 0 {
@@ -141,8 +133,7 @@ func withoutItsNote(result string) string {
 	return strings.Join(lines, "\n")
 }
 
-// lastLines is the end of what a call answered: where an error is, and the part worth keeping. The
-// cut starts at a line so no row begins in the middle of a word.
+// lastLines is the end of an answer, where an error is, cut at a line so no row starts mid-word
 func lastLines(result string, budget int) string {
 	if len(result) <= budget {
 		return strings.TrimRight(result, "\n")
@@ -162,8 +153,7 @@ func shorten(s, root string) string {
 	return shortenHome(s)
 }
 
-// tailRows is what went wrong, as the rows under the row that did it: quiet, behind a gutter, with
-// no ground of their own. A line the row above already said is not said again.
+// tailRows is what went wrong under the row that did it, without repeating the row above
 func tailRows(tail, note string, width int) []string {
 	if tail == "" || strings.TrimSpace(tail) == "" {
 		return nil

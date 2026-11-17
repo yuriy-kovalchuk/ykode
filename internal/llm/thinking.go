@@ -11,9 +11,7 @@ const (
 	DefaultThinkingLevel = "medium"
 )
 
-// thinkingBudgetTok is what llama-server's thinking_budget_tokens gets for each level. The budget caps
-// the thinking phase inside one response, which is what keeps the answer from being starved; "max" and
-// "off" name no budget at all, and only "off" also turns the phase off.
+// thinkingBudgetTok is what llama-server's thinking_budget_tokens gets per level; max and off name none
 var thinkingBudgetTok = map[string]int{
 	ThinkingOff: 0, "minimal": 1024, "low": 2048, DefaultThinkingLevel: 8192,
 	"high": 16384, "xhigh": 32768, "max": 0,

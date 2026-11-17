@@ -147,8 +147,7 @@ func TestASessionWithNoIDWritesNothing(t *testing.T) {
 	}
 }
 
-// The result ids are how recall names a saved result, so a resumed conversation has to keep them:
-// without them every old result is blanked for good.
+// result ids are how recall names a saved result, so a resumed conversation has to keep them
 func TestASavedConversationKeepsItsResultIds(t *testing.T) {
 	dir := t.TempDir()
 	log := New(dir, "s20260101-000000", "")
@@ -240,8 +239,7 @@ func TestStartingOverLeavesNothingToResume(t *testing.T) {
 	}
 }
 
-// a fold is what the run ended with, so a resume starts there rather than reloading and re-trimming
-// what the last run already put away
+// a fold is what the run ended with, so a resume starts there and does not trim it away again
 func TestAFoldIsSavedSoAResumeStartsFromIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions", "s20260101-120000.jsonl")
 	log := New(filepath.Dir(path), "s20260101-120000", "")
@@ -325,8 +323,7 @@ func TestTheNoteAtTheEndOfAnAskIsSplitOffAgain(t *testing.T) {
 	}
 }
 
-// what a run did to its conversation after saying it is read back with it: a message put in another's
-// place, messages taken out, and the whole of it written again
+// what a run did to its conversation is read back with it: replacements, removals, and rewrites
 func TestChangesToTheConversationAreReadBack(t *testing.T) {
 	dir := t.TempDir()
 	log := New(dir, "s1", "/work")
@@ -348,8 +345,7 @@ func TestChangesToTheConversationAreReadBack(t *testing.T) {
 		}
 		return strings.Join(texts, " | ")
 	}
-	// a run that rewrote the conversation in place wrote these lines; nothing writes them now,
-	// and an older file still reads back the same way
+	// nothing writes these lines now, and an older file holding them still reads back the same way
 	old := func(v any) {
 		t.Helper()
 		if err := log.write(mustJSON(v)); err != nil {
@@ -386,8 +382,7 @@ func TestChangesToTheConversationAreReadBack(t *testing.T) {
 	}
 }
 
-// reading a conversation to resume it must not touch the file: the bytes it holds are what the
-// next run's fold will be asked about, and rewriting them is how a resume loses an ask
+// resuming must not touch the file: its bytes are what the next run's fold is asked about
 func TestReadingASavedConversationWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-000000.jsonl")
@@ -468,9 +463,7 @@ func TestThinkingStoredTwiceByAnOlderRunStillLoads(t *testing.T) {
 	}
 }
 
-// A trim takes the oldest turns out of a conversation and writes nothing else. Recording that as one
-// line by position is the point of an append-only log: a copy of the whole conversation per removal,
-// each holding the full text of every file read, is what made the file grow a dozen times over.
+// a trim writes one line by position, not a copy of the whole conversation: that is the append-only point
 func TestADropIsOneLineRatherThanACopyOfTheConversation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-130000.jsonl")
@@ -496,8 +489,7 @@ func TestADropIsOneLineRatherThanACopyOfTheConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the drop itself costs one short line: a whole copy of what is left would carry the 6000-odd
-	// bytes of that file read again
+	// the drop costs one short line; a whole copy would carry that 6000-byte file read again
 	if grew := len(raw) - len(afterAppends); grew > 64 {
 		t.Errorf("the drop grew the file by %d bytes, want one short line", grew)
 	}
@@ -513,8 +505,7 @@ func TestADropIsOneLineRatherThanACopyOfTheConversation(t *testing.T) {
 	}
 }
 
-// A change points at a position counted from the last boundary, so a fold or a start-over moves where
-// the next line points. Positions carried across a boundary would delete the wrong turns.
+// a change counts from the last boundary, so positions carried across one delete the wrong turns
 func TestAChangePointsWhereTheMessageStoodAfterTheLastBoundary(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-130100.jsonl")
@@ -547,8 +538,7 @@ func TestAChangePointsWhereTheMessageStoodAfterTheLastBoundary(t *testing.T) {
 	}
 }
 
-// A replacement message goes in by position, which is how a repaired call is kept without writing the
-// conversation again.
+// a replacement goes in by position, keeping a repaired call without rewriting the conversation
 func TestAMessageReplacedInPlaceIsReadBackReplaced(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-130200.jsonl")
@@ -573,8 +563,7 @@ func TestAMessageReplacedInPlaceIsReadBackReplaced(t *testing.T) {
 	}
 }
 
-// A file written by a newer program than this one cannot be rebuilt correctly, and a conversation that
-// looks fine and is wrong is worse than a resume that refuses.
+// a file from a newer program cannot be rebuilt correctly, so a resume refuses rather than guesses
 func TestAFileFromAFutureFormatIsRefusedRatherThanGuessedAt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s20260101-130300.jsonl")

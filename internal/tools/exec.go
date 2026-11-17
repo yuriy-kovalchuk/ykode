@@ -108,8 +108,7 @@ func (t *Exec) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	cmd := groupCommand(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = t.dir
 	cmd.Env = commandEnv()
-	// the output arrives through a window: what the model sees stays in RAM, and the whole of it is
-	// written to the log as the command makes it
+	// the output arrives through a window: the model sees a part of it, the log gets all of it
 	window := newOutWindow(t.aim(), t.logDir())
 	cmd.Stdout, cmd.Stderr = window, window
 	err := cmd.Run()
@@ -153,9 +152,7 @@ func execTimeout(seconds int, def time.Duration) (time.Duration, bool) {
 	return time.Duration(seconds) * time.Second, false
 }
 
-// groupCommand runs the command in its own process group so cancelling kills children, not just sh.
-// The group is what makes the kill reach a build's compiler processes and a test runner's subprocesses:
-// killing only the shell leaves them writing into pipes nobody reads.
+// groupCommand runs the command in its own process group so cancelling kills its children too
 func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = waitDelay
@@ -164,20 +161,17 @@ func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// groupAttributes puts the command in a process group of its own. ykode runs on unix systems only, so
-// this is written once rather than split across a file per operating system.
+// groupAttributes puts the command in its own group; ykode is unix-only, so this is written once
 func groupAttributes() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-// killGroup takes the whole group down. The leading minus on the pid is what says "the group", and
-// SIGKILL because a child that will not stop on request has had its chance.
+// killGroup takes the group down: the minus says the group, SIGKILL for a child that will not stop
 func killGroup(cmd *exec.Cmd) error {
 	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
-// fit is what the model sees of a command's output: its head, most of its tail, and where the whole
-// of it was written. The counts are the command's own bytes, before the output was cleaned.
+// fit is what the model sees of output: its head, most of its tail, and where the whole was written
 func (t *Exec) fit(w *outWindow) string {
 	if w.total <= w.goal {
 		return cleanOutput(string(w.head) + string(w.tail))
@@ -196,13 +190,10 @@ func (t *Exec) fit(w *outWindow) string {
 	return b.String()
 }
 
-// aim is the byte ceiling for this command's output: the same arithmetic as the file tools and the
-// agent's formatter, in resultCap.
+// aim is this command's byte ceiling: the same arithmetic as the file tools, in resultCap
 func (t Exec) aim() int { return resultCap(t.MaxBytes) }
 
-// PruneSpillLogs deletes whole command logs older than maxAge, and reports how many went. One entry
-// that cannot be read or removed is passed over rather than ending the sweep: it is one folder among
-// many, and stopping here would leave everything after it on disk for every future start.
+// PruneSpillLogs deletes command logs older than maxAge, passing over one it cannot remove
 func PruneSpillLogs(dir string, maxAge time.Duration) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {

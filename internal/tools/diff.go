@@ -26,20 +26,13 @@ func diffText(oldText, newText string) string {
 	return capDiff(dropFileHeaders(diff))
 }
 
-// changeMaxLines is the most of one change a screen is handed. It is far past what anyone reads on a
-// row-by-row screen, and it is what keeps a rewritten file of a hundred thousand lines from being
-// held twice over; the model's own copy of the change is capped much lower, and separately.
+// changeMaxLines is the most of one change a screen is handed, far past what anyone reads per row
 const changeMaxLines = 3000
 
-// changeMaxBytes caps one change the other way, because lines are not a measure of size: a minified
-// file is a handful of very long lines, and a change to it is the whole file twice over. Measured on a
-// two megabyte single-line file each way, the change handed to the screen was four megabytes in three
-// lines - the line cap never engaged, and that string is held for the life of the run under the row
-// that shows it.
+// changeMaxBytes caps a change by size too, since lines are not a measure: a minified file is one line
 const changeMaxBytes = 200_000
 
-// wholeChange is a change as a person reads it, not as the model is charged for it: every hunk, capped
-// in lines and in bytes. It is "" when nothing changed.
+// wholeChange is a change as a person reads it: every hunk, capped in lines and bytes, "" if equal
 func wholeChange(oldText, newText string) string {
 	if oldText == newText {
 		return ""
@@ -47,8 +40,7 @@ func wholeChange(oldText, newText string) string {
 	a, b := diffSplit(oldText), diffSplit(newText)
 	var lines []string
 	if went, came := changedSpan(a, b); went+came > changeMaxLines {
-		// a file rewritten from top to bottom: lining its halves up costs seconds and says nothing a
-		// reader can use, so the part that differs is given as what went, then what came
+		// a whole-file rewrite: lining the halves up costs seconds and says nothing, so it says went, then came
 		lines = blockChange(a, b, went, came)
 	} else {
 		diff := dropFileHeaders(udiff.Unified("before", "after", joinLines(a), joinLines(b)))
@@ -61,9 +53,7 @@ func wholeChange(oldText, newText string) string {
 		fmt.Sprintf("\n[… %d more lines of the change; the file on disk has all of it]", len(lines)-changeMaxLines)
 }
 
-// cutChange takes off the bytes a line count does not catch. The cut lands on a line break where one
-// is near: half a line of minified JavaScript reads as a mistake rather than as a cut, and the notice
-// that follows says what is missing either way.
+// cutChange takes off the bytes a line count misses, landing the cut on a line break where one is near
 func cutChange(change string) string {
 	if len(change) <= changeMaxBytes {
 		return change
@@ -75,8 +65,7 @@ func cutChange(change string) string {
 	return cut + fmt.Sprintf("\n[… %d more bytes of the change; the file on disk has all of it]", len(change)-len(cut))
 }
 
-// blockChange is the differing middle of two files as one hunk: the lines that went, then the lines
-// that came.
+// blockChange is the differing middle of two files as one hunk: what went, then what came
 func blockChange(a, b []string, went, came int) []string {
 	start := 0
 	for start < len(a) && start < len(b) && a[start] == b[start] {
@@ -93,8 +82,7 @@ func blockChange(a, b []string, went, came int) []string {
 	return lines
 }
 
-// changedSpan measures the middle that differs on each side, ignoring the identical band
-// on both ends. That middle, not the whole file, is what makes a diff worth printing.
+// changedSpan measures the middle that differs, ignoring the identical band on both ends
 func changedSpan(a, b []string) (old, new int) {
 	lo := 0
 	for lo < len(a) && lo < len(b) && a[lo] == b[lo] {
@@ -126,8 +114,7 @@ func joinLines(lines []string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// dropFileHeaders removes the "--- before" / "+++ after" pair: a tool result already says
-// which file it is about, and two lines of that per edit is tokens for nothing.
+// dropFileHeaders removes "--- before"/"+++ after": the result already names the file
 func dropFileHeaders(diff string) string {
 	lines := strings.Split(diff, "\n")
 	for len(lines) > 0 && (strings.HasPrefix(lines[0], "---") || strings.HasPrefix(lines[0], "+++")) {

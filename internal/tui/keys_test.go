@@ -76,8 +76,7 @@ func TestCtrlCCancelsARunBeforeItQuits(t *testing.T) {
 	}
 }
 
-// ctrl+p and ctrl+n walk the prompts sent this session, and what was typed but not sent waits at
-// the end of the walk instead of being overwritten
+// ctrl+p and ctrl+n walk the sent prompts, with the unsent one waiting at the end of the walk
 func TestCtrlPWalksOlderPromptsAndKeepsWhatWasTyped(t *testing.T) {
 	m := newTestModel()
 	m.history = []string{"first question", "second question"}
@@ -102,8 +101,7 @@ func TestCtrlPWalksOlderPromptsAndKeepsWhatWasTyped(t *testing.T) {
 	}
 }
 
-// a trackpad scroll reaches a terminal that is not holding the mouse as arrow keys: it moves the
-// session, and never writes a prompt into the box
+// a trackpad scroll arrives as arrow keys: it moves the session, never writing into the box
 func TestAScrollMovesTheSessionNotThePrompt(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 16})
@@ -264,8 +262,7 @@ func TestCtrlSlashShowsTheKeysOverATypedPrompt(t *testing.T) {
 	}
 }
 
-// the box is a readline box: ctrl+a and ctrl+e go to the ends of the line the caret stands on, not
-// of the whole prompt
+// the box is a readline box: ctrl+a and ctrl+e move within the caret's line, not the prompt
 func TestCtrlAAndCtrlEMoveTheCaretWithinTheirLine(t *testing.T) {
 	m := inputModel(40)
 	typeText(m, "one")
@@ -302,8 +299,7 @@ func TestCtrlKAndCtrlWKillWhatTheyPointAt(t *testing.T) {
 	}
 }
 
-// ctrl+u stays the transcript's, text in the box or not: killing a line is ctrl+k's work, and one
-// key does not do two jobs
+// ctrl+u stays the transcript's: killing a line is ctrl+k's work, and one key does one job
 func TestCtrlUScrollsWithTextInTheBox(t *testing.T) {
 	m := longSession(t)
 	typeText(m, "beta gamma")

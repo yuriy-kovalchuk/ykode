@@ -11,8 +11,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
 
-// SaveEndpoint edits the settings file this project uses in place, so the user's comments and other
-// keys survive. It answers the file it wrote and whether that was the project's own.
+// SaveEndpoint edits this project's settings file in place, so comments and other keys survive
 func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 	path, local := SettingsTarget(root)
 	wasAccepted := local && localAccepted(root)
@@ -39,9 +38,7 @@ func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 	return path, local, nil
 }
 
-// readSettingsDoc opens one settings file as a document - or the built-in defaults when the user's own
-// file is not there yet - so an edit keeps the comments and the keys nobody asked about. A project
-// file that is missing is an error: there is nothing to edit.
+// readSettingsDoc opens a settings file as a document, or the defaults when the user's own is missing
 func readSettingsDoc(path string) (*yaml.Node, error) {
 	raw, err := os.ReadFile(settingsIn(filepath.Dir(path)))
 	if errors.Is(err, os.ErrNotExist) {

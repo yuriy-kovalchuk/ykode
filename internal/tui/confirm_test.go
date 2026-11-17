@@ -7,8 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// /reset throws away the whole conversation, so one keystroke is not allowed to do it: the screen asks
-// first, and no says no
+// /reset throws away the conversation, so one keystroke may not do it: the screen asks first
 func TestResetAsksBeforeForgettingTheConversation(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 92, Height: 24})

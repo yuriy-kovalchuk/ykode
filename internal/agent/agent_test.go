@@ -25,8 +25,7 @@ type stubServer struct {
 }
 
 func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// the model list is a GET with no body at all: answering it from the chat script, or recording it as
-	// a turn, shifts every later request onto the wrong script and reads an empty body as a broken one
+	// the model list is a GET with no body: scripting it shifts later requests onto the wrong script
 	if strings.HasSuffix(r.URL.Path, "/models") {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":[{"id":"test-model","context_length":8000},{"id":"other-model","context_length":16000}]}`)
@@ -83,8 +82,7 @@ func sse(reasoning, content string, tool string, argsParts []string, finish stri
 	return b.String()
 }
 
-// captureSink records what the renderer was given.
-// captureSink collects the event stream so tests can assert on what a consumer would see.
+// captureSink collects the event stream so tests can assert on what a consumer would see
 
 type captureSink struct {
 	mu        sync.Mutex // tools can run at the same time, so the sink sees them concurrently
@@ -154,8 +152,7 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 	return a, func() { server.Close(); root.Close() }
 }
 
-// newAgentIn is newBuiltInAgent over a directory the test made, so the test can put files in it
-// before the run reads them; the fold tests build on it.
+// newAgentIn is newBuiltInAgent over a test directory, so the test can fill it before the run reads
 func newAgentIn(t *testing.T, stub *stubServer, opts Options, sink Sink, dir string) (*Agent, func()) {
 	t.Helper()
 	server := httptest.NewServer(stub)
@@ -181,8 +178,7 @@ func writeLines(t *testing.T, dir, name string, n int) string {
 	return name
 }
 
-// newBuiltInAgent is an agent over every built-in tool, its project root a scratch dir it also
-// returns; the repair and permission tests build on it.
+// newBuiltInAgent is an agent over every built-in tool, its root a scratch dir it also returns
 func newBuiltInAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, string) {
 	t.Helper()
 	server := httptest.NewServer(stub)
@@ -231,8 +227,7 @@ func TestToolUsingRequestIsNotNudged(t *testing.T) {
 
 // hasUserNote looks for text in the user messages of a recorded request.
 
-// the model sees its own thinking on the next tool round, as pi sends it: without it every round
-// starts its reasoning over
+// the model sees its own thinking on the next tool round, as pi sends it
 func TestReasoningIsAlwaysSentBack(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("thinking first", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),

@@ -55,8 +55,7 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	}
 	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
 	if _, canAnswer := sink.(Asker); canAnswer {
-		// the question is answered by the same thing that draws the run, so the tool is offered only
-		// when there is somebody at the other end of it to answer
+		// the ask tool is offered only when there is somebody at the other end to answer it
 		registry.Add(tools.NewAskUser(asksTo{a}))
 	}
 	a.meter = newMeter()
@@ -79,8 +78,7 @@ func (a *Agent) Reset() {
 	a.startOver()
 }
 
-// startOver empties the conversation without writing anything to the log: a run coming back to another
-// saved conversation leaves the one it was in standing as it was, so it can be come back to again.
+// startOver empties the conversation without touching the log, leaving the saved one to return to
 func (a *Agent) startOver() {
 	a.history = []llm.Message{{Role: "system", Content: a.prompt}}
 	a.recountBytes()
@@ -94,14 +92,10 @@ func (a *Agent) startOver() {
 	a.publishUsage()
 }
 
-// turnBusy says a round-trip is in flight. The history belongs to the goroutine answering it: reading
-// or changing it from elsewhere is the race this package's comments have always described, without any
-// way to enforce them.
+// turnBusy says a round-trip is in flight, and the history belongs to the goroutine answering it
 func (a *Agent) turnBusy() bool { return a.turnRunning.Load() }
 
-// refuseDuringATurn stops a change that belongs between turns, and says so in words a user can act on.
-// The rule was written in comments and trusted to every caller; one caller forgetting it was enough to
-// replace the conversation a request is in the middle of sending.
+// refuseDuringATurn stops a between-turns change mid-turn, in words a user can act on
 func (a *Agent) refuseDuringATurn(what string) bool {
 	if !a.turnBusy() {
 		return false
@@ -110,8 +104,7 @@ func (a *Agent) refuseDuringATurn(what string) bool {
 	return true
 }
 
-// reportSave passes on the one thing a session log can answer with, and says it only once per run:
-// a log that will not write is a fact about the run, not about one call.
+// reportSave says once per run that the session log will not write: it is a fact about the run
 func (a *Agent) reportSave(err error) {
 	if err == nil || a.sessionBroken.Swap(true) {
 		return
@@ -127,8 +120,7 @@ func (a *Agent) add(m llm.Message) {
 	a.reportSave(a.opts.Session.Append(m))
 }
 
-// Learned hands a run that is coming back what the earlier one had learned about its server: the
-// same conversation is then measured the same way, and what fitted before is not trimmed now.
+// Learned gives a returning run what the last learned about its server, so it measures the same way
 func (a *Agent) Learned(bytesPerTok float64) {
 	if bytesPerTok >= minBytesPerTok && bytesPerTok <= maxBytesPerTok {
 		a.meter.bytesPerTok, a.savedRatio = bytesPerTok, bytesPerTok
@@ -139,21 +131,17 @@ func (a *Agent) Learned(bytesPerTok float64) {
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
 	a.recountBytes()
-	// the new calls continue the saved numbering, or a fresh result would take an id that recall
-	// already points at, and the store would answer with someone else's output
+	// new calls continue the saved numbering, so recall never points at someone else's output
 	a.callSeq = highestCallID(a.history)
 	a.restoreFiles(a.history)
 	a.restorePlan(a.history)
 	a.meter.anchorTokens = 0 // the count the saved run had is not this run's
 	a.environment = lastEnvironment(a.history)
 	if hasRecap(a.history) {
-		// the conversation was folded before it was saved: the next fold waits for new work to pile up,
-		// as it would have in the run that folded it, instead of coming at the first sign of pressure
+		// a conversation folded before saving waits for new work before folding again, as the old run would
 		a.compactedAt = min(callBlocks(a.history), compactKeep)
 	}
-	// the conversation is not trimmed here: nothing has been asked of the window yet, and this path skips
-	// the shortening and folding a running conversation gets first. The first prepareTurn does all three,
-	// and chat repairs what a server would not take.
+	// no trimming here: nothing has been asked of the window yet, and prepareTurn does all of it first
 	a.publishUsage()
 }
 
@@ -190,8 +178,7 @@ func (a *Agent) emit(ev Event) Decision {
 	return a.sink.Emit(ev)
 }
 
-// turnNo is the round-trip now running, 0 between turns. The goroutine answering writes it, and a
-// refusal or a notice from anywhere else reads it to say which turn it belongs to.
+// turnNo is the round-trip now running, 0 between turns, so a notice can say which turn it is
 func (a *Agent) turnNo() int { return int(a.turn.Load()) }
 
 // note keeps the history honest when a turn ends without an answer.

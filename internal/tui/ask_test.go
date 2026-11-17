@@ -20,8 +20,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// askedAbout puts a question the model asked on the screen, the way a running session would, and
-// returns the channel the run waits on.
+// askedAbout puts a model's question on the screen as a running session would, and returns its channel
 func askedAbout(m *model, text string, options ...string) chan string {
 	words := make(chan string, 1)
 	m.pending = []*question{{text: text, options: options, words: words}}
@@ -29,8 +28,7 @@ func askedAbout(m *model, text string, options ...string) chan string {
 	return words
 }
 
-// a question and its choices are read across rows instead of being cut at one: what a model asks is
-// often longer than the terminal, and the end of a choice is the part that decides it
+// a question and its choices read across rows: the end of a choice is the part that decides it
 func TestAChoiceLongerThanTheTerminalIsReadAcrossRows(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 66, 24
@@ -49,8 +47,7 @@ func TestAChoiceLongerThanTheTerminalIsReadAcrossRows(t *testing.T) {
 	}
 }
 
-// a question longer than the terminal is all of it on the screen: the end of the sentence is the part
-// that says what is being asked, and a question nobody can finish reading cannot be answered
+// a question longer than the terminal is all of it on screen, since its end is what asks
 func TestALongQuestionIsReadAcrossRows(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 80, 24
@@ -185,9 +182,7 @@ func TestTheHubStopsWaitingWithTheQuestionUnanswered(t *testing.T) {
 	}
 }
 
-// A run asks in words and the answer comes from the box: the question and its choices reach the
-// screen, what is typed reaches the model, and the run carries on. This is the wiring test - the
-// hub, the queue, the box and the tool in the order a real session uses them.
+// the wiring test: the question reaches the screen, the typing reaches the model, the run goes on
 func TestARunThatAsksWaitsForWhatIsTypedIntoTheBox(t *testing.T) {
 	asked := &askedReplies{t: t, question: "which way should the footer follow the branch?",
 		options: []string{"stat HEAD each 5s", "a file watcher", "leave it"}, closing: "the stat poll then"}
@@ -234,8 +229,7 @@ func TestARunThatAsksWaitsForWhatIsTypedIntoTheBox(t *testing.T) {
 	}
 }
 
-// askedReplies is a server that asks the model's question first, then answers in text once it has
-// been answered, and remembers what the run handed back for it.
+// askedReplies is a server that asks first, answers once answered, and keeps what came back
 type askedReplies struct {
 	t        *testing.T
 	question string
@@ -301,8 +295,7 @@ func (s *askedReplies) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", reply)
 }
 
-// the choices take the rows the screen can spare: a short terminal gets the ones that fit, counts
-// the rest, and every number still answers - even one that was not shown
+// a short terminal shows the choices that fit, counts the rest, and every number still answers
 func TestChoicesAreCutToTheRowsTheScreenHas(t *testing.T) {
 	ask := func(height int) (*model, chan string, string) {
 		m := newTestModel()

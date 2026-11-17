@@ -87,9 +87,7 @@ func TestAPlanCallDoesNotResetWhatTheRunRemembersOfTheProject(t *testing.T) {
 	}
 }
 
-// a plan whose every step has an outcome belonged to the prompt that finished it, so the next prompt
-// starts without it; a plan still being worked on carries over, which is what a stopped turn and a
-// "carry on" leave behind
+// a finished plan belonged to the prompt that ended it; a plan still worked on carries over
 func TestANextPromptKeepsAPlanThatStillHasWork(t *testing.T) {
 	for _, c := range []struct {
 		what   string

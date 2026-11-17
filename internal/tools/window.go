@@ -6,12 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// outWindow is what a command's output costs the run: its head, a rolling tail, and how many bytes
-// arrived. Once the output outgrows the budget, every byte is copied to a log file as it arrives, so
-// a command that prints for two minutes costs a window of RAM rather than the print.
-//
-// While nothing has been spilled, head and tail together hold exactly what has been read; that is
-// what makes the log complete the moment it is opened.
+// outWindow is what a command's output costs the run: a head, a rolling tail, and a log of all of it
 type outWindow struct {
 	head     []byte
 	tail     []byte
@@ -30,8 +25,7 @@ func newOutWindow(goal int, logs string) *outWindow {
 	return &outWindow{goal: goal, logs: logs, headRoom: head, tailRoom: goal - head}
 }
 
-// Write takes one piece of the command's output. It never fails the command: a log that cannot be
-// written is said so in the result, the same as a spill that used to fail after the fact.
+// Write takes one piece of output and never fails the command; an unwritable log is said in the result
 func (w *outWindow) Write(p []byte) (int, error) {
 	read := len(p)
 	if w.file == nil && w.total+read > w.goal {
@@ -53,8 +47,7 @@ func (w *outWindow) Write(p []byte) (int, error) {
 	return read, nil
 }
 
-// open starts the full log and writes what has been read so far, which is everything: no byte has
-// been dropped before the budget is passed.
+// open starts the full log with what has been read: no byte was dropped before the budget passed
 func (w *outWindow) open() {
 	dir, err := os.MkdirTemp(w.logs, spillPrefix)
 	if err != nil {
@@ -90,8 +83,7 @@ func (w *outWindow) close() {
 	}
 }
 
-// headText ends the head at a whole rune: the budget is counted in bytes and a rune does not have to
-// end where the budget does.
+// headText ends the head at a whole rune: the budget counts bytes, and a rune need not end there
 func headText(b []byte) string {
 	end, at := 0, 0
 	for at < len(b) {

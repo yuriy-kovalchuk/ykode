@@ -50,8 +50,7 @@ func TestStartupAgesOutWhatOldRunsLeftBehind(t *testing.T) {
 	}
 }
 
-// A saved result is only reachable by the conversation that names its id, so the two age out
-// together: pruning results on a command log's clock leaves old sessions pointing at nothing.
+// a saved result ages out with its conversation, not with a command log's clock
 func TestAnOldConversationTakesItsSavedResultsWithIt(t *testing.T) {
 	_, root := scratchHome(t)
 	cfg, err := config.Load([]string{"--root", root})

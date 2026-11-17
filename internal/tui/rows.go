@@ -12,17 +12,13 @@ const (
 	toolRowArgs = 12 // what the note keeps even on a screen too narrow for it
 )
 
-// The session is read inside a margin: two columns at the left, one column held back from the right
-// edge so a row is never the terminal's own problem, and the ask that opened a turn keeps the whole
-// width - it is a band, and a band that stops short reads as a mistake rather than a margin.
+// the session reads inside a margin: two columns left, one off the right edge; the ask spans it
 const (
 	messageLead  = "  "
 	messageRight = 1
 )
 
-// rows is the session as the screen reads it: one element per row. Only the blocks that changed are
-// drawn again, and the rows are only rebuilt from there; a different screen starts the whole session
-// again.
+// rows is the session as one element per row, drawing again only the blocks that changed
 func (t *transcript) rows(width int) []string {
 	if width != t.width {
 		t.width, t.stale = width, 0
@@ -41,8 +37,7 @@ func (t *transcript) rows(width int) []string {
 	return t.rowsCache
 }
 
-// hasPending says output arrived that has not been drawn yet: a reader who scrolled up is told with
-// a mark rather than by the screen jumping under them.
+// hasPending says output awaits drawing: a scrolled-up reader sees a mark, not a jump
 func (t *transcript) hasPending() bool { return t.stale < len(t.entries) }
 
 // render is the whole session as one string, for reading it back rather than drawing it.
@@ -50,9 +45,7 @@ func (t *transcript) render(width int) string {
 	return strings.TrimRight(strings.Join(t.rows(width), "\n"), "\n")
 }
 
-// draw is one entry as the rows the screen sees, ending with the blank row a block leaves behind.
-// Everything but the ask sits inside the session's margin, and a blank row stays blank: padding it
-// would leave spaces on a row that says nothing.
+// draw is one entry as rows plus its trailing blank; all but the ask sits in the margin
 func (t *transcript) draw(e *entry, width int) []string {
 	inner := max(width-lipgloss.Width(messageLead)-messageRight, 1)
 	switch e.who {
@@ -97,8 +90,7 @@ func thinkingRow(row string) string {
 	return messageLead + gutterMark() + styleThink.Render(row)
 }
 
-// promptRows is what was asked, as a card across the whole screen: the ask then reads apart from the
-// answer even when it runs over several lines. An ask carried over from an earlier run has no hour.
+// promptRows is the ask as a card across the screen; a carried-over ask has no hour
 func promptRows(e entry, width int) []string {
 	when := ""
 	if at := clock(e.at); at != "" {
@@ -107,10 +99,7 @@ func promptRows(e entry, width int) []string {
 	return card(styleAccent.Render("you"), when, wrap(strings.TrimSpace(e.text), max(width-4, 1)), width)
 }
 
-// toolRow is one call on one row, with no ground behind it: the mark at its left carries the state
-// (a coloured glyph is read before the words are, and a whole row of green or red is noise), the tool's
-// name is bold and what it touched follows. The row is always one row: what a call read, wrote or
-// printed is not on it, only what it touched and what came back.
+// toolRow is one call on one row: mark, bold tool name, what it touched, and nothing else
 func toolRow(e entry, width int) string {
 	mark, ink := "▸", styleDim // asked for, and not answered yet
 	switch {

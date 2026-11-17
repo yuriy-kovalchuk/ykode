@@ -60,8 +60,7 @@ func TestADraftOfAnotherToolShowsItsArguments(t *testing.T) {
 	}
 }
 
-// the numbers a call being written reports are walked a piece at a time: a line break split between
-// two pieces is counted once, and nothing is walked again once the text is written
+// a growing call's numbers are walked a piece at a time, a split line break counted once
 func TestACallBeingWrittenKeepsItsCountAsPiecesArrive(t *testing.T) {
 	e := newDraft(1, "write_file", `{"path":"a.go","content":"one`)
 	if _, lines, _ := drafted(e).preview(); lines != 1 {
@@ -86,8 +85,7 @@ func TestACallBeingWrittenKeepsItsCountAsPiecesArrive(t *testing.T) {
 	}
 }
 
-// what a call names as its path is settled before the file's own text begins, so a file that talks
-// about a path field cannot be mistaken for the call's own
+// the call's path is settled before its text, so a path inside the file is not mistaken for it
 func TestACallNamesItsPathNotWhatTheFileSays(t *testing.T) {
 	e := newDraft(1, "write_file", `{"path":"a.go","content":"// the settings say `)
 	if got := drafted(e).target(); got != "a.go" {

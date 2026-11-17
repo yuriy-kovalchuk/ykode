@@ -8,8 +8,7 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// the terminal decides whether colours are emitted at all, so a test that checks what is coloured
-// has to ask for them.
+// the terminal decides whether colours are emitted, so a colour test has to ask for them
 func withColour(t *testing.T) {
 	t.Helper()
 	lipgloss.SetColorProfile(termenv.TrueColor)
@@ -22,8 +21,7 @@ func codeOf(style lipgloss.Style) string {
 	return open
 }
 
-// stripCodes reads what a row says without its styles. A code ends at its final byte (@ to ~), not
-// at the next "m": \x1b[?25l has none.
+// stripCodes reads a row without styles; a code ends at its final byte, not at the next "m"
 func stripCodes(s string) string {
 	for {
 		i := strings.Index(s, "\x1b[")

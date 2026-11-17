@@ -26,8 +26,7 @@ func HasLocal(root string) bool {
 	return err == nil
 }
 
-// SettingsTarget is the file a change is written to: the project's when it has one, else the user's
-// own. The bool says it is the project's.
+// SettingsTarget is the file a change goes to: the project's when it has one, else the user's own
 func SettingsTarget(root string) (path string, local bool) {
 	if HasLocal(root) {
 		return LocalSettings(root), true
@@ -35,11 +34,7 @@ func SettingsTarget(root string) (path string, local bool) {
 	return home.Settings(), false
 }
 
-// trustWritten records the project file as it now stands as accepted: ykode wrote it, so the next start
-// has nothing to ask about. A file accepted before this write stays accepted: without that, switching
-// assume_yes in a file that also names a server held every safety key back, assume_yes included. A file
-// that was not accepted is accepted only when every unsafe key it asks for is one this call wrote - a
-// file the user declined and then saved a harmless knob into must not retire the warning unseen.
+// trustWritten records the project file as accepted, since ykode wrote it, without accepting unsafe keys
 func trustWritten(root string, wasAccepted bool, wrote ...string) error {
 	raw, err := os.ReadFile(LocalSettings(root))
 	if err != nil {
@@ -63,8 +58,7 @@ func localAccepted(root string) bool {
 	return err == nil && acceptedProject(root, raw)
 }
 
-// unsafeIn lists the unsafe keys a settings file asks for, without reading the rest of the run's
-// settings: the question "would this file need accepting?" is the same one the loader asks.
+// unsafeIn lists the unsafe keys a settings file asks for, the same question the loader asks
 func unsafeIn(raw []byte) (names, shown []string) {
 	var s fileSettings
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
@@ -75,8 +69,7 @@ func unsafeIn(raw []byte) (names, shown []string) {
 	return stripUnsafe(&s)
 }
 
-// acceptedProject says whether the project's settings file is still the one that was accepted:
-// any edit changes the hash, and the run asks about it again.
+// acceptedProject says the project's file is still the accepted one: any edit changes the hash
 func acceptedProject(root string, raw []byte) bool {
 	records, err := readTrust()
 	if err != nil {

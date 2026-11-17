@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// The plan is pinned under the session, above the prompt, where it cannot scroll away: the steps the
-// model wrote for a long task, one row each, with a bar of one cell per step on its heading row.
+// the plan is pinned under the session where it cannot scroll away, one row per step, with a bar
 const (
 	planLead     = "  "
 	planCellDone = "▰"
@@ -19,9 +18,7 @@ const (
 	planChrome   = 14 // rows the session keeps for itself: the prompt, the report, the rule and some transcript
 )
 
-// planRows is the panel as rows of the bottom area. It is empty when the model wrote no plan, and one
-// row when the panel is folded, when the terminal is too short for steps, or when every step has an
-// outcome: a finished plan is a record, not a thing to keep reading.
+// planRows is the panel as rows: empty with no plan, one row when folded, short, or finished
 func (m *model) planRows() []string {
 	steps := m.agent.Plan()
 	if len(steps) == 0 {
@@ -67,8 +64,7 @@ func (m *model) planRows() []string {
 	return rows
 }
 
-// planVerdict is a finished plan's word: every step done is a tick, and a step that failed says so in
-// the colour that says so everywhere else.
+// planVerdict is a finished plan's word: a tick when all is done, failure in its usual colour
 func planVerdict(steps []tools.PlanStep) string {
 	for _, s := range steps {
 		if s.Status == tools.PlanFailed {
@@ -78,8 +74,7 @@ func planVerdict(steps []tools.PlanStep) string {
 	return styleOK.Render("plan ✓")
 }
 
-// planTally counts the steps done. "done" is only said when all of them are: a plan that ended with a
-// failed step did not finish.
+// planTally counts the steps done; "done" is said only when all of them are
 func planTally(done, total int) string {
 	if done == total {
 		return fmt.Sprintf("%d/%d done", done, total)
@@ -103,9 +98,7 @@ func planProgress(steps []tools.PlanStep) (done, active int) {
 	return done, active
 }
 
-// planBar is one cell per step: filled and green for a step done, filled in the accent colour for the one
-// being worked on (and in the working colour while a turn runs), red for one that failed, hollow for the
-// rest. It reads at a glance where the task stands without reading a step.
+// planBar is one cell per step: green done, accent active, red failed, hollow the rest
 func planBar(steps []tools.PlanStep, running bool) string {
 	var b strings.Builder
 	for _, s := range steps {
@@ -127,8 +120,7 @@ func planBar(steps []tools.PlanStep, running bool) string {
 	return b.String()
 }
 
-// planStep is one step's rows: its mark, then its words, wrapped under the first word rather than cut
-// at the edge. The step being worked on turns with the spinner while a turn runs, and is the only bold one.
+// planStep is one step's rows: its mark then its words, wrapped under the first word
 func (m *model) planStep(s tools.PlanStep) []string {
 	mark, dress := styleDim.Render("○ "), func(t string) string { return styleDim.Render(t) }
 	switch s.Status {
@@ -155,9 +147,7 @@ func (m *model) planStep(s tools.PlanStep) []string {
 	return rows
 }
 
-// planFit picks the steps to show when their rows do not all fit: it starts from planWindow's choice of
-// steps, then gives up steps - the far end first, never the active one - until their rows, plus a row
-// above and below for each end that was cut, fit in the room.
+// planFit drops steps, far end first and never the active one, until their rows fit
 func planFit(blocks [][]string, active, room int) (first, last int) {
 	first, last = planWindow(len(blocks), active, room)
 	height := func() int {
@@ -177,8 +167,7 @@ func planFit(blocks [][]string, active, room int) (first, last int) {
 	return first, last
 }
 
-// planWindow picks the steps to show when they do not all fit: the active one with the steps around it,
-// the window slid back when it would run past the end. With no step active it starts at the top.
+// planWindow shows the active step with its neighbours, slid back at the end, else from the top
 func planWindow(total, active, rows int) (first, last int) {
 	rows = max(rows, 1)
 	if total <= rows {

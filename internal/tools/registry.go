@@ -23,8 +23,7 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return t, ok
 }
 
-// Add puts one more tool in the list, at the end, so the order the model sees stays stable. A name
-// already there keeps the tool registered first: nothing is swapped under the model.
+// Add appends a tool, keeping the order the model sees; a name already there is not swapped
 func (r *Registry) Add(t Tool) {
 	if _, dup := r.byName[t.Name()]; dup {
 		return

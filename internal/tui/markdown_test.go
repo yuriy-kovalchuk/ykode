@@ -162,8 +162,7 @@ func TestBlocksOfAnAnswerStandApart(t *testing.T) {
 	}
 }
 
-// a mark inside a mark does not switch the outer one off: bold words around a code span are bold on
-// both sides of it
+// a mark inside a mark does not switch off the outer one: bold around a code span stays bold
 func TestAStyleInsideAStyleLeavesTheOuterOneOn(t *testing.T) {
 	withColour(t)
 	got := markdown("**before `code` after**", 60)
@@ -173,8 +172,7 @@ func TestAStyleInsideAStyleLeavesTheOuterOneOn(t *testing.T) {
 	}
 }
 
-// the screen draws rows on their own, so a style that runs over a break is closed on the row it
-// began on and opened again on the row it continues on
+// rows draw on their own, so a style closes on its row and opens again on the next
 func TestAStyleThatWrapsIsWholeOnEveryRow(t *testing.T) {
 	withColour(t)
 	rows := strings.Split(markdown("**"+strings.TrimSpace(strings.Repeat("bold words ", 12))+"**", 40), "\n")
@@ -201,8 +199,7 @@ func TestChecklistsAndStruckOutText(t *testing.T) {
 	}
 }
 
-// an answer still arriving is laid out a block at a time: what a frame draws from the blocks it kept
-// is exactly what drawing the whole answer from nothing gives
+// an arriving answer is laid out a block at a time, matching a draw of the whole answer
 func TestAnAnswerDrawnAsItArrivesMatchesOneDrawnWhole(t *testing.T) {
 	withColour(t)
 	answer := "# What I found\n\nThe file has **three** parts and a `main` function.\n\n- the record\n- the rules\n\n" +

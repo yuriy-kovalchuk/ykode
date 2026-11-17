@@ -21,10 +21,7 @@ func TestACallWrittenAsTextIsFoundAndRemoved(t *testing.T) {
 	}
 }
 
-// naming an opening tag in a sentence about the markup is not a call, and it is not cut out of the
-// answer either. A run that read it as one deleted the rest of the sentence and then told the model it
-// had written a call it had not written, which is the note that makes a model think something else is
-// writing its tool calls.
+// naming an opening tag in prose is not a call, and must not be cut out of the answer
 func TestProseAboutTheMarkupIsNeitherCalledNorCut(t *testing.T) {
 	for name, body := range map[string]string{
 		"an opening tag named in prose": "The parser looks for the opening tag <function=exec_command> and reads the parameter.",
@@ -39,8 +36,7 @@ func TestProseAboutTheMarkupIsNeitherCalledNorCut(t *testing.T) {
 		}
 	}
 
-	// a call stopped mid-arguments is still not answer: its fragment goes, and the reply running out of
-	// tokens is what reports it, not a note claiming a call was written
+	// a call stopped mid-arguments is not answer: its fragment goes, without claiming a call was written
 	cut := "Writing it now:<tool_call>\n<function=write_file>\n<parameter=path>\nnote"
 	if hasTextCall(cut) {
 		t.Error("a call stopped mid-arguments reads as a whole call")
@@ -50,9 +46,7 @@ func TestProseAboutTheMarkupIsNeitherCalledNorCut(t *testing.T) {
 	}
 }
 
-// an answer that quotes the markup as an example is describing a call, not making one. A document about
-// this agent names a call and its arguments to explain them, and running that would act on text whose
-// whole job is to show what acting looks like: the fence is how the answer says it is an example.
+// an answer quoting the markup as an example describes a call, it does not make one
 func TestACallQuotedAsAnExampleIsNotCalled(t *testing.T) {
 	root, err := os.OpenRoot(t.TempDir())
 	if err != nil {

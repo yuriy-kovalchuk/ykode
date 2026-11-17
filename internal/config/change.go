@@ -9,11 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Set writes one knob into the settings file this project uses, keeping the comments and every other
-// key, and names the file it wrote and whether that was the project's own. The value is checked
-// before anything is touched: a knob only takes what it can use. Asking for no value at all takes the
-// key out, which is the only way a setting goes back to the built-in: a file states a choice by naming
-// a key, so absence, not an empty string, is what "use the default" looks like on disk.
+// Set writes one knob into the settings file this project uses, keeping comments and other keys
 func Set(root, key, value string) (string, bool, error) {
 	k, ok := knobFor(key)
 	if !ok {
@@ -34,8 +30,7 @@ func Set(root, key, value string) (string, bool, error) {
 			return path, local, err
 		}
 	case isUnset(value):
-		// A key left out is the file's way of asking for the built-in, and this is the only way back for a
-		// knob that has been set: writing an empty value would be a value, not an absence.
+		// a key left out asks for the built-in: an empty value would be a value, not an absence
 		if !unsetPath(top, k.key) {
 			return path, local, fmt.Errorf("%s is not set in %s, so there is nothing to take back", k.key, path)
 		}
@@ -66,8 +61,7 @@ func isUnset(value string) bool {
 	return false
 }
 
-// unsetPath takes one key out of the document, sections and all: a section left with no keys in it
-// would read as a choice the file no longer makes.
+// unsetPath takes one key out, sections and all, so no empty section reads as a choice
 func unsetPath(top *yaml.Node, key string) bool {
 	sections := strings.Split(key, ".")
 	parents := make([]*yaml.Node, 0, len(sections))
@@ -176,8 +170,7 @@ func setPath(top *yaml.Node, key string, value *yaml.Node) {
 	setKey(node, sections[len(sections)-1], value)
 }
 
-// listNode finds a list setting, writing the sections and the empty list when the file has not got
-// them yet.
+// listNode finds a list setting, writing the sections and the empty list if the file lacks them
 func listNode(top *yaml.Node, key string) *yaml.Node {
 	sections := strings.Split(key, ".")
 	node := top

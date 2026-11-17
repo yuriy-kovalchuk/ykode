@@ -11,9 +11,7 @@ import (
 	"testing"
 )
 
-// The fold is the one stage that reads a result at its full length: it asks about the conversation
-// itself, exactly as the server already holds it, so the prompt cache covers the asking and the
-// summariser sees what the calls really returned.
+// the fold reads a result at full length, over the conversation exactly as the server holds it
 func TestAFoldSendsTheConversationItSummarises(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -111,8 +109,7 @@ func TestCompactReplacesOlderTurnsWithTheModelSummary(t *testing.T) {
 	}
 }
 
-// a summariser that answers with nothing leaves the conversation alone: nothing is rewritten in
-// place, and the notice says the turns stayed as they were
+// a summariser answering with nothing leaves the conversation alone, and the notice says so
 func TestAFailedSummariserChangesNothing(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 3)
@@ -149,10 +146,7 @@ func TestAFailedSummariserChangesNothing(t *testing.T) {
 	}
 }
 
-// foldRoom is the window above what the conversation costs at the start: the reads in these tests
-// walk it past the pressure mark, and a fold still fits. The room has to hold the summary as well -
-// the instruction and compactMaxTokens - over and above what a fold leaves standing, so a fold is
-// never refused for being larger than the window it is making room in.
+// foldRoom is the window above what the conversation costs, enough to hold the summary as well
 const foldRoom = 5000
 
 func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
@@ -188,8 +182,7 @@ func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
 	}
 }
 
-// The summary is for what happened, not for the words of the job in hand: a model that has to
-// work from a paraphrase of the request starts answering a question nobody asked.
+// the summary is for what happened: a paraphrased ask makes the model answer a different question
 func TestCompactionKeepsTheWordingOfTheCurrentTask(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 3)
@@ -288,8 +281,7 @@ func historyText(a *Agent) string {
 	return b.String()
 }
 
-// summariserRequests counts the requests that ask for a summary of the older turns: the ones whose
-// last message is ykode's instruction after the conversation itself.
+// summariserRequests counts requests whose last message is ykode's own fold instruction
 func summariserRequests(stub *stubServer) int {
 	var folds int
 	for _, req := range stub.requests {
@@ -304,8 +296,7 @@ func summariserRequests(stub *stubServer) int {
 	return folds
 }
 
-// a conversation too big for the window to be summarised is refused rather than sent: a fold request
-// that the server turns away costs the round-trip and saves nothing
+// a conversation too big to summarise is refused, not sent: the server would cost the round-trip
 func TestAFoldOfMoreThanTheWindowIsRefused(t *testing.T) {
 	a := newForHistory(Options{CtxSize: 1000})
 	a.add(llm.Message{Role: "user", Content: "read everything"})
@@ -423,8 +414,7 @@ func TestAFoldThatWasNotNeededSaysSo(t *testing.T) {
 	}
 }
 
-// a fold belongs to the saved conversation as well: a resume should start from the recap, not
-// reload the turns that were folded away and trim them again
+// a fold belongs to the saved conversation too: a resume starts from the recap, not the turns
 func TestAFoldReachesTheSavedConversation(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 3)
@@ -475,8 +465,7 @@ func firstChars(s string) string {
 	return s
 }
 
-// the files the folded turns touched are listed beside the recap, are not summarised again, and
-// accumulate across folds and a resume
+// the files the folded turns touched are listed beside the recap and accumulate across folds
 func TestAFoldNamesTheFilesItFoldedAwayAndTheListSurvivesAResume(t *testing.T) {
 	a := &Agent{}
 	a.noteFiles([]llm.Message{
@@ -528,8 +517,7 @@ func TestTheKeptPartReachesBackToTheRoomAskedFor(t *testing.T) {
 	}
 }
 
-// a reply that is not a summary never replaces the conversation: a model shown a transcript of calls
-// may write more calls, and a recap of that would be noise
+// a reply that is not a summary never replaces the conversation: a transcript begets transcripts
 func TestAReplyThatIsNotASummaryIsNotKept(t *testing.T) {
 	for what, reply := range map[string]string{
 		"a call written as text": "I'll read the files.\n<tool_call>\n<function=read_file>\n</function>\n</tool_call>",
@@ -545,8 +533,7 @@ func TestAReplyThatIsNotASummaryIsNotKept(t *testing.T) {
 	}
 }
 
-// the newest call and its replies survive a fold word for word: what the model is working from is
-// never rewritten, and a fold that lost it would cost the work it is in the middle of
+// the newest call and its replies survive a fold word for word: the model's working set is not rewritten
 func TestAFoldNeverTouchesTheNewestCall(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 4)
@@ -589,8 +576,7 @@ func TestAFoldNeverTouchesTheNewestCall(t *testing.T) {
 	}
 }
 
-// a model that answers the fold with a tool call is asked once more with tools refused, and a second
-// call is refused: a summary is the only thing a fold may write
+// a fold answered with a tool call is asked once more with tools refused, and a second call is not
 func TestAFoldAnsweredWithACallIsRetriedWithoutTools(t *testing.T) {
 	dir := t.TempDir()
 	names := make([]string, 3)
@@ -627,8 +613,7 @@ func TestAFoldAnsweredWithACallIsRetriedWithoutTools(t *testing.T) {
 	}
 }
 
-// a long run folds more than once, and the next fold waits for new work: asking again every turn
-// would pay for a request and a cold prompt cache each time
+// a long run folds more than once, and the next fold waits for new work to pile up
 func TestTheNextFoldWaitsForNewCalls(t *testing.T) {
 	a := newForHistory(Options{})
 	if !a.foldOverdue() {
@@ -652,8 +637,7 @@ func TestTheNextFoldWaitsForNewCalls(t *testing.T) {
 	}
 }
 
-// the recap an earlier fold left is sent to the next one as part of the conversation, so the second
-// summary updates what the first kept instead of starting over
+// the earlier recap is part of the next fold, so the second summary updates the first one
 func TestTheNextFoldCarriesTheEarlierRecap(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe work went on", "", nil, "stop")}}
 	a, done := newAgentIn(t, stub, Options{CtxSize: 7000}, &captureSink{}, t.TempDir())
@@ -682,9 +666,7 @@ func TestTheNextFoldCarriesTheEarlierRecap(t *testing.T) {
 	}
 }
 
-// a small window has few calls and each one is big, so insisting on keeping the newest two can leave
-// nothing to fold at all: the fold keeps one newest call instead, because a fold that frees something
-// is always better than a deletion
+// a small window may leave nothing to fold if two calls are kept, so one newest call is kept
 func TestASmallWindowFoldsRatherThanDeleteTheOlderCall(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "## Goal\nthe first read is summarized here\n", "", nil, "stop")}}
 	sink := &captureSink{}

@@ -1,5 +1,4 @@
-// Package tools holds the callable surface the agent exposes to the model: an answer is text, and
-// reading a file can put a picture beside it.
+// Package tools holds the callable surface the agent exposes to the model: text, and pictures beside it
 package tools
 
 import (
@@ -22,17 +21,13 @@ type Tool interface {
 	Run(ctx context.Context, args json.RawMessage) (string, error)
 }
 
-// Result is what a call came back with: the text the model reads, and beside it the parts that are not
-// text at all. Only reading a file can produce the second kind.
+// Result is what a call came back with: the text the model reads, and the parts that are not text
 type Result struct {
 	Text        string
 	Attachments []llm.Attachment
 }
 
-// Attaching is a tool whose answer can carry an attachment. Run stays the text of that answer, which is
-// all a screen, a summary or a result budget cares about; the run asks the other question when it builds
-// the message the model reads. A tool answers a call this way without keeping anything between calls, so
-// the read-only tools that run beside each other may still do it.
+// Attaching is a tool whose answer can carry an attachment; Run stays the text of that answer
 type Attaching interface {
 	RunWithAttachments(ctx context.Context, args json.RawMessage) (Result, error)
 }
@@ -46,8 +41,7 @@ func CallOf(tool Tool, ctx context.Context, args json.RawMessage) (Result, error
 	return Result{Text: text}, err
 }
 
-// BuiltIn is the tool set ykode ships with, ordered locate, read, change, run.
-// Options carries the settings the tools use when the model does not ask for a size of its own.
+// BuiltIn is the shipped tool set in locate, read, change, run order, with the tools' settings
 type Options struct {
 	ReadLines      int
 	ExecTimeout    time.Duration
@@ -83,10 +77,7 @@ type Detail struct {
 	Change string // for a change: all of it, for a screen; the model is sent the short diff in the result
 }
 
-// Detailed is a tool that keeps a little structure about the result it just returned. Only tools
-// that never run beside each other may do this: writes and edits go one at a time, while the
-// read-only tools can overlap and so keep nothing of the sort; the run asks no overlapping tool for
-// one, whatever the tool keeps for itself.
+// Detailed keeps a little structure about the last result, so only non-overlapping tools may do it
 type Detailed interface {
 	LastDetail() Detail
 }

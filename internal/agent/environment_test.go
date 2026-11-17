@@ -32,8 +32,7 @@ func TestThePromptEndsWithTheSessionsEnvironment(t *testing.T) {
 	if strings.Contains(prompt, "{{") {
 		t.Error("a placeholder was left unfilled")
 	}
-	// what changes between runs is not in the prompt: it would move the cached prefix, and with it the
-	// tool definitions and the whole conversation, whenever a commit or a new day changed it
+	// what changes between runs stays out of the prompt, which would move the cached prefix
 	for _, volatile := range []string{"date:", "git:", time.Now().Format("2006-01-02")} {
 		if strings.Contains(prompt, volatile) {
 			t.Errorf("the prompt carries %q, which changes between runs and would move the cached prefix", volatile)
@@ -60,8 +59,7 @@ func TestResetKeepsTheSamePrompt(t *testing.T) {
 	}
 }
 
-// the footer asks for the branch each prompt, so a command that changed branch shows up
-// gitRepo is a project with one commit on a branch of its own.
+// gitRepo is a project with one commit on a branch of its own
 func gitRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -154,8 +152,7 @@ func TestAnAskCarriesTheDateAndTheTreeStateOnlyWhenTheyChange(t *testing.T) {
 	}
 }
 
-// a resume after the tree changed repeats the earlier requests exactly: only the new ask differs, and the
-// note on it says what changed. This is what keeps the server's cache of a long conversation alive
+// a resume after the tree changed repeats the earlier requests exactly, keeping the cache alive
 func TestAResumeAfterTheTreeChangedKeepsEverythingBeforeTheNewAsk(t *testing.T) {
 	dir := gitRepo(t)
 	home := t.TempDir()

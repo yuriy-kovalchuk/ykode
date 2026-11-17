@@ -10,13 +10,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 )
 
-// ReportHeld says what a project's settings file asked for and did not get. With a person at the
-// keyboard it offers to trust the project; a script only gets the warning. It reports whether the
-// project was trusted, which is when the caller reads the settings again.
-//
-// The lines it prints go to stderr, which for a warning about a security decision is where they belong:
-// a message that does not land is a warning that was not given, so the writes are checked and a failure
-// to say anything at all is said about, on the same stream, as best it can be.
+// ReportHeld warns what a project's settings asked for and did not get, offering to trust it at a keyboard
 func ReportHeld(cfg config.Config, in io.Reader, interactive bool, out io.Writer) (bool, error) {
 	if len(cfg.HeldKeys) == 0 {
 		return false, nil
@@ -36,8 +30,7 @@ func ReportHeld(cfg config.Config, in io.Reader, interactive bool, out io.Writer
 		say("ykode: those were not applied, and there is nobody here to ask; the project's other settings were\n")
 		return false, nil
 	}
-	// The question is the write whose failure means something: with nowhere to put it, asking is not
-	// possible, and an answer never given must not be read as a yes or a no.
+	// the question is the write whose failure means something: with nowhere to put it, asking is not possible
 	say("ykode: trust this project and use its settings? [y/N] ")
 	if failed != nil {
 		fmt.Fprintf(os.Stderr, "ykode: cannot ask about %s: %v - not trusting it\n", cfg.ProjectSettings, failed)

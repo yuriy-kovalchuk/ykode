@@ -72,8 +72,7 @@ func kindsText(kinds []EventKind) string {
 	return strings.Join(parts, " ")
 }
 
-// a front end draws a call from the events, so they carry it whole: a write longer than a log line
-// was once cut into broken JSON, and a result was squashed onto one line
+// a front end draws a call from the events, so they carry it whole, uncut and unbroken
 func TestToolEventsCarryTheWholeCallAndResult(t *testing.T) {
 	content := strings.Repeat("hello world\\n", 40) // far past 200 bytes of arguments
 	args := `{"path":"a.txt","content":"` + content + `"}`
@@ -97,8 +96,7 @@ func TestToolEventsCarryTheWholeCallAndResult(t *testing.T) {
 	}
 }
 
-// a call written as text never reaches the answer: it is stripped, and the model is asked once to make
-// the call properly
+// a call written as text never reaches the answer: it is stripped and the model is asked once again
 func TestACallWrittenAsTextIsStrippedAndTheModelAskedOnce(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("", "It is in ops.go.<tool_call><function=read_file></function></tool_call>", "", nil, "stop"),

@@ -15,8 +15,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// pngOf is a w x h picture as a file holds it: the tests need a picture whose size they chose, and a
-// file made of the right bytes is the only honest way to hand one over.
+// pngOf is a w x h picture as a file holds it, so the tests choose the size they test
 func pngOf(t *testing.T, w, h int) string {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -91,8 +90,7 @@ func TestAFileThatIsNeitherTextNorAPictureSaysSo(t *testing.T) {
 	}
 }
 
-// a picture too big for ykode to take is refused by size, not by kind: the message has to say which,
-// or the model reads the same file again hoping a different window helps
+// an oversized picture is refused by size, not by kind: the message has to say which
 func TestAPictureTooBigForYkodeIsNamedAsTooBig(t *testing.T) {
 	root, dir := treeFixture(t, map[string]string{"huge.png": strings.Repeat("\x00", maxPictureFileBytes+1)})
 	defer root.Close()

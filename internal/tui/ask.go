@@ -8,9 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// answerWords takes what is in the box as the answer to the question the model asked: a bare number
-// picks one of the choices it offered, and an empty line says there is none. Either way the run
-// waiting on the question is told, so it never hangs on a question nobody means to answer.
+// answerWords takes the box as the answer: a bare number picks a choice, an empty line says none
 func (m *model) answerWords() {
 	text := strings.TrimSpace(m.input.Value())
 	m.input.Reset()
@@ -20,8 +18,7 @@ func (m *model) answerWords() {
 	m.replyWords(text)
 }
 
-// noAnswer answers the question that is open with nothing, which is what stopping the run does to it:
-// the model is told to go on and say what it assumed.
+// noAnswer answers the open question with nothing, which is what stopping the run does to it
 func (m *model) noAnswer() {
 	if len(m.pending) > 0 && m.pending[0].words != nil {
 		m.replyWords("")
@@ -36,15 +33,12 @@ func (m *model) replyWords(answer string) {
 	m.refresh()
 }
 
-// awaitingWords says the question on the screen wants an answer in words, so the keys belong to the
-// box rather than to a letter or two.
+// awaitingWords says the question wants an answer in words, so the keys belong to the box
 func (m *model) awaitingWords() bool {
 	return len(m.pending) > 0 && m.pending[0].words != nil
 }
 
-// modelQuestion is the question the model asked, above the box: what it asks in its own words, the
-// choices numbered the way they are answered, and the keys. It is not a warning: nothing is being
-// allowed or refused, the run is only waiting to be told.
+// modelQuestion is the model's own question above the box, its choices numbered, and the keys
 func (m *model) modelQuestion(screenRows int) string {
 	q := m.pending[0]
 	room := max(m.width-lipgloss.Width(askBar)-2, 10)
@@ -53,8 +47,7 @@ func (m *model) modelQuestion(screenRows int) string {
 	for i, line := range lines {
 		lines[i] = styleBold.Render(line)
 	}
-	// the question and the keys keep their rows; what is left is for the choices, and a choice with no
-	// row left is still answerable by its number
+	// the question and keys keep their rows; a choice with no row left is still answerable by number
 	lines = append(lines, optionRows(q.options, room, max(screenRows-len(lines)-len(keys), 1))...)
 	lines = append(lines, keys...)
 	for i, line := range lines {
@@ -67,8 +60,7 @@ func (m *model) modelQuestion(screenRows int) string {
 var askKeysLine = styleDim.Render("type it, or the number of a choice · ") + styleKey.Render("enter") +
 	styleDim.Render(" answers · ") + styleKey.Render("esc") + styleDim.Render(" stops the run")
 
-// askKeys is that line as the rows the terminal has for it: a narrow one reads it as two, at the gap
-// between the two answers, rather than running one row past its edge.
+// askKeys is that line as the rows allow: a narrow one reads it as two, not past its edge
 func askKeys(width int) []string {
 	if lipgloss.Width(askKeysLine) <= width {
 		return []string{askKeysLine}
@@ -80,8 +72,7 @@ func askKeys(width int) []string {
 	}
 }
 
-// askWrapped is text that says more than fits in a row: it is read across rows rather than cut at one,
-// and only runs out of rows on a screen too small for it, where the last row shown ends in ….
+// askWrapped is text read across rows rather than cut at one, ending in … when rows run out
 func askWrapped(text string, width, rows int) []string {
 	wrapped := wrap(text, width)
 	if len(wrapped) <= rows {
@@ -92,9 +83,7 @@ func askWrapped(text string, width, rows int) []string {
 	return kept
 }
 
-// optionRows are the choices numbered, each across as many rows as it needs: a choice longer than the
-// terminal is still one you can read, and answer by its number, rather than a fragment of one. The
-// choices no row is left for are counted instead, which is what they were before.
+// optionRows are the choices numbered, each over as many rows as it needs, counted when cut
 func optionRows(options []string, room, rows int) []string {
 	const optionLead = 3 // the number, the gap after it, and the column the text starts at
 	var lines []string

@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// suggestions are the commands the typed line could still become. Only a line that is one command
-// name long has a guess worth showing: once the argument starts, the command is chosen.
+// suggestions are the commands the line could still become, while it is still one name long
 func suggestions(typed string) []agent.CommandSpec {
 	if !strings.HasPrefix(typed, "/") || strings.ContainsAny(typed, " \n") {
 		return nil
@@ -30,8 +29,7 @@ func suggestions(typed string) []agent.CommandSpec {
 	return list
 }
 
-// spellingFor is the name this command answers to for the typed line. An alias counts only while the
-// line is typing it: a bare / lists every command once, not twice under two names.
+// spellingFor is the name the typed line is typing; a bare / lists each command once
 func spellingFor(c agent.CommandSpec, typed string) string {
 	if strings.HasPrefix(c.Name, typed) {
 		return c.Name
@@ -42,8 +40,7 @@ func spellingFor(c agent.CommandSpec, typed string) string {
 	return ""
 }
 
-// trackSuggestions re-asks what the line could become, unless the line has not changed since esc
-// cleared the list: then it stays cleared until you type again.
+// trackSuggestions re-asks unless esc cleared the list, which stays cleared until typing again
 func (m *model) trackSuggestions() {
 	if m.suggestFor == m.input.Value() {
 		return
@@ -52,8 +49,7 @@ func (m *model) trackSuggestions() {
 	m.suggest = suggestions(m.suggestFor)
 }
 
-// completeCommand types what the candidates agree on: one candidate becomes the whole command,
-// several become as much of it as they share.
+// completeCommand types what the candidates share; one candidate becomes the whole command
 func (m *model) completeCommand() {
 	if len(m.suggest) == 0 {
 		return
@@ -87,8 +83,7 @@ func (m *model) dismissSuggestions() {
 	m.suggest, m.suggestFor = nil, m.input.Value()
 }
 
-// suggestRows show what is still being chosen, up to the rows the screen can spare, and how many more
-// are waiting beyond them.
+// suggestRows show what is being chosen, up to the rows spare, and how many more wait
 func (m *model) suggestRows(room int) []string {
 	if room <= 0 {
 		return nil // a screen with nothing to spare keeps the rows for the prompt and the session

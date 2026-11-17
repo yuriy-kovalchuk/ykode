@@ -181,9 +181,7 @@ func TestPruneSpillLogsReportsAnUnreadableDirectory(t *testing.T) {
 	}
 }
 
-// One folder the sweep cannot remove must not strand everything listed after it: the whole point of
-// the sweep is that nothing too old is left behind, and a single stubborn folder would undo that at
-// every start.
+// one folder the sweep cannot remove must not strand everything listed after it
 func TestPruneSpillLogsKeepsGoingPastOneItCannotRemove(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the permission this test relies on")
@@ -191,9 +189,7 @@ func TestPruneSpillLogsKeepsGoingPastOneItCannotRemove(t *testing.T) {
 	dir := t.TempDir()
 	old := time.Now().Add(-48 * time.Hour)
 
-	// named so the stubborn one is listed first: the point is that the sweep continues past it.
-	// written while the folder is still writable, then closed: a read-only folder holding a file
-	// cannot be emptied, so removing it fails
+	// named so the stubborn folder is listed first, and made read-only so removing it fails
 	stubborn := filepath.Join(dir, spillPrefix+"a-stubborn")
 	if err := os.Mkdir(stubborn, 0o700); err != nil {
 		t.Fatal(err)

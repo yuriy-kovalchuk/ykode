@@ -17,17 +17,9 @@ const (
 	maxResultTokens = 12800
 )
 
-// resultCap is the one arithmetic between a result budget and what a tool may fill: the cap, the room
-// a note about the cut needs, and the floor below which there is nothing worth cutting. The file tools'
-// scope and the command tool each worked this out for itself, with its own copy of the same three
-// numbers, and they agreed only because two pieces of arithmetic happened to point the same way.
-//
-// FormatResult is deliberately not on this path: it is the last gate before text reaches the model, and
-// the cap it is handed is one it is expected to honour exactly rather than aim under. Two tests pin the
-// difference, and the cap it is given has already been aimed under by whoever measured the window.
+// resultCap is the one arithmetic between a result budget and what a tool may fill: cap, note room, floor
 
-// minAimBytes is the least a result may hold, so a mis-set or tiny budget degrades to a short answer
-// instead of to a broken cut.
+// minAimBytes is the least a result may hold, so a tiny budget degrades to a short answer
 const minAimBytes = 64
 
 func resultCap(budget int) int {
@@ -37,9 +29,7 @@ func resultCap(budget int) int {
 	return max(budget-budgetSlack, minAimBytes)
 }
 
-// ResultBytesFor scales one tool result with the window it shares: about a tenth of it in tokens,
-// clamped so a small window still gets a usable result. The ceiling is pi's 50 KB, reached at a 128k
-// window: a whole source file fits in one result, and the whole call goes when room runs short.
+// ResultBytesFor scales a result with the window: about a tenth of it, clamped both ways
 func ResultBytesFor(ctxTokens int) int {
 	if ctxTokens <= 0 {
 		return defaultResultBytes
@@ -59,8 +49,7 @@ func FormatResult(out string, maxBytes int) string {
 	if len(out) <= maxBytes {
 		return out
 	}
-	// the marker costs bytes too, or the result would break the cap it promises - and a cap smaller than
-	// the marker holds nothing to split, so it gets the marker alone rather than a cut of negative length
+	// the marker costs bytes too, and a cap under it has nothing to split, so it gets the marker alone
 	if maxBytes < markerOverhead {
 		return fmt.Sprintf("[%d bytes omitted: the result budget is too small to show any of it]", len(out))
 	}

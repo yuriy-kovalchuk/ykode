@@ -7,9 +7,7 @@ import (
 	"testing"
 )
 
-// a setting goes back to the built-in by taking the key out: the file states a choice by naming a key,
-// so absence is the only thing on disk that means "use the default". Writing an empty value would be a
-// value, and before this there was no way back for a knob once it had been set.
+// a setting returns to the built-in by taking the key out, the only on-disk meaning of "use the default"
 func TestASettingGoesBackToItsDefaultByRemovingTheKey(t *testing.T) {
 	user := fakeHome(t)
 	path := filepath.Join(user, "settings.yaml")
@@ -45,8 +43,7 @@ func TestASettingGoesBackToItsDefaultByRemovingTheKey(t *testing.T) {
 	}
 }
 
-// an empty value in a file already on disk is not a choice the user made. One key resolved to a folder
-// under home, and the settings table then told the user they had chosen that folder.
+// an empty value in a file is not a choice: the table told the user they had chosen the resolved folder
 func TestAKeyWrittenEmptyIsNotReportedAsChosen(t *testing.T) {
 	fakeHome(t)
 	writeSettings(t, filepath.Join(os.Getenv("YKODE_HOME"), "settings.yaml"), "tools:\n    command_log_dir: \"\"\n    read_lines: 400\n")

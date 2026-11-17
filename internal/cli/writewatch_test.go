@@ -9,8 +9,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// A writer that fails after the first line, which is what a disk that filled up mid-answer, or a
-// stream a person hung up on, looks like from here.
+// a writer that fails after the first line: a full disk, or a stream someone hung up on
 type failingWriter struct {
 	after int
 	n     int
@@ -24,8 +23,7 @@ func (f *failingWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// The answer goes to stdout and the run is judged by its exit code, so an answer that was produced and
-// never delivered is a failed run, not a successful one that happened to say nothing.
+// an answer produced but never delivered is a failed run, not a successful one that said nothing
 func TestAWriteThatFailsIsKeptForTheRunToReport(t *testing.T) {
 	out, log := &failingWriter{after: 1}, &failingWriter{after: 100}
 	v := NewView(out, log)

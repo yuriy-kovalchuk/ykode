@@ -14,8 +14,7 @@ const (
 	sessionsWhenFmt = "02 Jan 15:04" // when a conversation was last written to
 )
 
-// Sessions lists the conversations that can be resumed, newest first, marking this project's and
-// this run's. An id is a timestamp to the millisecond, so what each was about is what identifies it.
+// Sessions lists resumable conversations newest first, marking this project's and this run's
 func (a *Agent) Sessions(limit int) string {
 	path := a.opts.Session.Path()
 	if path == "" {
@@ -46,11 +45,7 @@ func (a *Agent) Sessions(limit int) string {
 	return strings.Join(rows, "\n") + "\n"
 }
 
-// ContinueFrom gives up the conversation this run is in and carries on with a saved one, for a front
-// end that lets it be picked out of the list. Everything that follows is written to that conversation's
-// file, measured with the byte ratio its own run learned and slotted in the server's cache under its
-// id, so it reads as the conversation it was. The one this run was in is left on disk whole: it can be
-// come back to the same way.
+// ContinueFrom leaves this conversation for a saved one, whose file, ratio and cache id then apply
 func (a *Agent) ContinueFrom(dir, id string) error {
 	if dir == "" || id == "" {
 		return fmt.Errorf("no saved conversation to continue")

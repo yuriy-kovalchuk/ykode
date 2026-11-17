@@ -40,8 +40,7 @@ type status struct {
 	width     int  // 0 leaves the two sides unaligned
 }
 
-// rootRoom and modelRoom are how much of the path and the model name the session line keeps when
-// the screen is short: a readable part of each beats the whole of one pushed off the edge.
+// rootRoom and modelRoom are how much of the path and model name a short screen keeps
 const (
 	rootRoom  = 60
 	modelRoom = 40
@@ -71,8 +70,7 @@ func statusLine(s status) string {
 	return align(statusFacts(s), statusActivity(s), s.width)
 }
 
-// align spreads the facts and the activity across the width, dropping facts from the front of
-// the left group when the screen cannot hold both; what is happening now is never dropped.
+// align spreads facts and activity, dropping facts from the front; what is now is never dropped
 func align(facts, activity []string, width int) string {
 	left, right := strings.Join(facts, factSep), strings.Join(activity, factSep)
 	if width == 0 {
@@ -88,8 +86,7 @@ func align(facts, activity []string, width int) string {
 	return right
 }
 
-// statusFacts change slowly: what the session has sent and received in all, and how full the
-// window is. The window comes last, so it is the last thing a narrow screen drops.
+// statusFacts change slowly: sent and received in all, and window fullness, dropped last
 func statusFacts(s status) []string {
 	var facts []string
 	if s.usage.TotalPrompt > 0 {
@@ -214,8 +211,7 @@ func (m *model) status() status {
 	return s
 }
 
-// rate is a speed in tokens per second; a measured one says so with a ~, because the server's own
-// figure, which replaces it when the reply ends, is the exact one.
+// rate is tokens per second; a measured one says ~, until the server's exact figure replaces it
 func rate(perSecond float64, estimated bool) string {
 	if estimated {
 		return fmt.Sprintf("~%.0f tok/s", perSecond)

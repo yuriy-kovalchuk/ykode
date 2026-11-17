@@ -159,8 +159,7 @@ func askedArgs(t *testing.T, question string, options []string) []byte {
 	return raw
 }
 
-// the question is the model's own wording: what a person reads has to be all of it, since the end of a
-// sentence is usually the part that decides the answer
+// what a person reads has to be all of the question: the end of a sentence often decides the answer
 func TestALongQuestionReachesTheScreenWhole(t *testing.T) {
 	long := "the settings screen can stay one column that scrolls, or split into a column of keys and a " +
 		"column of values, and the help for a key could sit under the key you have selected or in the " +

@@ -8,8 +8,7 @@ import (
 	"strings"
 )
 
-// Message is one chat entry. Reasoning goes back to the server: Qwen-style templates show a model its
-// own thinking for the task in hand, and without it every tool round starts its reasoning over.
+// Message is one chat entry; reasoning goes back to the server, since Qwen templates re-read their thinking
 type Message struct {
 	Role        string       `json:"role"`
 	Content     string       `json:"content"`
@@ -21,12 +20,10 @@ type Message struct {
 	Attachments []Attachment `json:"attachments,omitempty"` // non-text parts, sent beside the text
 }
 
-// ModalityImage is the only non-text input this client knows how to write on the wire. The server's
-// own list of modalities decides what reaches a message at all, so a new one is one case here.
+// ModalityImage is the only non-text input this client writes; the server's list decides what is sent
 const ModalityImage = "image"
 
-// Attachment is a non-text part of a message. Data is base64 without the data URL around it, so the
-// session file keeps it as one field and only the request writes the URL a chat API asks for.
+// Attachment is a non-text part: base64 without the data URL, so the session file keeps one field
 type Attachment struct {
 	Modality string `json:"modality"` // ModalityImage, or whatever else the server said it takes
 	MIME     string `json:"mime"`     // what the server is told the bytes are, e.g. "image/png"
@@ -71,9 +68,7 @@ func (f FunctionCall) ArgsJSON() (json.RawMessage, error) {
 type ChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
-	// Modalities is what this request's model is known to take as input. It is never sent: it decides
-	// which attachments go out at all. The bytes stay in the conversation, so a model that takes them
-	// gets them back when the run switches to it.
+	// Modalities is what this model takes as input; it is never sent, it only decides which attachments go
 	Modalities         []string       `json:"-"`
 	Tools              []ToolSpec     `json:"tools,omitempty"`
 	ToolChoice         string         `json:"tool_choice,omitempty"`
@@ -86,9 +81,7 @@ type ChatRequest struct {
 	Sampling
 }
 
-// StreamOptions asks an OpenAI-style server to count the request in the stream's last chunk. llama.cpp
-// says as much in its timings; the others say it only when asked, and without it the screen has no
-// prompt size, no cache figure and nothing to learn the byte ratio from.
+// StreamOptions asks for the request count in the last chunk: without it the screen has no prompt size
 type StreamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
 }
@@ -102,8 +95,7 @@ type Sampling struct {
 	PresencePenalty *float64 `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
 }
 
-// ModelCard is the sampling written down for one model, with thinking on and off. It travels to the run
-// loop so a model switch picks up the new model's numbers instead of carrying the old model's.
+// ModelCard is one model's sampling, so a model switch picks up the new model's numbers
 type ModelCard struct {
 	Thinking Sampling
 	NoThink  Sampling
@@ -251,10 +243,7 @@ func (e apiError) Error() string {
 	return fmt.Sprintf("code %v", e.Code)
 }
 
-// UnmarshalJSON takes an error written either as an object or as a bare string. OpenAI-compatible
-// servers are not consistent about this, and refusing the string form turns a server saying
-// "model is loading" into a JSON decode error the user cannot act on - and hides the one phrase the
-// retry path knows how to explain.
+// UnmarshalJSON takes an error as an object or a bare string, since servers are not consistent about it
 func (e *apiError) UnmarshalJSON(raw []byte) error {
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
@@ -274,8 +263,7 @@ func preview(s string) string {
 	return s
 }
 
-// wireMessage is one message as the chat API takes it. Content is the string it has always been, or a
-// list of parts once the message carries an attachment: the shape is what the chat template reads.
+// wireMessage is one message as the chat API takes it: a string, or parts once an attachment is in it
 type wireMessage struct {
 	Role       string     `json:"role"`
 	Content    any        `json:"content"`
@@ -299,14 +287,11 @@ const (
 	partText  = "text"
 	partImage = "image_url"
 
-	// imagesNote heads the user message that carries what a run of tool results read: the chat API has
-	// no room for an attachment inside a tool reply, so it follows the run instead.
+	// imagesNote heads the message carrying a tool run's pictures: no room for one inside a tool reply
 	imagesNote = "Images from the tool results above:"
 )
 
-// MarshalJSON writes the conversation as the chat API takes it: r1, r2... are ykode's own ids for a
-// tool result, kept in the session file so a resume puts it back in the same place, and a chat API
-// that has never heard of them should not be sent them.
+// MarshalJSON writes the conversation as the chat API takes it, dropping ykode's own result ids
 func (r ChatRequest) MarshalJSON() ([]byte, error) {
 	type request ChatRequest // a different type: marshalling a ChatRequest here would recurse
 	return json.Marshal(struct {
@@ -315,8 +300,7 @@ func (r ChatRequest) MarshalJSON() ([]byte, error) {
 	}{request: request(r), Messages: offTheWire(r)})
 }
 
-// offTheWire is the conversation as the server should see it: text as it was said, and the attachments
-// it can take as parts beside it.
+// offTheWire is the conversation as the server should see it: text as said, attachments it can take
 func offTheWire(req ChatRequest) []wireMessage {
 	var out []wireMessage
 	for i := 0; i < len(req.Messages); i++ {
@@ -325,8 +309,7 @@ func offTheWire(req ChatRequest) []wireMessage {
 			out = append(out, wireOf(m, partsOf(m, req.Modalities)))
 			continue
 		}
-		// Tool replies answer one assistant message and have to stay that run's answers, so what they
-		// read travels after the whole run, once, rather than inside each of them.
+		// tool replies stay one run's answers, so what they read follows the run once, not inside each reply
 		end, read := i, []wirePart{}
 		for end < len(req.Messages) && req.Messages[end].Role == "tool" {
 			read = append(read, attachmentsOf(req.Messages[end].Attachments, req.Modalities)...)
@@ -349,8 +332,7 @@ func wireOf(m Message, content any) wireMessage {
 		ToolCallID: m.ToolCallID, Name: m.Name, Reasoning: m.Reasoning}
 }
 
-// partsOf is a message's content: the plain string whenever nothing but text goes with it, since that
-// is the shape every server has always been sent, and the parts list only when an attachment is in it.
+// partsOf is plain text whenever nothing but text goes with it, and the parts list only with an attachment
 func partsOf(m Message, modes []string) any {
 	read := attachmentsOf(m.Attachments, modes)
 	if len(read) == 0 {
@@ -362,8 +344,7 @@ func partsOf(m Message, modes []string) any {
 	return read
 }
 
-// attachmentsOf is the part of a message's attachments this request's model can take. An attachment
-// that cannot travel is left here, not deleted from the conversation: another model may take it.
+// attachmentsOf is what this request's model can take; what cannot travel is left out, not deleted
 func attachmentsOf(atts []Attachment, modes []string) []wirePart {
 	var out []wirePart
 	for _, a := range atts {

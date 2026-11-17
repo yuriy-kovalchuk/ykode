@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	// defaultReadLimit is pi's window: a file up to the byte budget comes back in one call. Smaller
-	// windows cost a model round-trip per page, and a 900-line file took a review seven of them.
+	// defaultReadLimit is pi's window: a file inside the byte budget comes back in one call
 	defaultReadLimit    = 2000
 	maxReadLimit        = 2000
 	maxScannedFileBytes = 1 << 20 // read_file refuses a file larger than this
@@ -73,8 +72,7 @@ func (t *ReadFile) Targets(args json.RawMessage) ([]Target, error) {
 	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
-// Run answers in text: what a screen shows and a summary reads. The picture a call opened belongs to
-// the message the model reads, so the agent asks read instead.
+// Run answers in text; the picture a call opened belongs to the message the model reads
 func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
 	res, err := t.read(ctx, args)
 	return res.Text, err
@@ -109,8 +107,7 @@ func (t *ReadFile) read(ctx context.Context, args json.RawMessage) (Result, erro
 	if info.IsDir() {
 		return Result{}, fmt.Errorf("read_file %q is a directory; list it with exec_command (ls)", in.Path)
 	}
-	// a picture is read whole and goes out as a picture, so what bounds the file is what a picture may
-	// cost, not the window a result is cut to
+	// a picture goes out whole, so what bounds it is what a picture may cost, not the result window
 	if info.Size() > maxPictureFileBytes {
 		return Result{}, fmt.Errorf("read_file %q is %.1f MB; the largest picture ykode reads is %.0f MB",
 			in.Path, float64(info.Size())/(1<<20), float64(maxPictureFileBytes)/(1<<20))
@@ -155,9 +152,7 @@ func (t *ReadFile) read(ctx context.Context, args json.RawMessage) (Result, erro
 	for n := first; n <= last; n++ {
 		entry := lines[n-1] + "\n"
 		if b.Len()+len(entry) > t.aim() {
-			// one huge line (a minified asset) still gets its head shown rather than nothing, but only
-			// when the budget has room left after the header: a budget smaller than the header it put
-			// there would ask for a cut of negative length
+			// one huge line still gets its head shown, and only when the header left budget for it
 			room := t.aim() - b.Len() - headCutSlack
 			if n == first && room > 0 {
 				b.WriteString(cutUTF8(lines[n-1], room) + "\n")
@@ -169,8 +164,7 @@ func (t *ReadFile) read(ctx context.Context, args json.RawMessage) (Result, erro
 		shown = n
 	}
 	if shown == first-1 {
-		// nothing at all fit: saying "0 of 400 lines, continue with offset=1" would send the model back
-		// to the line it just failed to read
+		// nothing fit: "0 of 400 lines, continue with offset=1" sends the model back to line one
 		fmt.Fprintf(&b, "\n[the %d byte result budget holds no line of this file; read a smaller window with limit, or use exec_command with sed -n '%d,%dp']\n",
 			t.aim(), first, first+smallWindow-1)
 		return Result{Text: b.String()}, nil
@@ -188,8 +182,7 @@ func (t *ReadFile) read(ctx context.Context, args json.RawMessage) (Result, erro
 	return Result{Text: b.String()}, nil
 }
 
-// headCutSlack is what the header line and the note about a cut may cost, taken off the budget before
-// a first line is cut to what is left. smallWindow is the window suggested when nothing fits.
+// headCutSlack is what the header and the cut note cost, off the budget before the first line
 const (
 	headCutSlack = 64
 	smallWindow  = 50

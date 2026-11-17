@@ -23,9 +23,7 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 			MaxTokens:    cfg.MaxTokens,
 			SafetyMargin: cfg.SafetyMargin,
 			CtxSize:      ctxSize,
-			// the number typed on the command line is a request about this server, not about whichever model
-			// gets picked next: without this, a model switch replaces what the user wrote with the model's own
-			// window and says nothing.
+			// a --ctx typed on the command line is about this server, not the next model, so a model switch keeps it
 			CtxPinned:        cfg.CtxSize > 0,
 			KeepRecentTokens: agent.KeepRecentTokens(ctxSize),
 			ThinkingLevel:    cfg.ThinkingLevel,

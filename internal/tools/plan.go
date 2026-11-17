@@ -9,9 +9,7 @@ import (
 	"sync"
 )
 
-// Plan is a long task broken into steps. The model writes the list and updates it as it works; the
-// screen pins it where it cannot scroll away. Each call replaces the list whole, so the model never
-// has to name or merge steps and what the screen reads is never half an edit.
+// Plan is a long task broken into steps: the model writes the list, the screen pins it
 type Plan struct {
 	mu    sync.Mutex
 	steps []PlanStep
@@ -23,8 +21,7 @@ type PlanStep struct {
 	Status string `json:"status"`
 }
 
-// What a step can be. A status outside these reads as pending: the schema lists them, so a server
-// that ignores the list loses nothing.
+// what a step can be; a status outside these reads as pending, so a server loses nothing
 const (
 	PlanPending = "pending"
 	PlanActive  = "active"
@@ -97,8 +94,7 @@ func (p *Plan) Run(_ context.Context, args json.RawMessage) (string, error) {
 	return report, nil
 }
 
-// cleanSteps is a list as the plan keeps it: each step on one line, a step with nothing in it dropped
-// (it would be a row of nothing), the statuses read, and no more steps than a screen can hold.
+// cleanSteps is the list as kept: one line each, empty steps dropped, no more than a screen holds
 func cleanSteps(in []PlanStep) []PlanStep {
 	steps := make([]PlanStep, 0, min(len(in), maxPlanSteps))
 	for _, s := range in {
@@ -114,8 +110,7 @@ func cleanSteps(in []PlanStep) []PlanStep {
 	return steps
 }
 
-// StepsFrom reads the steps out of a plan call's arguments, for a run that comes back to a saved
-// conversation and finds the plan in what the model wrote.
+// StepsFrom reads the steps from a plan call's arguments, for a resumed conversation
 func StepsFrom(args json.RawMessage) []PlanStep {
 	var in planInput
 	if json.Unmarshal(args, &in) != nil {
@@ -144,8 +139,7 @@ func (p *Plan) Restore(steps []PlanStep) {
 	}
 }
 
-// Settled says every step has an outcome, so the plan describes work that is over. A failed step is an
-// outcome too: a plan that ended badly is settled, and should stop holding rows on the screen.
+// Settled says every step has an outcome, a failed one included, so the plan stops holding rows
 func (p *Plan) Settled() bool { return Settled(p.Steps()) }
 
 // Settled is the same question asked of steps a reader already holds.
@@ -161,17 +155,14 @@ func Settled(steps []PlanStep) bool {
 	return true
 }
 
-// DropIfSettled forgets a plan whose every step has an outcome, and keeps one with work left: the
-// steps belonged to the prompt that finished them, while a plan still being worked on belongs to the
-// next prompt as much as to the last.
+// DropIfSettled forgets a finished plan and keeps one with work left for the next prompt
 func (p *Plan) DropIfSettled() {
 	if p.Settled() {
 		p.Clear()
 	}
 }
 
-// statusOf reads a status, and a step that named none or named one that is not on the list is a step
-// that has not been started.
+// statusOf reads a status; none, or one off the list, is a step not yet started
 func statusOf(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case PlanActive, "in_progress", "in-progress", "doing", "current":
@@ -184,8 +175,7 @@ func statusOf(status string) string {
 	return PlanPending
 }
 
-// Steps is the list as a reader outside the run sees it. The run writes it while the screen reads, so
-// what comes back is a copy.
+// Steps is the list as a reader outside the run sees it: a copy, since the run writes it
 func (p *Plan) Steps() []PlanStep {
 	if p == nil {
 		return nil
@@ -209,8 +199,7 @@ func (p *Plan) Clear() {
 	p.set(nil)
 }
 
-// Report is the plan in words, for the model to read back and for a front end that prints what a tool
-// answered. The boxes are plain so they survive a log, a pipe and a terminal without colours.
+// Report is the plan in words, with plain boxes so they survive a log, a pipe, a dull terminal
 func (p *Plan) Report() string {
 	steps := p.Steps()
 	if len(steps) == 0 {
@@ -243,8 +232,7 @@ func boxOf(status string) string {
 	return "[ ]"
 }
 
-// planShape words a plan call for a row: how far the plan got, and what it is on now. The whole list
-// would not fit on a row; the screen that shows it has the room and reads the steps themselves.
+// planShape words a plan call for a row: how far it got, and what it is on now
 func planShape(in planInput) string {
 	if len(in.Steps) == 0 {
 		return "no steps"

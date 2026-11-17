@@ -11,9 +11,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
 )
 
-// Ask runs model round-trips until the model replies without a tool call; a cancelled context ends quietly.
-// It is what marks the run busy: everything in the conversation belongs to this goroutine while it is
-// in flight, and the methods that change it from outside refuse rather than trusting a caller to know.
+// Ask runs round-trips until the model replies without a call, and marks the run busy while it does
 func (a *Agent) Ask(ctx context.Context, prompt string) error {
 	if !a.turnRunning.CompareAndSwap(false, true) {
 		return fmt.Errorf("a turn is already running: it owns the conversation")
@@ -29,9 +27,7 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 	a.add(llm.Message{Role: "user", Content: asked})
 	a.task = asked // what the history holds, which is what compaction looks for
 
-	// a reply with no tool call ends the ask, as it does in pi: nothing is added in the user's voice
-	// to keep the model going, because every such nudge costs a whole round of thinking
-	// the one exception is a reply that ended after its thinking with nothing else: see stoppedAfterThinking
+	// a reply with no tool call ends the ask, as in pi: a nudge costs a whole round of thinking
 	textRan, overflowed, resumed := false, false, false
 	for turn := 1; ; turn++ {
 		a.turn.Store(int64(turn))
@@ -84,8 +80,7 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 			if strings.TrimSpace(msg.Content) != "" {
 				return nil
 			}
-			// a reply that thought its way to a next step and then ended, before the call or a word of
-			// answer, stopped short rather than finished: it is asked once to go on, never more
+			// a reply that thought its way to a step and then ended stopped short, so it is asked once to go on
 			if !cut && !resumed && strings.TrimSpace(msg.Reasoning) != "" && !a.outOfRounds(turn) {
 				resumed = true
 				a.tell("the model stopped after thinking, before any call or answer: asking it once to go on")
@@ -106,9 +101,7 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 	}
 }
 
-// recoverFromOverflow makes room after the server refused a request as too big for its window. A
-// refusal that names the size is the one exact count available, so it replaces the estimate that just
-// failed; without one the byte ratio moves down, because the conversation is bigger than it said.
+// recoverFromOverflow makes room after a refusal, taking the size the server named over the guess
 func (a *Agent) recoverFromOverflow(ctx context.Context, err error) {
 	if count := llm.StatedPromptTokens(err); count > 0 {
 		a.tell(fmt.Sprintf("the server says the conversation is %d tokens and does not fit its window: making room and asking again", count))
@@ -126,8 +119,7 @@ func (a *Agent) recoverFromOverflow(ctx context.Context, err error) {
 	}
 }
 
-// stoppedAfterThinking is sent, in the user's place, after a reply that held thinking and nothing else.
-// It says who wrote it: a model that takes it for the user's words answers it instead of the task.
+// stoppedAfterThinking is sent in the user's place, and says who wrote it
 const stoppedAfterThinking = "[ykode, the program running this session, not the user] " +
 	"Your last reply ended after your thinking, with no tool call and no answer. " +
 	"Make the call you were about to make, or answer if the task is done."
@@ -135,8 +127,7 @@ const stoppedAfterThinking = "[ykode, the program running this session, not the 
 // overflowDrops is how many of the oldest calls go when a refused request could not be folded.
 const overflowDrops = 8
 
-// failCutCalls answers every call of a reply that ran into max_tokens without running any of them:
-// the arguments of the last one may be cut short, and the model re-issues them knowing why.
+// failCutCalls answers every call of a reply cut at max_tokens without running any of them
 func (a *Agent) failCutCalls(calls []llm.ToolCall) {
 	ids := a.nextCallIDs(len(calls))
 	for i, call := range calls {
@@ -146,18 +137,15 @@ func (a *Agent) failCutCalls(calls []llm.ToolCall) {
 	}
 }
 
-// prepareTurn gets the conversation ready for the next round-trip: asks typed meanwhile join it, and
-// what no longer fits the window is folded into a summary, then - if that was not enough - dropped.
+// prepareTurn readies the next round-trip: asks typed meanwhile join, and what does not fit goes
 func (a *Agent) prepareTurn(ctx context.Context, turn int) {
-	// an ask typed while this turn ran joins the conversation here: the round-trip in flight and
-	// the tools running are not interrupted
+	// an ask typed while this turn ran joins here, without interrupting the flight or the tools
 	for _, ask := range a.takeWaiting() {
 		a.add(ask)
 		a.task = ask.Content
 		a.emit(Event{Kind: Steered, Turn: turn, Text: ask.Content})
 	}
-	// a fold reads the results at their full length, so it goes first: whatever it cannot fold, the
-	// drop below sheds whole, and a message is never rewritten in place
+	// a fold reads results at their full length so it goes first; what it cannot fold is shed whole
 	if a.underPressure() && a.canCompact() && a.foldOverdue() {
 		a.tell("the conversation is out of room: asking the model to summarise the older turns")
 		a.work.made(roomFolding) // the clock is about to wait on a whole extra request: say what it waits on
@@ -221,8 +209,7 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		DraftNAccepted: turn.Timings.DraftNAccepted,
 	}
 	if stats.DecodeTokSec == 0 && !stopwatch.exact {
-		// the server never said how fast: the speed measured here stands, and the count measured here
-		// stands only where the server gave none - a number the server counted is not thrown away
+		// where the server gave no speed or count, the ones measured here stand in their place
 		tokens, perSecond := stopwatch.average()
 		stats.DecodeTokSec, stats.Estimated = perSecond, perSecond > 0
 		if stats.OutputTokens == 0 {
@@ -237,9 +224,7 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 	a.publishUsage()
 	a.emit(Event{Kind: TurnEnd, Turn: a.turnNo(), Stats: stats})
 	if turn.Unfinished && !a.unfinishedNoted.Swap(true) {
-		// A dropped connection and a server that never sends [DONE] look identical from here, so the
-		// first one is worth saying and every one after it is noise: a server that ends all its replies
-		// this way would otherwise warn once per round-trip for the whole session.
+		// a dropped connection and a server without [DONE] look the same, so only the first is said
 		a.tell("the server ended a reply without saying it was finished; it may be cut short, or this server may simply never say so")
 	}
 	return repair(turn.Message), turn.FinishReason, nil
@@ -253,9 +238,7 @@ func callBytes(c *llm.CallDelta) int {
 	return len(c.Args)
 }
 
-// withEnvironment ends an ask with the date and the git state when they differ from what the last ask
-// said: the model learns of a commit or a new day from the message that follows it, and a run that
-// changed nothing adds nothing.
+// withEnvironment ends an ask with date and git state only when they changed since the last ask
 func (a *Agent) withEnvironment(ask string) string {
 	note := environmentNote(a.opts.Root, time.Now())
 	if note == a.environment {
@@ -265,8 +248,7 @@ func (a *Agent) withEnvironment(ask string) string {
 	return ask + session.EnvironmentOpen + note + session.EnvironmentClose
 }
 
-// lastEnvironment is the note the newest ask in a conversation carried, so a resumed run repeats it only
-// when something changed.
+// lastEnvironment is the note the newest ask carried, so a resume repeats it only on change
 func lastEnvironment(history []llm.Message) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		if history[i].Role != "user" {

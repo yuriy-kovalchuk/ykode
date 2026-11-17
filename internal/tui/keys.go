@@ -6,8 +6,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// handleKey sends a key to whoever owns it: the question on the screen, then the session's own keys,
-// then the scrolling keys, and last the box a prompt is typed in.
+// handleKey sends a key to its owner: question, session keys, scrolling, then the typing box
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch {
@@ -29,10 +28,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.scrollKey(key) {
 		return m, nil
 	}
-	// The box is as tall as its text, one row at a time, but the textarea scrolls the moment the cursor
-	// wraps onto a row the box does not have yet, and it never scrolls back when the box grows: the start
-	// of what was typed would sit above the top of the box. So the key is handled in a box with the room
-	// the text could grow into, and fitInput cuts it to what the text takes afterwards.
+	// the key goes to a box with room to grow, since textarea scrolls and never scrolls back
 	m.input.SetHeight(maxInputLines)
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -54,8 +50,7 @@ func (m *model) answer(key string) {
 	}
 }
 
-// sessionKey handles the keys that act on the session rather than on the text in the box. The bool
-// says the key was one of them.
+// sessionKey handles the keys acting on the session, not the text; the bool says it was one
 func (m *model) sessionKey(key string) (tea.Cmd, bool) {
 	switch key {
 	case "ctrl+c":
@@ -76,8 +71,7 @@ func (m *model) sessionKey(key string) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case "ctrl+_", "ctrl+/":
-		// the list has to open while a prompt is half typed, which ? cannot do; ctrl+/ arrives as
-		// byte 0x1f, which bubbletea names ctrl+_
+		// the list must open while a prompt is half typed, which ? cannot; ctrl+/ arrives as ctrl+_
 		m.toggleKeys()
 	case "ctrl+o":
 		m.planFolded = !m.planFolded
@@ -111,9 +105,7 @@ func (m *model) toggleKeys() {
 	m.refresh()
 }
 
-// scrollKey moves the transcript. A trackpad or wheel in a terminal that is not holding the mouse
-// arrives as arrow keys, so the arrows move the session: a gesture must never write an old prompt into
-// the box. With more than one line in the box there is a caret to move, and it gets the arrows instead.
+// scrollKey moves the transcript: a wheel arrives as arrows, which must not write history in
 func (m *model) scrollKey(key string) bool {
 	rows := 0
 	switch key {
@@ -143,8 +135,7 @@ func (m *model) scrollKey(key string) bool {
 	return true
 }
 
-// walkHistory steps through the prompts sent this session. What was typed but never sent waits at
-// the end of the walk, so reading earlier prompts cannot lose the one being written.
+// walkHistory steps through the prompts sent, with the unsent draft waiting at the end
 func (m *model) walkHistory(older bool) {
 	if m.histIdx >= len(m.history) || m.input.Value() != m.history[m.histIdx] {
 		m.unsent = m.input.Value() // the box holds a line being written, not a prompt it stopped on

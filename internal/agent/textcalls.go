@@ -9,44 +9,31 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// Some models write a tool call into their answer instead of making it: the chat template taught them
-// a markup, and the server did not read it back out. The call is there, whole, in words. Asking the
-// model to make it "properly" works once and then the run ends on the second one, with the user left
-// to type "continue"; so a call that names a tool we have, with arguments that close, is run as the
-// call it is.
+// some models write a tool call into their answer instead of making one, so a parseable one is run
 var (
 	textFunctionRe  = regexp.MustCompile(`(?s)<function=([^>\s]+)>(.*?)</function>`)
 	textParameterRe = regexp.MustCompile(`(?s)<parameter=([^>\s]+)>(.*?)</parameter>`)
 	textJSONCallRe  = regexp.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 )
 
-// textCallCutRe also matches an opening tag that never closes: a reply stopped mid-call. Its fragment
-// is never an answer, so it is taken out of the text kept, but it is not read as a call and the model
-// is not told it wrote one - the reply running out of tokens is what that turn already reports.
+// textCallCutRe also matches an unclosed tag: a half-call is not answer, and is not reported as one
 var textCallCutRe = regexp.MustCompile(`(?s)<tool_call>.*?(?:</tool_call>|$)|<function=[^>]*>.*?(?:</function>|$)`)
 
-// emptyCallTagsRe is the wrapping pair left over once the call it wrapped has been cut out. Tags named
-// in prose survive it: only a pair with nothing but space between them was wrapping a call.
+// emptyCallTagsRe is the pair left once its call is cut out; a tag named in prose survives it
 var emptyCallTagsRe = regexp.MustCompile(`(?s)<tool_call>\s*</tool_call>`)
 
-// hasTextCall asks whether the text holds a call that parses: one in the function form with its
-// closing tag, or the JSON form between call tags. Asking the loose question instead - does any of this
-// markup appear - made prose about the markup read as a call, which cut the sentence out of the answer
-// and told the model it had written a call it had not written.
+// hasTextCall asks whether the text holds a call that parses, not whether any of the markup appears
 func hasTextCall(s string) bool {
 	s = outsideCode(s)
 	return textFunctionRe.MatchString(s) || textJSONCallRe.MatchString(s)
 }
 
-// codeSpanRe is what an answer sets off as code: a ``` fence, a ~~~ fence, or a ` backtick span. A
-// fence left open reaches the end of the answer, which is the safer reading of an unfinished block.
+// codeSpanRe is what an answer sets off as code; an open fence reaches the end of the answer
 var codeSpanRe = regexp.MustCompile("(?s)```.*?(```|$)|~~~.*?(~~~|$)|`[^`]*`")
 
 const backtick = '`' // spelled once: a backtick inside a Go string literal is easy to misread
 
-// outsideCode leaves out what the answer set off as code. Markup written as an example is being
-// described, not used: running it would act on text whose whole purpose is to show what acting looks
-// like, which is exactly what a document about this agent does when it names a call and its arguments.
+// outsideCode leaves out what the answer set off as code: markup as an example is being described
 func outsideCode(s string) string {
 	if !strings.ContainsRune(s, backtick) && !strings.Contains(s, "~~~") {
 		return s // nothing is set off: the common case costs one scan
@@ -54,15 +41,12 @@ func outsideCode(s string) string {
 	return codeSpanRe.ReplaceAllString(s, " ")
 }
 
-// withoutTextCalls removes the calls written as text, leaving what the model said around them. What
-// sits inside a code span is kept as written: a quoted example is the answer, not a call that failed.
-// Only markup that parses as a call goes: a tag named in a sentence about the markup is the answer too.
+// withoutTextCalls removes the calls written as text, keeping code spans and prose as written
 func withoutTextCalls(s string) string {
 	return cutCallMarkup(s, textFunctionRe, textJSONCallRe)
 }
 
-// withoutCutCalls is withoutTextCalls for a reply that ran out of tokens: the half of a call it managed
-// to write is dropped along with anything after the opening tag, since none of it was answer.
+// withoutCutCalls drops the half of a call a reply out of tokens managed to write, and all after it
 func withoutCutCalls(s string) string {
 	return cutCallMarkup(s, textCallCutRe)
 }
@@ -88,8 +72,7 @@ func cutCallMarkup(s string, res ...*regexp.Regexp) string {
 	return strings.TrimSpace(out.String())
 }
 
-// textCalls reads the calls a model wrote as text. It answers nil unless every one of them names a
-// tool this run has: half a batch run and half ignored is worse than asking the model again.
+// textCalls answers nil unless every text call names a tool this run has: half a batch is worse
 func (a *Agent) textCalls(content string, turn int) []llm.ToolCall {
 	if a.tools == nil {
 		return nil
@@ -140,10 +123,7 @@ func (a *Agent) textCalls(content string, turn int) []llm.ToolCall {
 	return calls
 }
 
-// textValue is one argument written as text, as the JSON the tool expects. The markup has no types:
-// a value is text between two tags, set off by a line break either side. An argument the tool's
-// schema calls a string is that text; any other is read as the JSON it spells (5, true, [..]) when
-// it spells some, and kept as text when it does not.
+// textValue turns one text argument into the JSON the tool expects, since the markup has no types
 func (a *Agent) textValue(tool, key, value string) json.RawMessage {
 	value = strings.TrimSuffix(strings.TrimPrefix(value, "\n"), "\n")
 	if a.schemaType(tool, key) != "string" {
@@ -172,11 +152,7 @@ func (a *Agent) schemaType(tool, key string) string {
 	return schema.Properties[key].Type
 }
 
-// The markup of a call written as text is not part of the answer, and it arrives a token at a time
-// like the rest of it: callHider passes the answer through and holds back what lies between a call's
-// opening tag and its closing one, so the screen never draws markup the conversation will not keep.
-// A fenced block is passed through whole, because outsideCode keeps it in the answer too: what the
-// reader watched arrive and what the conversation goes on to hold are the same text.
+// callHider holds back a call's markup while it streams, so the screen never draws what is dropped
 type callHider struct {
 	held    string // text not passed on yet: it may be the start of a tag
 	closing string // the tag that ends the call being hidden; "" while nothing is hidden

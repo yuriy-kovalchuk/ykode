@@ -8,9 +8,7 @@ import (
 	"strings"
 )
 
-// AskUser stops the run and puts one question to the person running ykode, with the choices the
-// model would act on. It is for the point where guessing is more expensive than asking: which of two
-// designs, which file among several, whether to do the hard-to-undo part at all.
+// AskUser stops the run and puts one question, with its choices, to the person running ykode
 type AskUser struct{ ask Asker }
 
 // Question is what is asked, and the choices the model would act on.
@@ -19,19 +17,15 @@ type Question struct {
 	Options []string
 }
 
-// Asker puts that question to a person and waits for the answer in words. An empty answer says there
-// is none: nobody is watching, the screen closed, or the run was cancelled while it waited.
+// Asker puts that question to a person and waits; an empty answer says there is none
 type Asker interface {
 	Ask(ctx context.Context, q Question) string
 }
 
-// maxAskOptions is choices one question offers: more than a screen reads at once. What one question
-// or choice says is not capped: the screen breaks it across rows and cuts it there, where what is lost
-// is visible, rather than here, where it would be silently taken back out.
+// maxAskOptions is choices one question offers: more than a screen reads at once
 const maxAskOptions = 6
 
-// noAnswer is what the model reads when the question came back empty. The choice and the report of it
-// are its job from there, so the run does not stop for want of an answer.
+// noAnswer is what the model reads when the question came back empty; the run does not stop
 const noAnswer = "no answer; go on with the choice you think best, and say what you assumed when you report the work"
 
 func NewAskUser(ask Asker) *AskUser { return &AskUser{ask: ask} }
@@ -87,8 +81,7 @@ func (t *AskUser) Run(ctx context.Context, args json.RawMessage) (string, error)
 	return "their answer: " + answer, nil
 }
 
-// cleanOptions is the list as it is shown: one line each, nothing in place of a choice dropped, and no
-// more than a screen holds.
+// cleanOptions is the list as shown: one line each, nothing for a dropped choice, none over a screen
 func cleanOptions(in []string) []string {
 	options := make([]string, 0, min(len(in), maxAskOptions))
 	for _, option := range in {

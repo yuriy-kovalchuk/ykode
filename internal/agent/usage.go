@@ -69,17 +69,14 @@ func (m *meter) observe(stats Stats, sentBytes int) {
 	if stats.PromptTokens <= 0 || sentBytes <= 0 {
 		return
 	}
-	// the one token count in the run that is not a guess: what the server said the conversation it just
-	// read was. Everything added after it is measured against the ratio this pair teaches.
+	// the only unguessed count in the run: what the server said the conversation it read was
 	m.anchorTokens, m.anchorBytes = stats.PromptTokens, sentBytes
 	if ratio := float64(sentBytes) / float64(stats.PromptTokens); ratio >= minBytesPerTok && ratio <= maxBytesPerTok {
 		m.bytesPerTok = ratio
 	}
 }
 
-// toldByServer records a count a server named in a refusal, which is the only exact measurement there
-// is at the moment the estimate is known to have been wrong. It replaces the count, and the byte side
-// comes from what this run built for the request that was refused.
+// toldByServer records a count named in a refusal, the exact number where the estimate just failed
 func (m *meter) toldByServer(tokens, sentBytes int) {
 	if tokens <= 0 || sentBytes <= 0 {
 		return
@@ -90,10 +87,7 @@ func (m *meter) toldByServer(tokens, sentBytes int) {
 	}
 }
 
-// shrinkAnchor takes out of the anchor a piece of the conversation the model already read. The count
-// the server gave stays true for the part that is still being sent, so a fold or a drop keeps an exact
-// number instead of throwing it away: zeroing it sent every later estimate back to a byte ratio over
-// the whole conversation, which is where the error of the guess comes from.
+// shrinkAnchor keeps the server's count true for what is still sent, instead of zeroing it away
 func (m *meter) shrinkAnchor(bytes int) {
 	if m.anchorTokens <= 0 || bytes <= 0 {
 		return
@@ -103,8 +97,7 @@ func (m *meter) shrinkAnchor(bytes int) {
 	m.anchorTokens = max(m.anchorTokens-gone, 0)
 }
 
-// publishUsage writes down what the conversation costs, once, at the end of a turn. A front
-// end reading it while the next turn runs on another goroutine never walks the history.
+// publishUsage writes what the conversation costs, once per turn, so a reader never walks history
 func (a *Agent) publishUsage() {
 	est := a.estimateTokens()
 	a.usageMu.Lock()
@@ -131,8 +124,7 @@ func (a *Agent) Usage() Usage {
 	return a.report
 }
 
-// ContextLine answers /ctx: how full the window is, how much of it the server already had,
-// what the tool descriptions cost, and how well a draft model is doing where there is one.
+// ContextLine answers /ctx: window fill, what the server had, tool cost, and draft-model quality
 func (a *Agent) ContextLine() string {
 	u := a.Usage()
 	var b strings.Builder

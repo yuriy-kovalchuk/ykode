@@ -14,10 +14,7 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// settingsScreen is /settings: every knob settings.yaml can set, in one list. The first row is the server
-// and model, which opens the screen a first run starts with; the rest are edited where they stand. A
-// change is checked and written the moment it is made, and applied to the running session where that is
-// safe, so the screen never holds a change that has not happened.
+// settingsScreen is /settings: every knob in one list, written and applied as it is changed
 type settingsScreen struct {
 	rows       []config.Setting // the knobs after the server row
 	at         int              // the row under the cursor; 0 is the server row
@@ -28,15 +25,13 @@ type settingsScreen struct {
 	bad        bool   // the note is a refusal
 }
 
-// detailRows is what the detail under the list always takes, so the box does not change height as the
-// cursor moves: the thinking level needs the most, with its table of budgets.
+// detailRows is what the pane always takes, so the box keeps its height: thinking needs most
 const detailRows = 6
 
 // handled are the knobs the server row stands for: they are not listed twice.
 var handled = map[string]bool{"base_url": true, "model": true, "api_key": true}
 
-// liveKnobs are the settings a running session takes up at once; the others are read when ykode starts.
-// They come from the one list of keys in the config package, so the two cannot name different sets.
+// liveKnobs are the settings a running session takes up at once, from config's one key list
 var liveKnobs = config.LiveKnobs()
 
 func newSettingsScreen(cfg config.Config) *settingsScreen {
@@ -65,8 +60,7 @@ func (s *settingsScreen) current() (config.Setting, bool) {
 	return s.rows[s.at-1], true
 }
 
-// key handles one key press. It returns what the session should do next: open the server screen, close
-// this one, or just redraw.
+// key handles a press, saying whether to open the server screen, close, or just redraw
 func (s *settingsScreen) key(msg tea.KeyMsg, write func(key, value string) error) (action settingsAction, cmd tea.Cmd) {
 	if s.editing {
 		return s.typing(msg, write)
@@ -139,9 +133,7 @@ func (s *settingsScreen) typing(msg tea.KeyMsg, write func(key, value string) er
 		s.input.Blur()
 		return actNone, nil
 	case "enter":
-		// the key the typing started on, not whichever row the cursor reaches by then: a value written
-		// against the wrong knob is checked against that knob's kind, so a number meant for one setting
-		// is accepted by any other setting of the same kind and saved
+		// the knob is the one typing started on, not where the cursor reached when enter came
 		if s.commit(s.editingKey, strings.TrimSpace(s.input.Value()), write) {
 			s.editing, s.editingKey = false, ""
 			s.input.Blur()
@@ -160,8 +152,7 @@ func (s *settingsScreen) cycle(set config.Setting, by int, write func(key, value
 	s.commit(set.Key, next, write)
 }
 
-// commit writes one value. The write checks it first, so a refusal leaves the file as it was and says
-// why in place; true means it was written.
+// commit writes one value, checked first, so a refusal says why and leaves the file alone
 func (s *settingsScreen) commit(key, value string, write func(key, value string) error) bool {
 	if err := write(key, value); err != nil {
 		s.note, s.bad = strings.TrimPrefix(err.Error(), "not changed: "), true
@@ -263,8 +254,7 @@ func (s *settingsScreen) detail(inner int) string {
 		wrapped = append(wrapped, wrap(l, inner-4)...)
 	}
 	if budgets {
-		// the table of budgets is one styled row and is cut to the box, never wrapped: a break inside
-		// the marked level would leave its colour running into the border
+		// the budget table is one styled row cut to the box: a break would leak its colour
 		wrapped = append(wrapped, cutToWidth(budgetLine(level), inner-4))
 		for _, row := range wrap(budgetNote(level), inner-4) {
 			wrapped = append(wrapped, setupDim.Render(row))
@@ -307,8 +297,7 @@ func (s *settingsScreen) hint() string {
 
 // ---- the session's side of the screen ------------------------------------------------------------
 
-// openSettings puts the settings screen over the session. It waits for the turn to finish: the client,
-// the model and the options are what a request in flight is using.
+// openSettings waits for the turn: a running request is using the client, model and options
 func (m *model) openSettings() {
 	if m.running {
 		m.log.notice("settings change between turns: press esc to stop this one first")
@@ -340,9 +329,7 @@ func (m *model) screenMsg(msg tea.Msg) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// writeSetting writes one knob to the settings file this project uses, reads the settings again, and
-// applies what a running session can take up. A value the settings package refuses never reaches the
-// file.
+// writeSetting writes a knob, reloads the settings, and applies what a live session can take
 func (m *model) writeSetting(key, value string) error {
 	before := m.cfg
 	path, local, err := config.Set(m.cfg.Root, key, value)
@@ -365,16 +352,13 @@ func (m *model) writeSetting(key, value string) error {
 // applyLive hands the session what the change moved. Only the knobs in liveKnobs are here.
 func (m *model) applyLive(before, now config.Config) {
 	if now.ThinkingLevel != before.ThinkingLevel {
-		// only a change to the level itself: writing the saved value back would undo a /think the session
-		// made without saving it
+		// only a change to the level is written: saving the old value would undo an unsaved /think
 		m.agent.SetThinkingLevel(now.ThinkingLevel) // a turn in flight refuses, and says so itself
 	}
 	m.agent.Tune(func(o *agent.Options) {
 		o.AssumeYes = now.AssumeYes
 		o.MaxTurns, o.MaxTokens, o.SafetyMargin = now.MaxTurns, now.MaxTokens, now.SafetyMargin
-		// the cards a settings file wrote travel with the run, so a /model after this change picks up
-		// the model it is switching to; the numbers in use right now are only replaced if the model in
-		// use has a card, which is what it had at start-up anyway
+		// the model cards travel with the run, so a later /model takes the model it switches to
 		o.Cards = now.Cards()
 		if card, known := o.Cards[m.agent.Model()]; known {
 			o.Thinking, o.NoThink = card.Thinking, card.NoThink
@@ -382,8 +366,7 @@ func (m *model) applyLive(before, now config.Config) {
 	})
 }
 
-// budgetLine is every thinking level with the tokens it lets the model think for, the selected one marked.
-// The numbers are what ykode sends the server, so moving between levels shows what each one costs.
+// budgetLine is every level with its token budget, the selected one marked, as ykode sends them
 func budgetLine(selected string) string {
 	parts := make([]string, 0, 7)
 	for _, level := range llm.ThinkingLevels() {
@@ -429,8 +412,7 @@ func groupDigits(n int) string {
 	return text
 }
 
-// openSettingsOn opens the settings screen with the cursor on one setting, which is what a command about
-// that setting should do rather than print a line saying what its current value is.
+// openSettingsOn opens with the cursor on one setting, rather than printing its value
 func (m *model) openSettingsOn(key string) {
 	m.openSettings()
 	if m.screen == nil {

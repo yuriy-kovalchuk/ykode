@@ -22,8 +22,7 @@ func sentMessages(t *testing.T, req ChatRequest) []map[string]any {
 	return sent.Messages
 }
 
-// what a model takes as input is the client's own business: it decides which attachments go out, and
-// the server is not told about the decision
+// what a model takes as input is the client's own business, and the server is not told about it
 func TestWhatAModelTakesIsNotSentToIt(t *testing.T) {
 	body, err := json.Marshal(ChatRequest{Model: "m", Modalities: []string{ModalityImage},
 		Messages: []Message{{Role: "user", Content: "hi"}}})
@@ -35,8 +34,7 @@ func TestWhatAModelTakesIsNotSentToIt(t *testing.T) {
 	}
 }
 
-// an attachment is the only reason a message's content stops being a string: a server compares the
-// request token by token, so a shape it has never been sent moves everything after it
+// only an attachment makes content stop being a string: a server compares a request token by token
 func TestTextOnlyConversationKeepsTheShapeServersAlreadyGet(t *testing.T) {
 	said := sentMessages(t, ChatRequest{Messages: []Message{
 		{Role: "system", Content: "the instructions"},
@@ -90,8 +88,7 @@ func TestAnImageWithoutAnyTextSendsJustTheImage(t *testing.T) {
 	}
 }
 
-// a model with no vision encoder is sent the conversation as text and told nothing else: the bytes
-// stay in the history, so switching to a model that takes them sends them again
+// a model with no vision encoder gets text only; the bytes stay in history for a model that takes them
 func TestAModelThatTakesNoImagesIsSentOnlyText(t *testing.T) {
 	req := ChatRequest{Messages: []Message{
 		{Role: "user", Content: "what is in this?", Attachments: []Attachment{
@@ -118,8 +115,7 @@ func TestAModalityThisClientCannotWriteIsNotSent(t *testing.T) {
 	}
 }
 
-// a tool reply answers the call that asked for it, so what it read follows the whole run as one
-// message of its own rather than inside the reply the servers would refuse
+// a tool reply answers its call, so what it read follows the run as one message of its own
 func TestWhatAToolReadTravelsAfterTheRunOfReplies(t *testing.T) {
 	said := sentMessages(t, ChatRequest{Modalities: []string{ModalityImage}, Messages: []Message{
 		{Role: "assistant", ToolCalls: []ToolCall{{ID: "c1"}, {ID: "c2"}}},

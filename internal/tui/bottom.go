@@ -13,8 +13,7 @@ const (
 	maxInputLines = 10 // the input grows with what is typed, up to this
 	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
 
-	// reportRows is what the bottom always holds under the box: the two rows the session reports on,
-	// and the gap at the terminal's edge. The box's own bottom edge sets it apart from the report.
+	// reportRows is what the bottom holds under the box: the two report rows and the edge gap
 	reportRows = 3
 	boxEdges   = 2 // the input card's top and bottom edges
 )
@@ -29,9 +28,7 @@ var keys = [][2]string{
 	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
 }
 
-// bottomArea is everything under the transcript: the keys if ? asked for them, what is waiting or
-// being chosen, the question if one waits, the prompt in its card, and under it the two rows the
-// session reports on. The report goes last: it is read after the prompt, not before it.
+// bottomArea is everything under the transcript: keys, queue, question, prompt card, then the report
 func (m *model) bottomArea() string {
 	var rows []string
 	if m.showKeys {
@@ -39,14 +36,12 @@ func (m *model) bottomArea() string {
 	}
 	rows = append(rows, m.planRows()...)
 	rows = append(rows, m.waitingRows()...)
-	// the candidates take the rows the screen can spare: its height, less what stands above them,
-	// what follows them, and the least the session insists on
+	// the candidates take the rows the screen can spare, less what stands above and follows them
 	under := m.input.Height() + boxEdges + reportRows + blankRowsBelow // the box and the report are spaced apart
 	if m.err != "" {
 		under++
 	}
-	// a question takes the rows left after the session keeps the least it insists on, so its choices
-	// are cut to the screen instead of pushing the prompt off the bottom of it
+	// a question takes the rows left after the session keeps its least, cutting choices to the screen
 	ask := ""
 	if len(m.pending) > 0 {
 		ask = m.question(m.height - topRows - minTranscriptRows - len(rows) - under)
@@ -70,9 +65,7 @@ const (
 	waitingLead = "waits for the next round-trip: "
 )
 
-// waitingRows keep what the user typed into a running turn on the screen: a notice in the
-// transcript scrolls away with the session, and an ask that has not been answered has not stopped
-// being relevant.
+// waitingRows keep what was typed into a running turn, where a transcript notice would scroll off
 func (m *model) waitingRows() []string {
 	var rows []string
 	for _, ask := range m.agent.Waiting() {
@@ -90,8 +83,7 @@ const (
 	askChange      = 16 // rows of an edit the question shows: it sits above the prompt, which has to stay on the screen
 )
 
-// question is what a run waits on above the input: a call to allow or refuse with a few lines of what
-// it would do, or the model's own question with its choices. The run is blocked until it is answered.
+// question is what a run waits on above the input, and the run is blocked until it is answered
 func (m *model) question(screenRows int) string {
 	if m.awaitingWords() {
 		return m.modelQuestion(screenRows)
@@ -129,8 +121,7 @@ func (m *model) question(screenRows int) string {
 	return strings.Join(lines, "\n")
 }
 
-// askBody is the part of a call the question shows beyond its head: the first lines of a file about to
-// be written, or the whole command about to run, which the head squashes onto one line.
+// askBody is the part of a call the head squashes: a file's first lines, or the whole command
 func askBody(tool, args string, width int) []string {
 	var in struct {
 		Content string `json:"content"`
@@ -162,8 +153,7 @@ func askBody(tool, args string, width int) []string {
 	return rows
 }
 
-// askedChange is what an edit would take out and put in, read from the call's own arguments: the
-// file has not been touched yet, so the lines have no numbers, only their sides.
+// askedChange is an edit's out and in read from its arguments, before the file has line numbers
 func askedChange(tool, args string) string {
 	if tool != "edit_file" {
 		return ""
@@ -209,8 +199,7 @@ func writeSide(change *strings.Builder, sign, text string) {
 	}
 }
 
-// promptLines is the input in its card, the prompt mark on its first line. The card's top edge says
-// where a reader who scrolled up stands, so nothing else has to.
+// promptLines is the input in its card, the mark on the first line; the edge marks the scroll
 func (m *model) promptLines() string {
 	mark := styleAccent.Render(promptMark)
 	if m.running {
@@ -235,8 +224,7 @@ func (m *model) promptLines() string {
 	return strings.Join(card(title, label, lines, m.width), "\n")
 }
 
-// fitInput grows the box with the rows typed, to ten, and never past the point where the session
-// would have too few rows left to read.
+// fitInput grows the box with the rows typed, to ten, never past the session's minimum
 func (m *model) fitInput() {
 	rows := min(inputRows(m.input.Value(), m.input.Width()), maxInputLines)
 	if room := m.height - topRows - m.otherRows() - minTranscriptRows; rows > room {
@@ -253,8 +241,7 @@ func (m *model) otherRows() int {
 	return lipgloss.Height(m.screenBottom()) - m.input.Height()
 }
 
-// inputRows counts the rows the text takes once the box has wrapped it: a long line typed without
-// a return is not one row on the screen.
+// inputRows counts the rows the wrapped text takes: a long line without a return is not one row
 func inputRows(text string, width int) int {
 	rows := 0
 	for _, line := range strings.Split(text, "\n") {

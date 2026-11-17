@@ -92,8 +92,7 @@ func TestToolEventsLandInTheLog(t *testing.T) {
 	}
 }
 
-// a run with no screen has nobody at the keyboard, so the tool is refused and the way to let it
-// through is named
+// a run with no screen has nobody at the keyboard, so the tool is refused and the way through is named
 func TestNobodyToAskMeansRefusal(t *testing.T) {
 	var out, log bytes.Buffer
 	v := NewView(&out, &log)

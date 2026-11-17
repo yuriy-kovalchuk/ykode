@@ -10,20 +10,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Code inside an answer is coloured by the language the fence names. The grammars come from chroma,
-// which holds hundreds of them; the colours stay ours, because every other mark on this screen is an
-// ANSI colour the terminal's own theme decides and a library's palette would not know that.
-//
-// A grammar is the dearest thing a frame can ask for - about a millisecond and a half for a kilobyte -
-// so it is never asked the same question twice. A block that has closed is read once and kept. A block
-// still arriving is read a piece at a time: the lines already written are settled in chunks, and only
-// the newest chunk is read again as it grows, so the colour follows the tokens without the frame
-// paying for the whole block. An untagged fence is left alone rather than guessed at, because guessing
-// colours prose - a sentence about a "case" or a "type" reads as code.
+// chroma's grammars colour fenced code, in our colours, and never the same question twice
 const (
-	// codeExactBytes is the longest closed block read in one piece. A longer one is read in chunks: a
-	// string or a comment that runs across the end of a chunk loses its colour there, which is the
-	// price of not stopping the screen for a generated file.
+	// codeExactBytes is the longest closed block read in one piece; longer ones go in chunks
 	codeExactBytes = 16 << 10
 	// codeChunkBytes is how much of a block still arriving is read again per frame, at most.
 	codeChunkBytes = 2 << 10
@@ -31,15 +20,13 @@ const (
 	codeKeptBlocks = 16
 )
 
-// codeCache is the coloured code of one answer. It belongs to one block of the transcript and goes
-// when it does: a cache held for the whole session would carry the code of every answer ever drawn.
+// codeCache is one answer's coloured code, and goes when its block of the transcript does
 type codeCache struct {
 	closed map[uint64][]string // the rows of the blocks that have closed, by what they say
 	live   liveCode            // the one block still arriving, if there is one
 }
 
-// rows is a code block as rows, coloured by its language, or nil when it is not coloured: the fence
-// names no language, or one we have no grammar for. The caller draws the block as it came then.
+// rows is a block as coloured rows, or nil when the fence names no language with a grammar
 func (c *codeCache) rows(code, language string, closed bool) []string {
 	lexer := lexerFor(language)
 	if lexer == nil {
@@ -72,12 +59,7 @@ func (c *codeCache) rows(code, language string, closed bool) []string {
 	return rows
 }
 
-// liveCode is a block that is still being written, or one too long to read in one piece. It is read
-// in three parts, so that a frame asks a grammar for as little as it can: the lines that will not
-// change are settled a chunk at a time and never read again; the whole lines after them are read
-// again only when another line is finished; and the line being written is read on its own, a few
-// dozen bytes a frame. That last line is read without what came before it, so inside a comment or a
-// string that runs over several lines it gets its colour when it ends, not while it is typed.
+// liveCode reads a growing block in three parts, so a frame asks a grammar for as little as can
 type liveCode struct {
 	seen    string   // the block as it was last drawn
 	settled int      // how much of it the rows below cover
@@ -112,9 +94,7 @@ func (l *liveCode) draw(lexer chroma.Lexer, code string) []string {
 	return append(rows, colouredOrPlain(lexer, code[writing:])...)
 }
 
-// chunkEnd is where a chunk of code can end: the line break before the last blank line it holds, since
-// a grammar is least likely to be in the middle of something there, or else the last line break. The
-// newest line is never settled: it is the one still being written.
+// chunkEnd is where a chunk may end: the break before the last blank line, never the newest line
 func chunkEnd(code string) int {
 	reach := code[:min(len(code), codeChunkBytes)]
 	if at := strings.LastIndex(reach, "\n\n"); at > 0 {
@@ -133,8 +113,7 @@ func colouredOrPlain(lexer chroma.Lexer, code string) []string {
 
 // coloured asks a grammar for the code and lays our styles over what it answers.
 func coloured(lexer chroma.Lexer, code string) (rows []string) {
-	// chroma says a grammar that runs into trouble may panic rather than return, and what it is given
-	// here is whatever a model wrote: a grammar that cannot cope must not take the screen with it.
+	// a grammar may panic on what a model wrote, so it is caught rather than taking the screen down
 	defer func() {
 		if recover() != nil {
 			rows = nil
@@ -147,9 +126,7 @@ func coloured(lexer chroma.Lexer, code string) (rows []string) {
 	return paintTokens(tokens, codePaints())
 }
 
-// paintTokens walks the token stream and writes each row with the colours of its tokens, keeping the
-// line breaks the source had. Every row closes what it opened, so a row drawn or cut on its own never
-// leaks a colour into the next. Nothing is re-wrapped here: the rows are cut to the screen later.
+// paintTokens writes each row with its tokens' colours, closing every row it opens
 func paintTokens(tokens chroma.Iterator, paints [paintCount]paint) []string {
 	var rows []string
 	var line strings.Builder
@@ -195,12 +172,10 @@ const (
 	paintCount
 )
 
-// paint is a style as the two escapes it wraps text in. A block is thousands of tokens, and asking
-// lipgloss to render each one costs more than writing the escapes it would have written.
+// paint is a style as two escapes: a block is thousands of tokens, and lipgloss costs more
 type paint struct{ open, close string }
 
-// codePaints reads the escapes out of the palette's styles, so the colours stay defined in one place
-// and a terminal with no colour gets none.
+// codePaints reads the escapes out of the palette's styles, so colours are defined in one place
 func codePaints() [paintCount]paint {
 	var paints [paintCount]paint
 	for kind, style := range [paintCount]lipgloss.Style{
@@ -218,9 +193,7 @@ func codePaints() [paintCount]paint {
 	return paints
 }
 
-// paintOf answers what one grammatical kind of text looks like here. Only the broad category is
-// asked, never the exact type: chroma names hundreds of types (KeywordNamespace, LiteralStringBacktick,
-// NameFunctionMagic) and each style we have covers a category of them.
+// paintOf answers by broad grammatical category; chroma names hundreds of exact types
 func paintOf(kind chroma.TokenType) paintKind {
 	switch kind.Category() {
 	case chroma.Keyword:
@@ -228,9 +201,7 @@ func paintOf(kind chroma.TokenType) paintKind {
 	case chroma.Comment:
 		return paintComment
 	case chroma.Name:
-		// only the structure of a block reads as colour: what is defined, what is called, a tag, an
-		// attribute. The identifiers in between stay the terminal's own colour, because a name coloured
-		// on every mention turns the block into one solid shade, which is what the rows say elsewhere.
+		// only structure reads as colour: the identifiers between keep the terminal's own colour
 		if kind == chroma.NameOther || kind == chroma.NameVariable {
 			return paintDefault
 		}
@@ -251,8 +222,7 @@ func paintOf(kind chroma.TokenType) paintKind {
 	return paintDefault
 }
 
-// grammars remembers which grammar a fence's word names. Asking chroma is a walk over every grammar
-// it has when the word is one it does not know, and a frame asks for every block it draws.
+// grammars remembers which grammar a fence's word names, since asking walks every grammar
 var grammars sync.Map // language -> chroma.Lexer, or nil for a word no grammar answers to
 
 func lexerFor(language string) chroma.Lexer {
