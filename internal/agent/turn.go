@@ -31,7 +31,8 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 
 	// a reply with no tool call ends the ask, as it does in pi: nothing is added in the user's voice
 	// to keep the model going, because every such nudge costs a whole round of thinking
-	textRan, overflowed := false, false
+	// the one exception is a reply that ended after its thinking with nothing else: see stoppedAfterThinking
+	textRan, overflowed, resumed := false, false, false
 	for turn := 1; ; turn++ {
 		a.turn.Store(int64(turn))
 		a.emit(Event{Kind: TurnStart, Turn: turn})
@@ -80,9 +81,18 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 		a.add(msg)
 
 		if len(msg.ToolCalls) == 0 {
-			if strings.TrimSpace(msg.Content) == "" {
-				a.tell("the model returned no text")
+			if strings.TrimSpace(msg.Content) != "" {
+				return nil
 			}
+			// a reply that thought its way to a next step and then ended, before the call or a word of
+			// answer, stopped short rather than finished: it is asked once to go on, never more
+			if !cut && !resumed && strings.TrimSpace(msg.Reasoning) != "" && !a.outOfRounds(turn) {
+				resumed = true
+				a.tell("the model stopped after thinking, before any call or answer: asking it once to go on")
+				a.add(llm.Message{Role: "user", Content: stoppedAfterThinking})
+				continue
+			}
+			a.tell("the model returned no text")
 			return nil
 		}
 		if cut {
@@ -115,6 +125,12 @@ func (a *Agent) recoverFromOverflow(ctx context.Context, err error) {
 	for i := 0; i < overflowDrops && a.dropOldestUnit() != nil; i++ {
 	}
 }
+
+// stoppedAfterThinking is sent, in the user's place, after a reply that held thinking and nothing else.
+// It says who wrote it: a model that takes it for the user's words answers it instead of the task.
+const stoppedAfterThinking = "[ykode, the program running this session, not the user] " +
+	"Your last reply ended after your thinking, with no tool call and no answer. " +
+	"Make the call you were about to make, or answer if the task is done."
 
 // overflowDrops is how many of the oldest calls go when a refused request could not be folded.
 const overflowDrops = 8

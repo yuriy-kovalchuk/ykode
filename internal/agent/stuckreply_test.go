@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -92,5 +93,48 @@ func TestAnEmptyReplyEndsTheAsk(t *testing.T) {
 	}
 	if n := len(stub.requests); n != 2 || !sink.noticed("returned no text") {
 		t.Fatalf("%d requests, want the empty reply reported and the ask ended", n)
+	}
+}
+
+// a reply that ends after its thinking, with no call and no answer, stopped short: it is asked once to
+// go on, and the ask ends when it answers
+func TestAReplyThatOnlyThoughtIsAskedOnceToGoOn(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("Let me grep the lines.", "", "", nil, "stop"),
+		sse("", "done", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512, CtxSize: 8000}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "add the field"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(stub.requests); n != 2 || !sink.noticed("stopped after thinking") {
+		t.Fatalf("%d requests, want the thinking-only reply followed by one request to go on", n)
+	}
+	if sent, _ := json.Marshal(stub.requests[1]); !strings.Contains(string(sent), "ended after your thinking") {
+		t.Errorf("the second request does not say why it was sent")
+	}
+	if sink.noticed("returned no text") {
+		t.Errorf("an ask that got its answer reported an empty reply")
+	}
+}
+
+// the request to go on is made once per ask: a second reply that only thinks ends it
+func TestAReplyThatOnlyThinksTwiceEndsTheAsk(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("thinking", "", "", nil, "stop"),
+		sse("still thinking", "", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512, CtxSize: 8000}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "add the field"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(stub.requests); n != 2 || !sink.noticed("returned no text") {
+		t.Fatalf("%d requests, want one request to go on and then the ask ended", n)
 	}
 }
