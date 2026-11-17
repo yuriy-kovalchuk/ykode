@@ -43,16 +43,23 @@ func (m *model) planRows() []string {
 		return []string{head}
 	}
 	avail := room - 1 // one row of the room is the heading
-	if len(steps) > avail {
-		avail = max(avail-2, 1) // and a window that cuts steps says so above and below, a row each
+	blocks := make([][]string, len(steps))
+	for i, s := range steps {
+		blocks[i] = m.planStep(s)
 	}
-	first, last := planWindow(len(steps), at, avail)
+	first, last := planFit(blocks, at, avail)
 	rows := []string{head}
 	if first > 0 {
 		rows = append(rows, styleDim.Render(fmt.Sprintf("%s… %d done above", planLead, first)))
 	}
+	shown := avail - min(first, 1) - min(len(steps)-last, 1)
 	for i := first; i < last; i++ {
-		rows = append(rows, m.planStep(steps[i]))
+		block := blocks[i]
+		if len(block) > shown {
+			block = block[:max(shown, 1)] // one step taller than the whole room keeps the rows that fit
+		}
+		rows = append(rows, block...)
+		shown -= len(block)
 	}
 	if last < len(steps) {
 		rows = append(rows, styleDim.Render(fmt.Sprintf("%s… %d more", planLead, len(steps)-last)))
@@ -120,24 +127,54 @@ func planBar(steps []tools.PlanStep, running bool) string {
 	return b.String()
 }
 
-// planStep is one step's row: its mark, then its words. The step being worked on turns with the
-// spinner while a turn runs, and is the only bold one.
-func (m *model) planStep(s tools.PlanStep) string {
-	room := max(m.width-lipgloss.Width(planLead)-4, 10)
-	text := cutToWidth(s.Text, room)
+// planStep is one step's rows: its mark, then its words, wrapped under the first word rather than cut
+// at the edge. The step being worked on turns with the spinner while a turn runs, and is the only bold one.
+func (m *model) planStep(s tools.PlanStep) []string {
+	mark, dress := styleDim.Render("○ "), func(t string) string { return styleDim.Render(t) }
 	switch s.Status {
 	case tools.PlanDone:
-		return planLead + styleOK.Render("✓ ") + styleDim.Render(text)
+		mark = styleOK.Render("✓ ")
 	case tools.PlanFailed:
-		return planLead + styleBad.Render("✗ ") + text
+		mark, dress = styleBad.Render("✗ "), func(t string) string { return t }
 	case tools.PlanActive:
-		mark := styleAccent.Render("● ")
+		mark, dress = styleAccent.Render("● "), func(t string) string { return styleBold.Render(t) }
 		if m.running {
 			mark = m.spin.View() + " "
 		}
-		return planLead + mark + styleBold.Render(text)
 	}
-	return planLead + styleDim.Render("○ "+text)
+	indent := planLead + "  " // the continuation rows start where the words do
+	lines := wrap(s.Text, max(m.width-lipgloss.Width(indent)-2, 10))
+	rows := make([]string, len(lines))
+	for i, line := range lines {
+		lead := indent
+		if i == 0 {
+			lead = planLead + mark
+		}
+		rows[i] = lead + dress(line)
+	}
+	return rows
+}
+
+// planFit picks the steps to show when their rows do not all fit: it starts from planWindow's choice of
+// steps, then gives up steps - the far end first, never the active one - until their rows, plus a row
+// above and below for each end that was cut, fit in the room.
+func planFit(blocks [][]string, active, room int) (first, last int) {
+	first, last = planWindow(len(blocks), active, room)
+	height := func() int {
+		h := min(first, 1) + min(len(blocks)-last, 1)
+		for _, b := range blocks[first:last] {
+			h += len(b)
+		}
+		return h
+	}
+	for last-first > 1 && height() > room {
+		if active < 0 || last-1 > active {
+			last--
+		} else {
+			first++
+		}
+	}
+	return first, last
 }
 
 // planWindow picks the steps to show when they do not all fit: the active one with the steps around it,

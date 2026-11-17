@@ -34,7 +34,7 @@ const (
 
 const (
 	maxPlanSteps  = 12  // steps one plan holds; longer work is a task the model should fold
-	planStepChars = 100 // what one step says
+	planStepChars = 300 // what one step says; the panel wraps it, so a step with a check after it is kept whole
 )
 
 func NewPlan() *Plan { return &Plan{} }

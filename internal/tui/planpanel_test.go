@@ -188,3 +188,49 @@ func TestAPlanCallIsOneRowSayingHowFarItGot(t *testing.T) {
 		t.Errorf("the plan row is %q", row)
 	}
 }
+
+// a step longer than the screen goes on to the next row, under its first word, instead of being cut
+func TestALongStepWrapsInsteadOfBeingCut(t *testing.T) {
+	long := "session: bump format to 2, attachments round-trip through the log -> verify: round-trip test + the old format still loads"
+	m := planModel(t, 60, 40, tools.PlanStep{Text: "short", Status: done}, tools.PlanStep{Text: long, Status: active})
+	rows := m.planRows()
+	text := stripCodes(strings.Join(rows, "\n"))
+	if strings.Contains(text, "…") {
+		t.Errorf("the step was cut:\n%s", text)
+	}
+	if len(rows) < 4 {
+		t.Fatalf("%d rows: the long step did not wrap:\n%s", len(rows), text)
+	}
+	if !strings.Contains(strings.Join(strings.Fields(text), " "), "the old format still loads") {
+		t.Errorf("the end of the step is missing:\n%s", text)
+	}
+	for _, row := range rows {
+		if w := len([]rune(stripCodes(row))); w > 60 {
+			t.Errorf("a row is %d columns on a 60 column screen: %q", w, stripCodes(row))
+		}
+	}
+	if cont := stripCodes(rows[3]); !strings.HasPrefix(cont, planLead+"  ") {
+		t.Errorf("the continuation row %q does not start under the step's words", cont)
+	}
+}
+
+// wrapped steps still fit the room: steps give way, and what was left out is counted
+func TestWrappedStepsStillFitTheRoom(t *testing.T) {
+	var many []tools.PlanStep
+	for i := range 8 {
+		status := pending
+		if i == 2 {
+			status = active
+		}
+		many = append(many, tools.PlanStep{Text: fmt.Sprintf("step %d %s", i+1, strings.Repeat("word ", 20)), Status: status})
+	}
+	m := planModel(t, 60, 24, many...)
+	rows := m.planRows()
+	if len(rows) > 24-planChrome {
+		t.Errorf("%d rows for a room of %d", len(rows), 24-planChrome)
+	}
+	text := stripCodes(strings.Join(rows, "\n"))
+	if !strings.Contains(text, "step 3") || !strings.Contains(text, "more") {
+		t.Errorf("the active step or the count of the rest is missing:\n%s", text)
+	}
+}
