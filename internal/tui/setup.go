@@ -31,6 +31,7 @@ type SetupResult struct {
 	APIKey  string // only what was typed; empty keeps what was configured
 	Model   string
 	CtxSize int
+	Vision  bool // the model picked reads pictures
 }
 
 // Setup asks which server to talk to, checks it answers, and lets the user pick a model.
@@ -139,7 +140,7 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			chosen := m.models[m.pick]
 			m.done, m.closed = true, true
-			m.result = SetupResult{BaseURL: m.found, APIKey: strings.TrimSpace(m.key.Value()), Model: chosen.ID, CtxSize: chosen.CtxSize}
+			m.result = SetupResult{BaseURL: m.found, APIKey: strings.TrimSpace(m.key.Value()), Model: chosen.ID, CtxSize: chosen.CtxSize, Vision: chosen.Vision}
 			return m, tea.Quit
 		}
 		return m, nil

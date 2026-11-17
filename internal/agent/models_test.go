@@ -95,12 +95,26 @@ func TestAModelOffTheListKeepsTheWindowAndSaysSo(t *testing.T) {
 	}
 }
 
+// a model the server does not list says nothing about itself, so the run keeps what it was told about
+// the model being left - the capability as well as the window
+func TestASwitchToAnUnlistedModelKeepsWhatItCouldRead(t *testing.T) {
+	a := New(nil, nil, "seeing-model", Options{Vision: true}, nil)
+	a.UseModel(llm.ModelInfo{ID: "not-listed-by-this-server"}, false)
+	if !a.opts.Vision {
+		t.Error("an unlisted model took away a capability the server had stated")
+	}
+	a.UseModel(llm.ModelInfo{ID: "text-only"}, true)
+	if a.opts.Vision {
+		t.Error("a listed model that reads no pictures kept the model it replaced")
+	}
+}
+
 func sp(v float64) *float64 { return &v }
 
 // a run that started with no window known still keeps recent work in a fold once a switch gives it one
 func TestASwitchToAKnownWindowSetsWhatAFoldKeeps(t *testing.T) {
 	a := New(nil, nil, "test-model", Options{}, nil)
-	if !a.SetEndpoint(nil, "big", 100000) {
+	if !a.SetEndpoint(nil, llm.ModelInfo{ID: "big"}, 100000) {
 		t.Fatal("the switch was refused between turns")
 	}
 	if got := a.opts.KeepRecentTokens; got != KeepRecentTokens(100000) || got == 0 {

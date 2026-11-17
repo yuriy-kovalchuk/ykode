@@ -35,8 +35,10 @@ type header struct {
 	// cannot interpret, which is the difference between refusing to resume and resuming wrongly.
 }
 
-// format is this program's session format. Lines added to it raise the number.
-const format = 1
+// format is this program's session format. Lines added to it raise the number. Format 2 added
+// attachments to a message: an older reader would read such a line, lose the bytes quietly, and hand
+// back a conversation that looks whole and is not - which is what the number in the header is for.
+const format = 2
 
 // record is a message as the log keeps it, with the thinking that came with it beside it.
 type record struct {

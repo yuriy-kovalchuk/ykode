@@ -65,7 +65,7 @@ func TestAChangeBetweenTurnsRefusesWhileOneRuns(t *testing.T) {
 	}
 
 	// every one of these rewrites something the round-trip in flight is reading
-	if a.SetEndpoint(llm.NewClient(server.URL+"/v1", ""), "other-model", 4096) {
+	if a.SetEndpoint(llm.NewClient(server.URL+"/v1", ""), llm.ModelInfo{ID: "other-model"}, 4096) {
 		t.Error("switching server was accepted while a turn ran")
 	}
 	if a.SetModel("another-model") {

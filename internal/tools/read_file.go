@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/images"
 )
 
 const (
@@ -46,7 +48,7 @@ func (*ReadFile) Name() string { return "read_file" }
 func (*ReadFile) Class() Class { return ClassReads }
 
 func (*ReadFile) Description() string {
-	return "Read a text file. The header gives the range and total lines; the text has no line numbers."
+	return "Read a file. A text file: the header gives the range and total lines; the text has no line numbers. A picture (png, jpeg, gif, webp) comes back as an image, sent at up to 2000x2000."
 }
 
 func (*ReadFile) NeedsConfirm() bool { return false }
@@ -71,52 +73,75 @@ func (t *ReadFile) Targets(args json.RawMessage) ([]Target, error) {
 	return []Target{resolveTarget(in.Path, t.dir)}, nil
 }
 
+// Run answers in text: what a screen shows and a summary reads. The picture a call opened belongs to
+// the message the model reads, so the agent asks read instead.
 func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error) {
+	res, err := t.read(ctx, args)
+	return res.Text, err
+}
+
+// RunWithAttachments is the whole answer, asked by the run that builds the message the model reads.
+func (t *ReadFile) RunWithAttachments(ctx context.Context, args json.RawMessage) (Result, error) {
+	return t.read(ctx, args)
+}
+
+// read is the whole answer: the text of a file, or the picture in it.
+func (t *ReadFile) read(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return Result{}, err
 	}
 	var in readInput
 	if err := decodeArgs(args, &in); err != nil {
-		return "", err
+		return Result{}, err
 	}
 	h, err := t.open(ctx, in.Path)
 	if err != nil {
-		return "", toolError(t.Name(), in.Path, err)
+		return Result{}, toolError(t.Name(), in.Path, err)
 	}
 	defer h.close()
 	info, err := h.root.Stat(h.name)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("read_file %q: no such file; list the directory with exec_command (ls)", in.Path)
+		return Result{}, fmt.Errorf("read_file %q: no such file; list the directory with exec_command (ls)", in.Path)
 	}
 	if err != nil {
-		return "", toolError(t.Name(), in.Path, err)
+		return Result{}, toolError(t.Name(), in.Path, err)
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("read_file %q is a directory; list it with exec_command (ls)", in.Path)
+		return Result{}, fmt.Errorf("read_file %q is a directory; list it with exec_command (ls)", in.Path)
 	}
-	// paging a file far bigger than the output budget would burn context one window at a time
-	if info.Size() > maxScannedFileBytes {
-		return "", fmt.Errorf("read_file %q is %.1f MB; use exec_command with grep -n to find a spot, or sed -n '1,200p'",
-			in.Path, float64(info.Size())/(1<<20))
+	// a picture is read whole and goes out as a picture, so what bounds the file is what a picture may
+	// cost, not the window a result is cut to
+	if info.Size() > maxPictureFileBytes {
+		return Result{}, fmt.Errorf("read_file %q is %.1f MB; the largest picture ykode reads is %.0f MB",
+			in.Path, float64(info.Size())/(1<<20), float64(maxPictureFileBytes)/(1<<20))
 	}
 	data, err := h.root.ReadFile(h.name)
 	if err != nil {
-		return "", toolError(t.Name(), in.Path, err)
+		return Result{}, toolError(t.Name(), in.Path, err)
+	}
+	if mime := images.Kind(data); mime != "" {
+		return t.asPicture(h, data, mime)
+	}
+	// paging a file far bigger than the output budget would burn context one window at a time
+	if info.Size() > maxScannedFileBytes {
+		return Result{}, fmt.Errorf("read_file %q is %.1f MB; use exec_command with grep -n to find a spot, or sed -n '1,200p'",
+			in.Path, float64(info.Size())/(1<<20))
 	}
 	if bytes.IndexByte(data, 0) >= 0 {
-		return "", fmt.Errorf("read_file %q: looks like a binary file", in.Path)
+		return Result{}, fmt.Errorf("read_file %q: binary (%s), neither text nor a picture ykode reads (png, jpeg, gif, webp); turn it into one of those with exec_command",
+			in.Path, sniff(data))
 	}
 
 	lines := splitLines(data)
 	if len(lines) == 0 {
-		return "(empty file)", nil
+		return Result{Text: "(empty file)"}, nil
 	}
 	first := in.Offset
 	if first < 1 {
 		first = 1
 	}
 	if first > len(lines) {
-		return "", fmt.Errorf("read_file %q: offset %d is past the end of a %d line file", in.Path, first, len(lines))
+		return Result{}, fmt.Errorf("read_file %q: offset %d is past the end of a %d line file", in.Path, first, len(lines))
 	}
 	window, unasked := t.window(), in.Limit == 0 && in.Offset <= 1
 	last := first - 1 + clampLimit(in.Limit, window, maxReadLimit)
@@ -148,7 +173,7 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 		// to the line it just failed to read
 		fmt.Fprintf(&b, "\n[the %d byte result budget holds no line of this file; read a smaller window with limit, or use exec_command with sed -n '%d,%dp']\n",
 			t.aim(), first, first+smallWindow-1)
-		return b.String(), nil
+		return Result{Text: b.String()}, nil
 	}
 	if shown < len(lines) {
 		reason := "pass a larger limit"
@@ -160,7 +185,7 @@ func (t *ReadFile) Run(ctx context.Context, args json.RawMessage) (string, error
 			fmt.Fprintf(&b, "[a long file: to find a line, grep -n PATTERN %q with exec_command is faster than reading on]\n", h.shown())
 		}
 	}
-	return b.String(), nil
+	return Result{Text: b.String()}, nil
 }
 
 // headCutSlack is what the header line and the note about a cut may cost, taken off the budget before

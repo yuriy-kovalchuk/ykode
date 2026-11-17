@@ -135,10 +135,17 @@ func (a *Agent) logDropped(from, to int, inStep bool) {
 	a.reportSave(a.opts.Session.Rewritten(a.history[1:]))
 }
 
+// attachmentBytes is what one attachment costs the window, whatever the file behind it: a vision
+// encoder turns an image into a fixed count of tokens, so its base64 length measures nothing the
+// server counts. Counting the length would read a screenshot as tens of thousands of tokens and throw
+// away conversation the server would have taken happily; the server's own count re-anchors the
+// estimate one reply later.
+const attachmentBytes = 4000 // about 1200 tokens at the 3.3 bytes a token of prose measures
+
 // messageBytes is what one message costs a request: the fields that go on the wire, which is what the
 // server counts.
 func messageBytes(m llm.Message) int {
-	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.Reasoning)
+	bytes := len(m.Content) + len(m.Name) + len(m.ToolCallID) + len(m.Reasoning) + len(m.Attachments)*attachmentBytes
 	for _, c := range m.ToolCalls {
 		bytes += len(c.ID) + len(c.Function.Name) + len(c.Function.Arguments)
 	}

@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -147,5 +150,106 @@ func TestAnExecCallLosesItsCDBeforeAnyoneReadsIt(t *testing.T) {
 	untouched := []byte(`{"path":"cd /work/proj && x"}`)
 	if got := a.normalizedArgs("read_file", untouched); string(got) != string(untouched) {
 		t.Errorf("another tool's arguments were rewritten: %s", got)
+	}
+}
+
+// pictureFile writes a picture the run can read: the tests need a file of the right bytes, not a name
+// that only looks like one.
+func pictureFile(t *testing.T, dir, name string) {
+	t.Helper()
+	var out bytes.Buffer
+	if err := png.Encode(&out, image.NewRGBA(image.Rect(0, 0, 6, 4))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), out.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// pictureURLs is the pictures a request carries, wherever the API takes them.
+func pictureURLs(req map[string]any) []string {
+	var urls []string
+	for _, raw := range req["messages"].([]any) {
+		parts, ok := raw.(map[string]any)["content"].([]any)
+		if !ok {
+			continue // a plain string of text carries nothing
+		}
+		for _, part := range parts {
+			if url, ok := part.(map[string]any)["image_url"].(map[string]any); ok {
+				urls = append(urls, fmt.Sprint(url["url"]))
+			}
+		}
+	}
+	return urls
+}
+
+func toolReply(t *testing.T, req map[string]any) string {
+	t.Helper()
+	for _, raw := range req["messages"].([]any) {
+		if m, ok := raw.(map[string]any); ok && m["role"] == "tool" {
+			return fmt.Sprint(m["content"])
+		}
+	}
+	t.Fatal("the request holds no tool reply")
+	return ""
+}
+
+// a picture the read opened reaches the model that reads pictures, in the shape the chat API takes:
+// the tool reply keeps its text and the picture follows the run as a message of its own
+func TestAPictureReadFromAFileReachesTheModelThatReadsPictures(t *testing.T) {
+	dir := t.TempDir()
+	pictureFile(t, dir, "shot.png")
+	stub := &stubServer{scripts: []string{
+		sse("", "", "read_file", []string{`{"path":"shot.png"}`}, "tool_calls"),
+		sse("", "it is a login form", "", nil, "stop"),
+	}}
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 3, MaxTokens: 512, Vision: true}, &captureSink{}, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "what is in this screenshot?"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.requests) != 2 {
+		t.Fatalf("requests = %d, want the call and the answer", len(stub.requests))
+	}
+	sent := pictureURLs(stub.requests[1])
+	if len(sent) != 1 {
+		t.Fatalf("the second request carries %d pictures, want the one that was read", len(sent))
+	}
+	if !strings.HasPrefix(sent[0], "data:image/png;base64,") {
+		t.Errorf("the picture went out as %q", oneLine(sent[0], 60))
+	}
+	if strings.Contains(toolReply(t, stub.requests[1]), "reads no pictures") {
+		t.Error("the model that reads pictures was told it could not see it")
+	}
+}
+
+// a model with no image reader is sent the conversation as text, told why the picture is missing, and
+// the bytes stay in the conversation so a switch to a model that reads them sends them
+func TestAPictureIsNotSentToAModelThatReadsNone(t *testing.T) {
+	dir := t.TempDir()
+	pictureFile(t, dir, "shot.png")
+	stub := &stubServer{scripts: []string{
+		sse("", "", "read_file", []string{`{"path":"shot.png"}`}, "tool_calls"),
+		sse("", "I cannot see it", "", nil, "stop"),
+	}}
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 3, MaxTokens: 512}, &captureSink{}, dir)
+	defer done()
+
+	if err := a.Ask(context.Background(), "what is in this screenshot?"); err != nil {
+		t.Fatal(err)
+	}
+	if sent := pictureURLs(stub.requests[1]); len(sent) != 0 {
+		t.Errorf("the request carries %d pictures for a model that reads none", len(sent))
+	}
+	if reply := toolReply(t, stub.requests[1]); !strings.Contains(reply, "reads no pictures") {
+		t.Errorf("the model was not told the picture was left out: %q", oneLine(reply, 120))
+	}
+	held := 0
+	for _, m := range a.Conversation() {
+		held += len(m.Attachments)
+	}
+	if held != 1 {
+		t.Errorf("the conversation holds %d attachments, want the one kept for a model that can read it", held)
 	}
 }

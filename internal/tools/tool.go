@@ -1,4 +1,5 @@
-// Package tools holds the callable surface the agent exposes to the model, and every result is text.
+// Package tools holds the callable surface the agent exposes to the model: an answer is text, and
+// reading a file can put a picture beside it.
 package tools
 
 import (
@@ -6,6 +7,8 @@ import (
 	"encoding/json"
 	"os"
 	"time"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
 // Tool is one callable: Run takes raw JSON arguments and returns text, and Targets reports the paths it touches.
@@ -17,6 +20,30 @@ type Tool interface {
 	NeedsConfirm() bool
 	Targets(args json.RawMessage) ([]Target, error)
 	Run(ctx context.Context, args json.RawMessage) (string, error)
+}
+
+// Result is what a call came back with: the text the model reads, and beside it the parts that are not
+// text at all. Only reading a file can produce the second kind.
+type Result struct {
+	Text        string
+	Attachments []llm.Attachment
+}
+
+// Attaching is a tool whose answer can carry an attachment. Run stays the text of that answer, which is
+// all a screen, a summary or a result budget cares about; the run asks the other question when it builds
+// the message the model reads. A tool answers a call this way without keeping anything between calls, so
+// the read-only tools that run beside each other may still do it.
+type Attaching interface {
+	RunWithAttachments(ctx context.Context, args json.RawMessage) (Result, error)
+}
+
+// CallOf runs a tool with whatever its answer carries beside the text.
+func CallOf(tool Tool, ctx context.Context, args json.RawMessage) (Result, error) {
+	if with, ok := tool.(Attaching); ok {
+		return with.RunWithAttachments(ctx, args)
+	}
+	text, err := tool.Run(ctx, args)
+	return Result{Text: text}, err
 }
 
 // BuiltIn is the tool set ykode ships with, ordered locate, read, change, run.

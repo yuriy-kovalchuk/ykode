@@ -88,10 +88,15 @@ func (a *Agent) resolve(ctx context.Context, arg string) (llm.ModelInfo, bool) {
 	return chosen, listed
 }
 
-// UseModel points the run at a model, bringing its own window unless --ctx fixed one. A front end that
-// listed the models asks for the switch without asking the server again.
+// UseModel points the run at a model, bringing its own window unless --ctx fixed one, and what it takes
+// as input. A front end that listed the models asks for the switch without asking the server again.
 func (a *Agent) UseModel(model llm.ModelInfo, listed bool) {
-	a.SetEndpoint(a.client, model.ID, a.windowFor(model, listed))
+	if !listed {
+		// an unlisted model says nothing about itself: the model being left is the only thing known about
+		// it, so the run keeps its capability rather than trading it for silence, as it keeps its window
+		model.Vision = a.opts.Vision
+	}
+	a.SetEndpoint(a.client, model, a.windowFor(model, listed))
 }
 
 func (a *Agent) windowFor(model llm.ModelInfo, listed bool) int {

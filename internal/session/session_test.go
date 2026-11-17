@@ -61,6 +61,39 @@ func TestAConversationSurvivesAReStart(t *testing.T) {
 	}
 }
 
+func TestAnAttachmentSurvivesAReStart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	log := New(filepath.Dir(path), "s1", "")
+	said := []llm.Message{
+		{Role: "user", Content: "what is in this?",
+			Attachments: []llm.Attachment{{Modality: llm.ModalityImage, MIME: "image/png", Data: "aGVsbG8="}}},
+		{Role: "tool", Content: "Read image file [image/png]", ToolCallID: "c1", Name: "read_file",
+			Attachments: []llm.Attachment{{Modality: llm.ModalityImage, MIME: "image/jpeg", Data: "AAA="}}},
+	}
+	for _, m := range said {
+		if err := log.Append(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	back, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 2 {
+		t.Fatalf("read back %d messages", len(back))
+	}
+	if back[0].Content != "what is in this?" || len(back[0].Attachments) != 1 {
+		t.Errorf("the ask came back as %+v", back[0])
+	}
+	if got := back[0].Attachments[0]; got.MIME != "image/png" || got.Data != "aGVsbG8=" {
+		t.Errorf("the attached bytes came back as %+v", got)
+	}
+	if len(back[1].Attachments) != 1 || back[1].Attachments[0].MIME != "image/jpeg" {
+		t.Errorf("what the tool read did not come back: %+v", back[1])
+	}
+}
+
 func TestAHalfWrittenLastLineIsDroppedNotFatal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s1.jsonl")
 	writeLog(t, path, `{"role":"user","content":"one"}`+"\n"+`{"role":"assis`)

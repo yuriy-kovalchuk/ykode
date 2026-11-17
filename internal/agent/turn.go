@@ -140,7 +140,7 @@ const overflowDrops = 8
 func (a *Agent) failCutCalls(calls []llm.ToolCall) {
 	ids := a.nextCallIDs(len(calls))
 	for i, call := range calls {
-		why := a.failTool(call.Function.Name, string(call.Function.Arguments),
+		why := a.failedTool(call.Function.Name, string(call.Function.Arguments),
 			"your reply was cut off by max_tokens, so this call did not run; make it smaller or split it")
 		a.add(a.toolMessage(call, why, ids[i]))
 	}

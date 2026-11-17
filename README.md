@@ -6,7 +6,9 @@ No provider SDK: the wire protocol is the standard library's, one streaming path
 shown separately from its answer.
 
 It keeps a conversation, calls tools (find, search, read, write, edit, run), and
-confines file access to the project root it started in.
+confines file access to the project root it started in. A picture (png, jpeg, gif,
+webp) read by `read_file` goes to the model as an image rather than as text, sized
+down to what an image reader is sent.
 
 ## Requirements
 
@@ -15,7 +17,9 @@ confines file access to the project root it started in.
   `kill(-pid)` thing; there is no port and none is planned.
 - Go 1.25 or newer.
 - A server speaking `/v1/chat/completions` with tool calling over SSE. For
-  `llama-server`, tool calling needs `--jinja`.
+  `llama-server`, tool calling needs `--jinja`, and reading pictures needs
+  `--mmproj` pointing at a vision encoder: ykode asks the server what it takes and
+  refuses a picture it cannot feed it.
 - Optional: `rg` and `fd`. Searching is `grep` and `find` run through
   `exec_command`, so they only make those faster; ykode needs neither.
 

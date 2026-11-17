@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
 // runToolCalls appends one role:"tool" message per call: the API wants an answer for every tool_call.
@@ -22,7 +23,7 @@ func (a *Agent) runToolCalls(ctx context.Context, calls []llm.ToolCall) {
 
 // runAtOnce runs a batch of read-only calls together and keeps their replies in call order.
 func (a *Agent) runAtOnce(ctx context.Context, calls []llm.ToolCall, ids []string) {
-	results := make([]string, len(calls))
+	results := make([]tools.Result, len(calls))
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
@@ -37,8 +38,10 @@ func (a *Agent) runAtOnce(ctx context.Context, calls []llm.ToolCall, ids []strin
 	}
 }
 
-func (a *Agent) toolMessage(call llm.ToolCall, content, id string) llm.Message {
-	return llm.Message{Role: "tool", Content: content, ToolCallID: call.ID, Name: call.Function.Name, CallID: id}
+// toolMessage is the reply a call is owed: its text, and the picture the call read, if it read one.
+func (a *Agent) toolMessage(call llm.ToolCall, res tools.Result, id string) llm.Message {
+	return llm.Message{Role: "tool", Content: res.Text, ToolCallID: call.ID, Name: call.Function.Name,
+		CallID: id, Attachments: res.Attachments}
 }
 
 // allReadOnly says every call in the batch is a tool that changes nothing.

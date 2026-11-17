@@ -73,6 +73,7 @@ func Run(args []string, version string) error {
 	toolOpts, agentOpts := Options(cfg, model.ID, ctxSize)
 	agentOpts.Instructions = instructions
 	agentOpts.Session = session.New(cfg.SessionDir, cfg.Session, cfg.Root)
+	agentOpts.Vision = model.Vision // what this server's model takes as input, from the server itself
 
 	front := NewFrontEnd(cfg)
 	a := agent.New(client, tools.BuiltIn(root, cfg.Root, toolOpts), model.ID, agentOpts, front.View)

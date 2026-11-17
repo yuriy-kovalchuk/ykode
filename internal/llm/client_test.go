@@ -132,6 +132,35 @@ func TestModelsReadsContextSize(t *testing.T) {
 	}
 }
 
+func TestModelsSayWhetherTheyTakeImages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[
+		  {"id":"declared","meta":{"n_ctx":8192,"input_modalities":["text","image"]}},
+		  {"id":"architecture","architecture":{"input_modalities":["text","image"]},"meta":{"n_ctx":256000}},
+		  {"id":"architecture-text","architecture":{"input_modalities":["text"],"output_modalities":["text"]}},
+		  {"id":"projector","status":{"args":["llama-server","--mmproj","mmproj.gguf","-m","x.gguf"]}},
+		  {"id":"no-projector","status":{"args":["llama-server","-m","x.gguf"]}},
+		  {"id":"says-text","meta":{"input_modalities":["text"]}}]}`)
+	}))
+	defer srv.Close()
+
+	models, err := NewClient(srv.URL+"/v1", "").Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, m := range models {
+		seen[m.ID] = m.Vision
+	}
+	want := map[string]bool{"declared": true, "architecture": true, "architecture-text": false,
+		"projector": true, "no-projector": false, "says-text": false}
+	for id, expect := range want {
+		if got, ok := seen[id]; got != expect || !ok {
+			t.Errorf("%s vision = %v (present: %v), want %v", id, got, ok, expect)
+		}
+	}
+}
+
 func TestModelsReportsEmptyAndFailedServers(t *testing.T) {
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"data":[]}`)

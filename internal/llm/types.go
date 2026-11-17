@@ -4,19 +4,33 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
 // Message is one chat entry. Reasoning goes back to the server: Qwen-style templates show a model its
 // own thinking for the task in hand, and without it every tool round starts its reasoning over.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"` // set on role:"tool" replies
-	Name       string     `json:"name,omitempty"`         // tool name, echoed for role:"tool"
-	CallID     string     `json:"call_id,omitempty"`      // ykode's own id for this result: r1, r2, ...
-	Reasoning  string     `json:"reasoning_content,omitempty"`
+	Role        string       `json:"role"`
+	Content     string       `json:"content"`
+	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
+	ToolCallID  string       `json:"tool_call_id,omitempty"` // set on role:"tool" replies
+	Name        string       `json:"name,omitempty"`         // tool name, echoed for role:"tool"
+	CallID      string       `json:"call_id,omitempty"`      // ykode's own id for this result: r1, r2, ...
+	Reasoning   string       `json:"reasoning_content,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"` // non-text parts, sent beside the text
+}
+
+// ModalityImage is the only non-text input this client knows how to write on the wire. The server's
+// own list of modalities decides what reaches a message at all, so a new one is one case here.
+const ModalityImage = "image"
+
+// Attachment is a non-text part of a message. Data is base64 without the data URL around it, so the
+// session file keeps it as one field and only the request writes the URL a chat API asks for.
+type Attachment struct {
+	Modality string `json:"modality"` // ModalityImage, or whatever else the server said it takes
+	MIME     string `json:"mime"`     // what the server is told the bytes are, e.g. "image/png"
+	Data     string `json:"data"`
 }
 
 // ToolCall is a function call the model asked for.
@@ -55,8 +69,12 @@ func (f FunctionCall) ArgsJSON() (json.RawMessage, error) {
 
 // ChatRequest is the POST /chat/completions body. It is always streamed.
 type ChatRequest struct {
-	Model              string         `json:"model"`
-	Messages           []Message      `json:"messages"`
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+	// Modalities is what this request's model is known to take as input. It is never sent: it decides
+	// which attachments go out at all. The bytes stay in the conversation, so a model that takes them
+	// gets them back when the run switches to it.
+	Modalities         []string       `json:"-"`
 	Tools              []ToolSpec     `json:"tools,omitempty"`
 	ToolChoice         string         `json:"tool_choice,omitempty"`
 	MaxTokens          int            `json:"max_tokens,omitempty"`
@@ -145,7 +163,8 @@ type Turn struct {
 // ModelInfo is one entry from GET /models.
 type ModelInfo struct {
 	ID      string
-	CtxSize int // 0 when the server does not report it
+	CtxSize int  // 0 when the server does not report it
+	Vision  bool // it takes images as input, so an image part of a message means something to it
 }
 
 // modelsResponse is the GET /models body.
@@ -153,8 +172,12 @@ type modelsResponse struct {
 	Data []struct {
 		ID   string `json:"id"`
 		Meta struct {
-			CtxSize int `json:"n_ctx"`
+			CtxSize       int      `json:"n_ctx"`
+			InputModality []string `json:"input_modalities"` // some servers put the modalities here
 		} `json:"meta"`
+		Architecture struct {
+			InputModality []string `json:"input_modalities"` // others, Strata among them, follow the OpenRouter shape
+		} `json:"architecture"`
 		Status struct {
 			Args []string `json:"args"` // llama.cpp: the server's own command line
 		} `json:"status"`
@@ -173,6 +196,12 @@ func flagValue(args []string, name string) (int, bool) {
 	}
 	return 0, false
 }
+
+// hasFlag says a llama.cpp server was started with this switch.
+func hasFlag(args []string, name string) bool { return slices.Contains(args, name) }
+
+// takesImages says this list of input modalities includes images.
+func takesImages(modes []string) bool { return slices.Contains(modes, ModalityImage) }
 
 // chatChunk is one SSE data payload.
 type chatChunk struct {
@@ -245,14 +274,103 @@ func preview(s string) string {
 	return s
 }
 
-// offTheWire is a conversation as the server should see it: r1, r2... are ykode's own ids for a
-// tool result, kept in the session file so a resume puts it back in the same place, and a chat
-// API that has never heard of them should not be sent them.
-func offTheWire(messages []Message) []Message {
-	out := make([]Message, len(messages))
-	for i, m := range messages {
-		m.CallID = ""
-		out[i] = m
+// wireMessage is one message as the chat API takes it. Content is the string it has always been, or a
+// list of parts once the message carries an attachment: the shape is what the chat template reads.
+type wireMessage struct {
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
+	Reasoning  string     `json:"reasoning_content,omitempty"`
+}
+
+type wirePart struct {
+	Type     string   `json:"type"`
+	Text     string   `json:"text,omitempty"`
+	ImageURL *wireURL `json:"image_url,omitempty"`
+}
+
+type wireURL struct {
+	URL string `json:"url"`
+}
+
+const (
+	partText  = "text"
+	partImage = "image_url"
+
+	// imagesNote heads the user message that carries what a run of tool results read: the chat API has
+	// no room for an attachment inside a tool reply, so it follows the run instead.
+	imagesNote = "Images from the tool results above:"
+)
+
+// MarshalJSON writes the conversation as the chat API takes it: r1, r2... are ykode's own ids for a
+// tool result, kept in the session file so a resume puts it back in the same place, and a chat API
+// that has never heard of them should not be sent them.
+func (r ChatRequest) MarshalJSON() ([]byte, error) {
+	type request ChatRequest // a different type: marshalling a ChatRequest here would recurse
+	return json.Marshal(struct {
+		request
+		Messages []wireMessage `json:"messages"` // shallower than the embedded one, so it is what goes out
+	}{request: request(r), Messages: offTheWire(r)})
+}
+
+// offTheWire is the conversation as the server should see it: text as it was said, and the attachments
+// it can take as parts beside it.
+func offTheWire(req ChatRequest) []wireMessage {
+	var out []wireMessage
+	for i := 0; i < len(req.Messages); i++ {
+		m := req.Messages[i]
+		if m.Role != "tool" {
+			out = append(out, wireOf(m, partsOf(m, req.Modalities)))
+			continue
+		}
+		// Tool replies answer one assistant message and have to stay that run's answers, so what they
+		// read travels after the whole run, once, rather than inside each of them.
+		end, read := i, []wirePart{}
+		for end < len(req.Messages) && req.Messages[end].Role == "tool" {
+			read = append(read, attachmentsOf(req.Messages[end].Attachments, req.Modalities)...)
+			end++
+		}
+		for j := i; j < end; j++ {
+			out = append(out, wireOf(req.Messages[j], req.Messages[j].Content))
+		}
+		if len(read) > 0 {
+			out = append(out, wireMessage{Role: "user", Content: append([]wirePart{{Type: partText, Text: imagesNote}}, read...)})
+		}
+		i = end - 1
+	}
+	return out
+}
+
+// wireOf is one message with its content already decided and ykode's own result id left out.
+func wireOf(m Message, content any) wireMessage {
+	return wireMessage{Role: m.Role, Content: content, ToolCalls: m.ToolCalls,
+		ToolCallID: m.ToolCallID, Name: m.Name, Reasoning: m.Reasoning}
+}
+
+// partsOf is a message's content: the plain string whenever nothing but text goes with it, since that
+// is the shape every server has always been sent, and the parts list only when an attachment is in it.
+func partsOf(m Message, modes []string) any {
+	read := attachmentsOf(m.Attachments, modes)
+	if len(read) == 0 {
+		return m.Content
+	}
+	if m.Content != "" {
+		read = append([]wirePart{{Type: partText, Text: m.Content}}, read...)
+	}
+	return read
+}
+
+// attachmentsOf is the part of a message's attachments this request's model can take. An attachment
+// that cannot travel is left here, not deleted from the conversation: another model may take it.
+func attachmentsOf(atts []Attachment, modes []string) []wirePart {
+	var out []wirePart
+	for _, a := range atts {
+		if a.Modality != ModalityImage || !slices.Contains(modes, a.Modality) {
+			continue
+		}
+		out = append(out, wirePart{Type: partImage, ImageURL: &wireURL{URL: "data:" + a.MIME + ";base64," + a.Data}})
 	}
 	return out
 }

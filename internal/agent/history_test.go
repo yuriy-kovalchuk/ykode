@@ -18,6 +18,24 @@ func newForHistory(opts Options) *Agent {
 	return New(nil, nil, "test-model", opts, nullSink{})
 }
 
+// an image enters the window as what the vision encoder makes of it, not as the length of its base64:
+// counting the bytes would fold and drop conversation for a screenshot the server would have taken.
+func TestAnImageIsNotCountedByWhatItEncodesTo(t *testing.T) {
+	a := newForHistory(Options{})
+	before := a.estimateTokens()
+	a.add(llm.Message{Role: "user", Content: "look at this", Attachments: []llm.Attachment{
+		{Modality: llm.ModalityImage, MIME: "image/png", Data: strings.Repeat("Q", 300_000)},
+	}})
+
+	grew := a.estimateTokens() - before
+	rate := defaultBytesPerTok
+	want := int(float64(attachmentBytes) / rate)
+	if grew < want/2 || grew > 2*want {
+		t.Errorf("the image cost the estimate %d tokens, want about %d and not the %d it encodes to",
+			grew, want, 300_000)
+	}
+}
+
 func TestTheEstimateIncludesTheToolSpecs(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)

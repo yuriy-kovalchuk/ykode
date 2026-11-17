@@ -24,6 +24,7 @@ type Options struct {
 	MaxResult        int          // byte cap on one tool result; 0 means the tools' own default
 	Session          *session.Log // append-only copy of the conversation, for --continue
 	Root             string       // the project root, recorded with every call
+	Vision           bool         // the model in use reads images, so a picture read from a file is worth sending
 	Allow            []string     // what never to ask about: a tool name, or "exec:go test"
 	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
 	// Cards are the per-model sampling a settings file gave, for every model it named: without them a
@@ -37,17 +38,17 @@ func KeepRecentTokens(ctxSize int) int { return min(keepRecentMax, ctxSize/5) }
 
 const keepRecentMax = 20000
 
-// SetEndpoint points the next request at another server and model, with that model's window. A request
-// in flight is reading the client, the model and the window to build itself, so it refuses while one
-// runs rather than trusting the caller to have checked.
-func (a *Agent) SetEndpoint(client *llm.Client, model string, ctxSize int) bool {
+// SetEndpoint points the next request at another server and model, with that model's window and what it
+// takes as input. A request in flight is reading the client, the model and the window to build itself, so
+// it refuses while one runs rather than trusting the caller to have checked.
+func (a *Agent) SetEndpoint(client *llm.Client, model llm.ModelInfo, ctxSize int) bool {
 	if a.refuseDuringATurn("switching server") {
 		return false
 	}
-	a.client, a.model, a.opts.CtxSize = client, model, ctxSize
+	a.client, a.model, a.opts.CtxSize, a.opts.Vision = client, model.ID, ctxSize, model.Vision
 	a.opts.KeepRecentTokens = KeepRecentTokens(ctxSize)
 	// a model with no card keeps the sampling in use: the server's default is not necessarily better
-	if card, known := a.opts.Cards[model]; known {
+	if card, known := a.opts.Cards[model.ID]; known {
 		a.opts.Thinking, a.opts.NoThink = card.Thinking, card.NoThink
 	}
 	a.publishUsage() // the footer's window is the new one

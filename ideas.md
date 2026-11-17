@@ -131,12 +131,27 @@ phase 1, uses this mechanism for diagnostics.
 
 ## 5. Image input
 
-**Status:** proposed · **Effort:** M
+**Status:** partly built · **Effort:** M left
 
-Qwen3.8-Flash-Next reads images, and the Strata deployment has its vision encoder. Allow
-`@path/to/screenshot.png` in a prompt (and paste in the TUI), sent as an OpenAI-style
-`image_url` content part with a data URL. Only for models whose `/models` entry lists
-`image` in `input_modalities`.
+Built: `read_file` answers a picture (png, jpeg, gif, webp) as an attachment instead of
+a binary-file error. It is decoded, brought inside 2000x2000 and 4 MB of base64 by a
+quality-then-dimensions ladder (`internal/images`), and sent as an OpenAI-style
+`image_url` data URL beside the text; the reply says what was done to it, so a model
+reading a screenshot can map its coordinates back. The model's ability is read from the
+server - `meta.input_modalities` or a `--mmproj` in its own command line - and a model
+that reads none is told the picture was left out while the bytes stay in the
+conversation for a model that takes them. Sessions are format 2 for it.
+
+Open, in the order they are worth doing:
+
+- `@path/to/screenshot.png` at the ask box, and clipboard paste. pi only inserts the
+  *path* on paste and lets `read` do the work, which is why the read path was built
+  first; a real paste needs a per-OS clipboard reader.
+- A settings override for a proxy that loads a model it does not list: the run keeps
+  the capability of the model it left, which is right until the first such switch.
+- Other modalities (pdf, audio) are not a plumbing gap: `/v1/chat/completions` has no
+  content part for them. Convert to text with `exec_command` instead.
+- Pixels on screen (kitty/iterm2) is its own subsystem and buys the model nothing.
 
 ---
 

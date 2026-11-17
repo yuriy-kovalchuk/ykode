@@ -12,40 +12,57 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
-// runTool never returns an error: whatever went wrong becomes result text the model can act on.
-func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) string {
+// runTool never returns an error: whatever went wrong becomes result text the model can act on. Its
+// answer carries a picture too, when the tool read one.
+func (a *Agent) runTool(ctx context.Context, call llm.ToolCall, id string) tools.Result {
 	name := call.Function.Name
 	args := a.normalizedArgs(name, call.Function.Arguments)
 	a.emit(Event{Kind: ToolStart, Tool: name, Args: string(args)})
 	if ctx.Err() != nil {
-		return a.failTool(name, string(args), "cancelled before this tool ran")
+		return a.failedTool(name, string(args), "cancelled before this tool ran")
 	}
 	tool, ok := a.tools.Get(name)
 	if !ok {
-		return a.failTool(name, string(args), fmt.Sprintf("unknown tool %q; available tools: %s", name, strings.Join(a.tools.Names(), ", ")))
+		return a.failedTool(name, string(args), fmt.Sprintf("unknown tool %q; available tools: %s", name, strings.Join(a.tools.Names(), ", ")))
 	}
 	// repair could not parse these arguments, so check them before any tool sees them
 	if _, err := call.Function.ArgsJSON(); err != nil {
-		return a.failTool(name, string(args), err.Error())
+		return a.failedTool(name, string(args), err.Error())
 	}
 	targets, err := tool.Targets(args)
 	if err != nil {
-		return a.failTool(name, string(args), err.Error())
+		return a.failedTool(name, string(args), err.Error())
 	}
 	outside := outsidePaths(targets)
 	if !a.permit(tool, name, string(args), outside) {
-		return a.failTool(name, string(args), "the user refused this tool call")
+		return a.failedTool(name, string(args), "the user refused this tool call")
 	}
 	if len(outside) > 0 {
 		ctx = tools.WithApprovals(ctx, outside)
 	}
-	out, err := tool.Run(ctx, args)
+	res, err := tools.CallOf(tool, ctx, args)
 	if err != nil {
-		return a.failTool(name, string(args), err.Error())
+		return a.failedTool(name, string(args), err.Error())
 	}
-	result := tools.FormatResult(out, a.opts.MaxResult)
-	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: result, Change: detailOf(tool).Change})
-	return result
+	res.Text = tools.FormatResult(res.Text, a.opts.MaxResult)
+	a.blindToPictures(&res)
+	a.emit(Event{Kind: ToolEnd, Tool: name, Args: string(args), Text: res.Text, Change: detailOf(tool).Change})
+	return res
+}
+
+// blindToPictures tells the model it is not being shown a picture this turn, which the request leaves
+// out because the model has no image reader for it. The bytes stay in the conversation, so a model
+// switched to one that reads pictures is sent them; the words say why this one saw nothing.
+func (a *Agent) blindToPictures(res *tools.Result) {
+	if a.opts.Vision || len(res.Attachments) == 0 {
+		return
+	}
+	res.Text += "\n[this model reads no pictures: the image was left out of that request]"
+}
+
+// failedTool turns a tool failure into the answer the model is given: text, and nothing beside it.
+func (a *Agent) failedTool(name, args, why string) tools.Result {
+	return tools.Result{Text: a.failTool(name, args, why)}
 }
 
 // failTool turns a tool failure into the text the model is told, after reporting it.

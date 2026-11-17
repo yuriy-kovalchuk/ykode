@@ -131,6 +131,11 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 		if info.CtxSize == 0 {
 			info.CtxSize, _ = flagValue(m.Status.Args, "--ctx-size")
 		}
+		// A server that thought about what it feeds the model says so; llama.cpp says no more than that it
+		// was started with a projector, which is exactly the difference between reading an image and
+		// refusing one.
+		info.Vision = takesImages(m.Meta.InputModality) || takesImages(m.Architecture.InputModality) ||
+			hasFlag(m.Status.Args, "--mmproj")
 		models = append(models, info)
 	}
 	if len(models) == 0 {
@@ -144,8 +149,7 @@ func (c *Client) ChatStream(ctx context.Context, body ChatRequest, onDelta func(
 	var empty Turn
 	body.Stream = true
 	body.StreamOptions = &StreamOptions{IncludeUsage: true}
-	body.Messages = offTheWire(body.Messages)
-	payload, err := json.Marshal(body)
+	payload, err := json.Marshal(body) // MarshalJSON is what puts the conversation in the shape the API takes
 	if err != nil {
 		return empty, fmt.Errorf("encode request: %w", err)
 	}

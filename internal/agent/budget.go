@@ -14,6 +14,15 @@ const (
 	minAnswerTok   = 1024 // what the answer keeps after a thinking phase takes its share
 )
 
+// inputModes is what the model in use takes as input besides text, which is what decides whether an
+// attachment goes out at all. Text needs no saying: every chat server takes it.
+func (a *Agent) inputModes() []string {
+	if !a.opts.Vision {
+		return nil
+	}
+	return []string{llm.ModalityImage}
+}
+
 // request builds the chat body and leaves the response the room the context window still has.
 func (a *Agent) request() (llm.ChatRequest, error) {
 	a.sanitizeHistory()
@@ -23,6 +32,9 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 		Tools:      a.specs(),
 		ToolChoice: "auto",
 		MaxTokens:  a.opts.MaxTokens,
+		// what this model is known to take: an attachment of anything else stays out of the request while
+		// it stays in the conversation, so a model that reads it gets it back
+		Modalities: a.inputModes(),
 		// the screen shows the speed while the reply streams; servers that do not know the field ignore it
 		TimingsPerToken: true,
 	}
