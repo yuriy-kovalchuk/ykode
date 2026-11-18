@@ -8,8 +8,10 @@ INSTALL_DIR ?= $(PREFIX)/bin
 # the version --version prints comes from git, so a build can be named later
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
+# the scanner image: no Trivy on PATH, so a scan needs no more than the Docker already here
+TRIVY_IMAGE ?= aquasec/trivy:latest
 
-.PHONY: all build vet test check cover fmt run install uninstall release clean
+.PHONY: all build vet test check cover fmt run install uninstall release clean deps vuln audit
 
 all: build check
 
@@ -44,6 +46,27 @@ fmt:
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; \
 	else echo "lint: golangci-lint is not installed; the findings it makes are unreported"; fi
+
+# deps asks the proxy what the newest version of every module is, direct and indirect, and prints
+# only the ones that have moved: the rest of the list is not an answer anyone acts on. It decides
+# nothing and upgrades nothing. It reaches the network, which is why it is not part of check.
+deps:
+	@out=$$($(GO) list -m -u all | grep ' \[' || true); \
+	if [ -n "$$out" ]; then echo "$$out"; \
+	else echo "deps: every module is at the newest version the proxy knows"; fi
+
+# vuln asks which known CVEs the versions this build resolves are exposed to, out of Trivy's
+# database rather than one of ours. Docker keeps the scanner out of the toolchain, and the named
+# volume stops its database being downloaded on every run. It reports rather than gates, and says
+# so where Docker is missing - the same shape as lint, so no target depends on a machine's setup.
+vuln:
+	@if command -v docker >/dev/null 2>&1; then \
+		docker run --rm -v "$(CURDIR):/src:ro" -v ykode-trivy-cache:/root/.cache/trivy \
+			$(TRIVY_IMAGE) fs --scanners vuln --quiet /src; \
+	else echo "vuln: docker is not installed; the dependencies were not scanned"; fi
+
+# audit asks both questions about the dependencies in one go
+audit: deps vuln
 
 run: build
 	./$(BINARY) $(ARGS)

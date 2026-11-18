@@ -11,6 +11,9 @@ make build     # bin/ykode, version from `git describe` through -X main.version
 make check     # vet + gofmt gate + go test ./... -count=1 + lint  — this is the gate
 make cover     # coverage per package
 make lint      # golangci-lint: a helper nobody calls, a Close whose error nobody reads
+make deps      # modules with a newer version upstream; reaches the network
+make vuln      # known CVEs in these dependencies, Trivy in Docker; says so when Docker is missing
+make audit     # deps + vuln
 make fmt       # gofmt -w .
 make release   # cross-builds the three shipped targets into dist/
 ```
