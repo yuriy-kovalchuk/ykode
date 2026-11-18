@@ -22,7 +22,7 @@ vet:
 test:
 	$(GO) test ./... -count=1
 
-check: vet fmtcheck test
+check: vet fmtcheck test lint
 
 # the check target reports formatting rather than only offering to fix it: a file that never went
 # through gofmt drifts one hunk at a time, and the next diff is harder to read for it
@@ -37,10 +37,10 @@ cover:
 fmt:
 	gofmt -w .
 
-# lint is not part of check, and that is deliberate: golangci-lint is not vendored, and a build gate
-# that fails because a machine lacks a third-party tool is a gate people stop trusting. It reports what
-# vet does not - a helper nobody calls, a Close whose error nobody looks at. Where it is missing it says
-# so and succeeds, so CI can call it either way and the difference stays visible.
+# lint is part of check: the code that is merely still there - a helper nobody calls, a Close whose
+# error nobody looks at - is how a retired feature turns into dead weight, and vet does not see it.
+# golangci-lint is not vendored, so where it is missing the target says so and succeeds: a build gate
+# that fails because a machine lacks a third-party tool is a gate people stop trusting.
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; \
 	else echo "lint: golangci-lint is not installed; the findings it makes are unreported"; fi

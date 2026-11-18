@@ -8,15 +8,15 @@ A terminal coding agent that talks to an OpenAI-compatible chat server (normally
 
 ```
 make build     # bin/ykode, version from `git describe` through -X main.version
-make check     # vet + gofmt gate + go test ./... -count=1  — this is the gate
+make check     # vet + gofmt gate + go test ./... -count=1 + lint  — this is the gate
 make cover     # coverage per package
-make lint      # golangci-lint when installed; passes the gate on when it is not
+make lint      # golangci-lint: a helper nobody calls, a Close whose error nobody reads
 make fmt       # gofmt -w .
 make release   # cross-builds the three shipped targets into dist/
 ```
 
-`make check` must be clean before work is called done. `lint` is deliberately outside `check`:
-the gate must not fail because a machine lacks a third-party tool.
+`make check` must be clean before work is called done. `lint` is part of `check` and succeeds when
+golangci-lint is not installed: the gate must not fail because a machine lacks a third-party tool.
 
 ## Layout
 
