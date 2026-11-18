@@ -131,7 +131,7 @@ func (a *Agent) Learned(bytesPerTok float64) {
 func (a *Agent) Resume(messages []llm.Message) {
 	a.history = append(a.history, messages...)
 	a.recountBytes()
-	// new calls continue the saved numbering, so recall never points at someone else's output
+	// new calls continue the saved numbering, so a result id never names someone else's output
 	a.callSeq = highestCallID(a.history)
 	a.restoreFiles(a.history)
 	a.restorePlan(a.history)

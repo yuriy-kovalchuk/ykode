@@ -9,282 +9,176 @@ features of those servers that a cloud-compatible agent could not use.
 Format per idea: why, design, effort, open questions. Effort: XS < 30 min · S ≈ 1–2 h ·
 M ≈ half a day · L ≈ a day or more.
 
+References below are to what the tree holds now. Things the reduction (`f24211f`, `1aab3fb`)
+deleted — `find_files`, `search_text`, `outline`, `recall` and the write store, `/undo`, the
+audit log, the sandbox, `--json` — are named as history, not as code to build on.
+
 ---
 
 ## 1. Repository map
 
 **Status:** proposed · **Effort:** L (Go only), more for other languages
 
-A compact table of contents of the whole project: every file and what it defines (types,
-functions, method signatures), without bodies. A few thousand tokens describe a project
-that would take 100k+ to read.
+A table of contents of the whole project: every file and what it defines — types, functions,
+signatures — without bodies. A few thousand tokens describe a project that would take 100k+ to read.
 
-```
-internal/agent/agent.go
-  type Agent struct
-  func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent
-  func (a *Agent) Ask(ctx context.Context, prompt string) error
-internal/agent/compact.go
-  func (a *Agent) Compact(ctx context.Context) int
-internal/tools/edit_file.go
-  func locate(current, old string) (start, end int, fuzzy bool, err error)
-```
+**Why.** Without a map the model starts blind: list, search, open the wrong file, search again.
+With one it goes to the right file and knows the real signatures, so it stops inventing APIs.
+On small models that exploration is where the run most often loops.
 
-### Why
+**Design.**
 
-- Without a map the model starts blind: list, search, open the wrong file, search again.
-  Each step is a round-trip and context; with Qwen3.6-35B-A3B this exploration is where it
-  most often gets lost or loops.
-- With a map it goes straight to the right file, and knows real signatures, so it stops
-  inventing APIs.
+- `go/parser` + `go/ast` over the files a `.gitignore` walk keeps, collecting definitions only.
+  `outline`, which did this per file, was retired with the reduction, so the parser pass is new work.
+- Rank without a graph at first: exported before unexported, files imported by many packages first
+  (count imports in `ImportsOnly` mode), tests last, boost paths named in the conversation.
+  A reference graph and PageRank only if the simple ranking is not enough.
+- A **tool**, never part of the system prompt: the map would go stale as files change, and
+  regenerating it would throw away the whole prompt cache. Registered at session start like any tool.
+- Budget scaled with the window like a result: ~1k tokens at 32k, ~6k at 256k. Cut the
+  lowest-ranked entries first and say how many were left out.
+- Cache in the process by path + mtime + size, so a repeat call only re-parses what changed.
 
-### Reference: how Aider does it
+**Open.** Does the model call it on its own, or should ykode attach a small map to the first turn
+of a request? Measure before deciding. And map size against benefit on a 32k window.
 
-1. Parse every file with tree-sitter; collect definitions and references.
-2. Build a graph: file A → file B when A uses something B defines.
-3. Rank with PageRank, boosting files mentioned in the conversation or being edited.
-4. Fill a token budget (1k by default) with the highest-ranked definitions.
-
-### Design for ykode
-
-- **Go first, standard library only:** `go/parser` + `go/ast`, the same code as
-  `read_file outline: true` (`internal/tools/outline.go`), run over all files that pass the
-  `.gitignore` walk.
-- **Ranking without a graph at first:** exported before unexported; files imported by many
-  packages first (count imports with `go/parser`'s `ImportsOnly` mode); tests last; boost
-  paths mentioned in the conversation. A real reference graph (PageRank) later, if the
-  simple ranking is not good enough.
-- **A tool, not part of the system prompt:** `repo_map(path?, query?)` — whole project, one
-  folder, or definitions matching a name. A map in the system prompt would go stale as files
-  change, and regenerating it would invalidate the whole prompt cache (minutes of re-reading
-  on Flash-Next). The tool list stays fixed for the session.
-- **Budget:** scaled to the window like tool results, about 2–4% of it: ~1k tokens at 32k,
-  ~6k at Strata's 256k. Cut lowest-ranked entries first and say how many were left out.
-- **Cache inside the process:** keyed by file path + mtime + size, so repeated calls only
-  re-parse changed files.
-- **System prompt:** one line in the order of work: "Start with repo_map when you do not
-  know where something is."
-
-### Other languages
-
-- tree-sitter covers 100+ languages but needs cgo, which breaks the pure-Go single binary.
-  Options: a pure-Go tree-sitter port (check maturity), `universal-ctags` as an optional
-  external binary (like `rg`/`fd` today), or per-language regexes for definitions
-  (`def`, `class`, `function`, `fn`, `func`) as the fallback.
-
-- **With a language server (idea 6, phase 3):** `documentSymbol` gives the same map for
-  every language without tree-sitter; this Go-only version becomes the fallback.
-
-### Open questions
-
-- Does the model actually call `repo_map` on its own, or should ykode attach a small map
-  automatically to the first turn of each request? Measure with the evals.
-- Map size vs. benefit on 32k windows.
+**Other languages.** tree-sitter covers 100+ but needs cgo, which breaks the single pure-Go binary.
+Options: `universal-ctags` as an optional external binary (as `rg` and `fd` are today), per-language
+regexes for definitions as the fallback, or `documentSymbol` from a language server (idea 3), which
+gives the same map with no parsing in ykode at all.
 
 ---
 
-## 2. Reuse llama.cpp features cloud agents cannot
+## 2. Reuse llama.cpp features a cloud agent cannot
 
 **Status:** proposed · **Effort:** S–M each · check which of these Strata's front end supports
 
-1. **Save and restore the prompt cache** (llama-server slot save/restore, `--slot-save-path`):
-   `--continue` reloads the processed prompt instead of re-reading it. On Flash-Next that
-   saves minutes per resume.
-2. **Pin a session to a slot** (`id_slot`): parallel sessions, or an eval run next to an
-   interactive one, stop evicting each other's cache.
-3. **Exact token counts** from `/tokenize`, at least to calibrate the estimate.
-4. **Grammar-constrained tool calls** (JSON schema / grammar enforced by the server): removes
-   malformed calls from small models at the source.
-5. **Read the chat template and settings from `/props`:** detect "send reasoning back" or
-   the true context size instead of relying on settings.
-6. **Prompt-processing progress** where supported: a real progress bar for a long cold
-   prompt, instead of raising `stream_idle_sec` by hand.
+1. **Save and restore the prompt cache** (`--slot-save-path`): `--continue` reloads the processed
+   prompt instead of reading it again, which is minutes per resume on a large model.
+2. **Pin a session to a slot** (`id_slot`): an eval run next to an interactive one stops evicting
+   the other's cache.
+3. **Exact counts from `/tokenize`**, at least to calibrate the bytes-per-token estimate.
+4. **Grammar-constrained tool calls**: removes malformed calls from small models at the source.
+5. **The chat template and settings from `/props`**: whether the template wants thinking back, and
+   the true window, instead of what a setting claims.
+6. **Prompt-processing progress** where the server reports it: a real bar for a long cold prompt,
+   instead of raising `stream_idle_sec` by hand.
 
 ---
 
-## 3. Git checkpoint per request
+## 3. Feedback after an edit: hooks first, then a language server
+
+**Status:** proposed · **Effort:** S (hooks) · L (LSP client) · M (what the client then gives)
+
+**Why.** A model learns about a compile error one `exec_command` round-trip after the edit, if it
+remembers to build at all. Small models are worst at exactly what a language server knows: does this
+compile, where is this defined, who calls it, what is its signature. ykode itself stays free of any
+language knowledge: every checker and server is an external program named in the user's settings.
+
+**Phase 1 — hooks, no LSP code.** Commands from the user's own `settings.yaml` run after
+`edit_file`/`write_file`, matched by file pattern (`**/*.go` → `gopls check {files}`, `**/*.py` →
+`pyright --outputjson {files}`, `tsc --noEmit`, `cargo check --message-format short`). The smart
+parts are generic: run once before the edit and once after, and append to the result only the
+diagnostics that are new, errors first, plus a count of the rest; batch a turn's edits into one run;
+cap the output like any result and leave the whole of it in the command log, which the result already
+names for `exec_command` to read; a timeout per hook. Recognise the `file:line:col: message` shape
+rather than write per-language parsers.
+
+**Phase 2 — a protocol-only LSP client.** JSON-RPC over stdio with `Content-Length` framing and the
+handful of message types used, defined locally, no library. Configured per language, never hard-coded:
+`{"go": {"match": "**/*.go", "command": ["gopls"]}}`. Started lazily in the background the first time
+a matching file is read or edited (indexing takes seconds to minutes), one process per language per
+session, `initialize` with the root, `didOpen`/`didChange` after a write, `publishDiagnostics`
+debounced ~300 ms and capped ~5 s. One tool, taking a symbol **name** and not a position, because
+small models are bad at positions: `code_nav(definition | references | signature | symbols)` returning
+short `path:line  signature` lines, project before dependencies, capped. Registered at session start
+only if a configured server's command is on `PATH` — a tool appearing mid-session costs the cache.
+
+**Phase 3 — what falls out of phase 2.** The repository map for every language through
+`documentSymbol` (idea 1's Go pass becomes the fallback), and a safe rename: `textDocument/rename`
+returns a workspace edit, applied through the same path as `edit_file`.
+
+**Safety.** Hooks and servers come only from the **user's** settings, never an untrusted project's:
+they are arbitrary code, and a language server may run project code (`go list`, build scripts). Say so
+in the README and in the trust prompt.
+
+**Open.** Is phase 1 enough? Measure turns spent on build errors before building phase 2. And
+`workspace/symbol` quality varies by server: fall back to `grep -n` through `exec_command` when it
+comes back empty.
+
+---
+
+## 4. Git checkpoint per request
 
 **Status:** proposed · **Effort:** M
 
-Before each request that may change files, record the working tree (e.g. a commit on a
-hidden ref such as `refs/ykode/checkpoints/<session>/<n>`, made with a temporary index so
-the user's index and branch are untouched). `/undo` then restores the whole request's
-changes at once, including files changed by `exec_command`, which today's undo stack misses.
-Aider commits every change for the same reason.
-
-Open question: only inside git repositories; keep the current undo stack as the fallback.
+Before a request that may change files, record the working tree — e.g. a commit on a hidden ref such
+as `refs/ykode/checkpoints/<session>/<n>`, made with a temporary index so the user's index and branch
+are untouched — and let `/undo` restore a whole request at once, including files `exec_command`
+changed. `/undo` and the write store it used to have were retired with the reduction, so this is a new
+mechanism rather than an extension of one, and it only applies inside a git repository.
 
 ---
 
-## 4. Hooks after edits
-
-**Status:** proposed · **Effort:** M
-
-Commands from `settings.json` run after `edit_file`/`write_file`, matched by file pattern
-(e.g. `*.go` → `gofmt -l {file} && go vet ./{dir}`). Their output is appended to the tool
-result, so the model sees compile errors right after an edit without spending a turn on
-`exec_command`. Runs under the same confirmation rules as `exec_command` (allowlisted in
-the user's settings only, never from an untrusted project's settings). Idea 6 (LSP),
-phase 1, uses this mechanism for diagnostics.
-
----
-
-## 5. Image input
+## 5. Pictures
 
 **Status:** partly built · **Effort:** M left
 
-Built: `read_file` answers a picture (png, jpeg, gif, webp) as an attachment instead of
-a binary-file error. It is decoded, brought inside 2000x2000 and 4 MB of base64 by a
-quality-then-dimensions ladder (`internal/images`), and sent as an OpenAI-style
-`image_url` data URL beside the text; the reply says what was done to it, so a model
-reading a screenshot can map its coordinates back. The model's ability is read from the
-server - `meta.input_modalities` or a `--mmproj` in its own command line - and a model
-that reads none is told the picture was left out while the bytes stay in the
-conversation for a model that takes them. Sessions are format 2 for it.
+Built (README has the detail): `read_file` answers a picture as an attachment, `internal/images`
+sizes it for a vision encoder, and the server itself says whether the model takes pictures.
 
 Open, in the order they are worth doing:
 
-- `@path/to/screenshot.png` at the ask box, and clipboard paste. pi only inserts the
-  *path* on paste and lets `read` do the work, which is why the read path was built
-  first; a real paste needs a per-OS clipboard reader.
-- A settings override for a proxy that loads a model it does not list: the run keeps
-  the capability of the model it left, which is right until the first such switch.
-- Other modalities (pdf, audio) are not a plumbing gap: `/v1/chat/completions` has no
-  content part for them. Convert to text with `exec_command` instead.
+- `@path/to/screenshot.png` in the ask box, and a clipboard paste. The read path was built first
+  because a path is what pi puts in; a real paste needs a per-OS clipboard reader.
+- A setting for a proxy that loads a model it does not list: a switch keeps the capability of the
+  model it left, which is right until the first such switch.
+- Other modalities (pdf, audio) are not a plumbing gap: `/v1/chat/completions` has no content part
+  for them. Convert to text with `exec_command`.
 - Pixels on screen (kitty/iterm2) is its own subsystem and buys the model nothing.
 
 ---
 
-## 6. Language-server (LSP) integration, with no language knowledge in the Go code
-
-**Status:** proposed · **Effort:** S (phase 1) · L (phase 2) · M (phase 3)
-
-Goal: compiler-grade feedback and navigation for any language, while ykode itself knows
-nothing about Go, Python, Rust or TypeScript. All language knowledge lives in external
-programs (`gopls`, `pyright`, `rust-analyzer`, `typescript-language-server`, …) named in the
-user's `settings.json`. ykode only speaks the protocol, or only runs commands.
-
-### Why
-
-- Small models are worst at what a language server knows exactly: does this compile, where
-  is this defined, who calls it, what is its signature.
-- Today the model learns about a compile error one `exec_command` round-trip after the edit,
-  if it remembers to build at all.
-
-### Phase 1 — diagnostics through hooks, zero LSP code (builds on idea 4)
-
-Most of the value is diagnostics after an edit, and most toolchains have a command for it:
-
-```json
-"hooks": {
-  "after_edit": [
-    { "match": "**/*.go",  "run": "gopls check {files}" },
-    { "match": "**/*.py",  "run": "pyright --outputjson {files}" },
-    { "match": "**/*.ts",  "run": "tsc --noEmit --pretty false" },
-    { "match": "**/*.rs",  "run": "cargo check --message-format short" }
-  ]
-}
-```
-
-"Smart" parts, all generic:
-
-- **Only what the edit caused:** run once before the edit (cached) and once after; append to
-  the edit result only diagnostics that are new, errors first, plus a count of the rest
-  ("3 new errors in agent.go; 12 warnings elsewhere unchanged").
-- **Batch:** several edits in one turn run the hook once, at the end of the turn.
-- **Budget:** capped like other results; the full output goes to the result store (`recall`).
-- **Timeout** per hook; a slow checker never blocks the turn for long.
-- **Parsing:** recognise the common `file:line:col: message` shape generically; a hook may
-  also declare `"format": "json-sarif"` or similar if needed. No per-language parsers.
-
-### Phase 2 — a generic LSP client (protocol only)
-
-A small JSON-RPC client over stdio (`Content-Length` framing; only the handful of message
-types used, defined locally, no LSP library). Configured per language, never hard-coded:
-
-```json
-"lsp": {
-  "go":     { "match": "**/*.go",       "command": ["gopls"] },
-  "python": { "match": "**/*.py",       "command": ["pyright-langserver", "--stdio"] },
-  "ts":     { "match": "**/*.{ts,tsx}", "command": ["typescript-language-server", "--stdio"] }
-}
-```
-
-- **Lifecycle:** started lazily in the background the first time a matching file is read or
-  edited (gopls or rust-analyzer can take seconds to minutes to index), one process per
-  language per session, shut down at exit. `initialize` with the project root.
-- **Sync:** after `edit_file`/`write_file`/`/undo`, send `didOpen`/`didChange`; collect
-  `publishDiagnostics` and wait briefly for them to settle (debounce ~300 ms, cap ~5 s).
-  Diagnostics then replace the phase-1 hook for that language.
-- **Navigation by name, not by position.** Small models are bad at exact line/column
-  positions, so the tool takes a symbol name and ykode resolves it with
-  `workspace/symbol` (or `documentSymbol` on a given file) before asking the server:
-
-  ```
-  code_nav(action: "definition" | "references" | "signature" | "symbols", symbol?: "Agent.Compact", path?: "internal/agent")
-  ```
-
-  One tool instead of five keeps the tool definitions small. Results come back as short
-  `path:line  signature` lines, capped and ranked (definitions in the project before
-  dependencies, non-test before test).
-- **Fixed tool list:** `code_nav` is registered at session start only if at least one
-  configured server's command exists on `PATH`; it never appears mid-session (that would empty the prompt cache).
-
-### Phase 3 — uses that fall out of phase 2
-
-- **Repository map for every language** (idea 1): `documentSymbol` across files gives
-  definitions for Python, TypeScript, Rust… with no tree-sitter and no cgo. The Go-only
-  `go/ast` map becomes the fallback when no server is configured.
-- **Safe rename:** `textDocument/rename` returns a workspace edit; apply it through the same
-  path as `edit_file` (confirmation, undo stack, audit log, diff in the result).
-- **Hover for signatures/docs** when the model is about to call an unfamiliar function.
-
-### Safety
-
-- Server and hook commands come only from the **user's** `settings.json`, never from a
-  untrusted project's: a language server is arbitrary code.
-- Language servers may run project code (build scripts, `go list`, macros); note it in the
-  README and in the trust prompt.
-
-### Prior art
-
-opencode and Charm's Crush feed LSP diagnostics back after edits; `mcp-language-server`
-exposes LSP to agents through MCP. ykode has no MCP client, so phase 2 talks LSP directly.
-
-### Open questions
-
-- Is phase 1 enough? Measure with the evals (tasks passed, turns spent on build errors)
-  before building phase 2.
-- `workspace/symbol` quality varies by server (gopls is good; some servers return little
-  before indexing finishes). Fall back to `search_text` when it comes back empty.'
-
----
-
-## 7. Per-project settings, and a switch for each tool
+## 6. A switch per tool
 
 **Status:** proposed · **Effort:** S
 
-A repository may want ykode to behave differently: no `exec_command` in a deployment repo, no
-`plan` in a small one, a smaller `--ctx` against a model with a small window. The trust rules
-already decide which projects are trusted, so reading one more file there is a small step.
-
-Design: a `.ykode/settings.json` in the project root, read after the trust check, holding the
-keys the user settings already have. A `/tools` command (or `--tool off plan`) drops a tool from
-the registry the model is shown, so the model never sees it rather than being told no. Open
-questions: which keys belong per project - a window or a safety margin would disagree with what
-the server reports - and whether a switch is per session or remembered.
+Per-project settings are built (`/create-local-setting`, `<root>/.ykode/settings.yaml`, and the trust
+rules that decide which keys a project may set). What is left is dropping a tool from the list the
+model is shown: no `exec_command` in a deployment repo, no `plan` in a small one. A `/tools` switch,
+decided at session start — the tool list never changes mid-session, and a tool that appears later
+costs the cache everything before it. Open: per session or remembered in the project file.
 
 ---
 
-## 8. Themes
+## 7. Themes
 
 **Status:** proposed · **Effort:** S
 
 The screen's colours are built once in `internal/tui/palette.go` (`styleDim`, `styleThink`,
 `styleBad`, …), so a theme is a map of those names onto colours in the settings file, with the
-terminal's own capabilities deciding whether to use 16, 256 or true colour. A light-terminal
-theme is the reason to want it: faint-on-white is unreadable today. Open question: whether
-syntax colours for code blocks (`markdown.go`) follow the same map or stay a separate choice.
+terminal's own capabilities deciding between 16, 256 and true colour. A light terminal is the reason
+to want it: faint-on-white is unreadable today. Open: whether the syntax colours of a code block
+(`internal/tui/markdown.go`, `internal/tui/highlight.go`) follow the same map or stay a separate
+choice.
+
+---
+
+## 8. The OS sandbox that was retired
+
+**Status:** to decide · **Effort:** M
+
+`exec_command` used to run inside an OS jail: `sandbox-exec` on macOS with a seatbelt profile that
+denied the network and every write outside the project, the temp folder and the user's cache; `bwrap
+--ro-bind / --unshare-net` on Linux. It went with the reduction (`f24211f`), and `internal/tools/sandbox.go`
+and its test are in that commit's parent if it is wanted back.
+
+Two things it would answer today, both from the same gap: `HOME` is passed to a model-run command, so
+`cat ~/.ykode/settings.yaml` reaches a token written into the settings file (`api_key_env` is the way
+that keeps the secret out of any file); and `settings.yaml` used to accept `sandbox:` and `audit:` and
+say nothing when it ignored them — those keys are refused like any unknown one now, so nobody reads
+`sandbox: true` as a protection that is not there. What is left to decide is the jail itself: bring it
+back behind a knob, or say plainly in the README that a command has the whole of `$HOME` and the network.
 
 ---
 
@@ -307,10 +201,10 @@ syntax colours for code blocks (`markdown.go`) follow the same map or stay a sep
 - Trimming a path description to "relative to the project root" made the model write the root's own
   path without its leading slash (3 of 5 task-11 runs, 0 in 397 runs before). The description now
   gives an example (`src/main.go`), and the path tools read such a path as the root anyway.
-- `find_files` and `search_text` went with the reduction (2026-11-09). Two things learned: the two
-  dependencies they pulled (`bmatcuk/doublestar`, `sabhiram/go-gitignore`) had no test of their own,
-  so `go mod tidy` dropped them with the code and nothing complained; and the loop guard's "same call
-  repeats" rule was not what kept a rewritten file's old listing short - its test still passed with
-  the guard deleted, because the fold had already replaced the listing. That test went when a second
-  read of the same window started sending the text again: no memory of what was shown, so nothing to
-  be told twice.
+- `find_files` and `search_text` went with the reduction (2026-11-09), and two things came of it: the
+  two dependencies they pulled had no test of their own, so `go mod tidy` dropped them with the code
+  and nothing complained — which is why the unused check is part of `check` now; and the loop guard's
+  "same call repeats" rule was not what kept a rewritten file's old listing short, its test still
+  passing with the guard deleted because the fold had already replaced the listing. That test went
+  when a second read of the same window started sending the text again: no memory of what was shown,
+  so nothing to be told twice.
