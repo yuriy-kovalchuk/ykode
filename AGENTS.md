@@ -84,7 +84,7 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
 - No provider SDK and no new dependency without a reason stated in the commit. HTTP, JSON and SSE
   are the standard library; `charmbracelet` is the screen, `chroma` the code colouring,
   `goldmark` the markdown, `yaml.v3` the settings file.
-- Unreleased licence: this repo has no `LICENSE` yet. Do not add headers or files that claim one.
+- MIT licence, in `LICENSE` and nowhere else: no per-file headers, and do not edit the copyright line.
 
 ## Tests
 
