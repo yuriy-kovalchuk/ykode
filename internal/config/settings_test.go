@@ -39,7 +39,7 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 		"max_turns": 7,
 		"thinking_level": "off",
 		"max_tokens": 2048, "context": {"safety_margin": 512},
-		"tools": {"read_lines": 120, "search_limit": 20, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
+		"tools": {"read_lines": 120, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
 		"models": {"qwen": {"thinking": {"temperature": 0.6}}}
 	}`)
 
@@ -156,15 +156,6 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 	got := strings.Join(cfg.Allow, ",")
 	if !strings.Contains(got, "edit_file") || !strings.Contains(got, "exec:go test") {
 		t.Errorf("allow list = %q, want the user file's entries", got)
-	}
-}
-
-// keys for things ykode no longer does must still load, or an upgrade stops the run before it starts
-func TestARetiredSettingStillLoads(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.yaml"), `{"audit": false, "audit_retention_days": 30, "verify": false}`)
-	if _, err := Load(nil); err != nil {
-		t.Fatalf("a file naming a retired setting was refused: %v", err)
 	}
 }
 
@@ -320,9 +311,9 @@ func TestAProjectStillSetsHowItWorks(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
 	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{
-		"max_turns": 9, "max_tokens": 700, "thinking_level": "off", "verify": false,
+		"max_turns": 9, "max_tokens": 700, "thinking_level": "off",
 		"context": {"safety_margin": 99},
-		"tools": {"read_lines": 40, "search_limit": 11, "exec_timeout_sec": 90},
+		"tools": {"read_lines": 40, "exec_timeout_sec": 90},
 		"models": {"qwen": {"thinking": {"temperature": 0.6}}}
 	}`)
 
@@ -483,28 +474,14 @@ func TestTheSettingsFileIsYaml(t *testing.T) {
 	}
 }
 
-// the pointer key is retired, not deleted: an older settings.yaml still loads, the knob is simply gone
-func TestARetiredMouseSettingLoadsAndIsIgnored(t *testing.T) {
-	user := fakeHome(t)
-	writeSettings(t, filepath.Join(user, "settings.yaml"), "mouse: true\n")
-	cfg, err := Load([]string{"--root", t.TempDir()})
-	if err != nil {
-		t.Fatalf("a file still holding mouse: was refused: %v", err)
-	}
-	if _, ok := findSetting(cfg.Catalogue(), "mouse"); ok {
-		t.Error("the settings list still offers mouse, which the screen no longer acts on")
-	}
-	if _, _, err := Set(t.TempDir(), "mouse", "on"); err == nil {
-		t.Error("mouse can still be set, though nothing reads it")
-	}
-}
-
 // a setting that cannot be right is refused, naming the file and the key so the fix is one edit
 func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
 	cases := []struct{ what, file, body, key string }{
 		{"a misspelled key", "settings.yaml", `{"base_ url": "http://nowhere"}`, "base_ url"},
 		{"a misspelled nested key", "settings.yaml", `{"tools": {"read_lines ": 40}}`, "read_lines "},
 		{"an unknown yaml key", "settings.yaml", "thinking_level: medium\nthinking_leve: medium\n", "thinking_leve"},
+		{"a retired sandbox key, which would otherwise read as a protection", "settings.yaml", "sandbox: true\n", "sandbox"},
+		{"a retired audit key", "settings.yaml", "audit: true\n", "audit"},
 		{"a session keep of zero", "settings.yaml", `{"keep_sessions": "0s"}`, "keep_sessions"},
 		{"a negative session keep", "settings.yaml", `{"keep_sessions": "-1h"}`, "keep_sessions"},
 		{"a log keep of zero", "settings.yaml", `{"tools": {"keep_command_logs": "0s"}}`, "keep_command_logs"},

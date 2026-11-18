@@ -21,28 +21,21 @@ import (
 
 // fileSettings mirrors settings.yaml; a non-nil pointer means the file set that key.
 type fileSettings struct {
-	BaseURL   *string `yaml:"base_url,omitempty"`
-	APIKey    *string `yaml:"api_key,omitempty"`
-	APIKeyEnv *string `yaml:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
-	// retired: still read so an old file loads, no longer used
-	Audit         *bool   `yaml:"audit,omitempty"`
-	Retain        *int    `yaml:"audit_retention_days,omitempty"`
-	Sandbox       *bool   `yaml:"sandbox,omitempty"`
-	Verify        *bool   `yaml:"verify,omitempty"` // retired: asked for a tool on a text-only answer
+	BaseURL       *string `yaml:"base_url,omitempty"`
+	APIKey        *string `yaml:"api_key,omitempty"`
+	APIKeyEnv     *string `yaml:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
 	KeepSessions  *string `yaml:"keep_sessions,omitempty"`
 	Model         *string `yaml:"model,omitempty"`
 	MaxTurns      *int    `yaml:"max_turns,omitempty"`
 	MaxTokens     *int    `yaml:"max_tokens,omitempty"`
 	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
 	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
-	Mouse         *bool   `yaml:"mouse,omitempty"` // retired: the screen no longer takes the pointer, so the terminal always selects and scrolls
 	StreamIdle    *int    `yaml:"stream_idle_sec,omitempty"`
 	Context       struct {
 		SafetyMargin *int `yaml:"safety_margin,omitempty"`
 	} `yaml:"context,omitempty"`
 	Tools struct {
 		ReadLines       *int    `yaml:"read_lines,omitempty"`
-		SearchLimit     *int    `yaml:"search_limit,omitempty"` // retired: search_text is gone
 		ExecTimeoutSec  *int    `yaml:"exec_timeout_sec,omitempty"`
 		CommandLogDir   *string `yaml:"command_log_dir,omitempty"`
 		KeepCommandLogs *string `yaml:"keep_command_logs,omitempty"`

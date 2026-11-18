@@ -385,7 +385,7 @@ func TestTheDefaultsKeepThinkingOn(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{"thinking_level": "off", "verify": false}`)
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), `{"thinking_level": "off"}`)
 	cfg, err = Load([]string{"--root", root})
 	if err != nil {
 		t.Fatal(err)
