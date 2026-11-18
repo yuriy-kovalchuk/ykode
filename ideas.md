@@ -1,14 +1,19 @@
 # Ideas
 
 One bullet per item: what it is, and the constraint or measurement that decides it. Not
-committed work — an item moves to `TODO.md` once it is decided. Effort: XS < 30 min ·
-S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
+committed work — an item decided enough to be written out gets a plan file of its own, like
+`plan-bubbletea-v2.md`. Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 Things the reduction deleted (`find_files`, `search_text`, `outline`, `recall` and the write
 store, `/undo`, the audit log, the sandbox, `--json`) are named as history, not as code to build on.
 
 ## Worth building
 
+- **The screen on Bubble Tea v2, themes in the same pass** (L) — `ctrl+enter` cannot be a newline on
+  v1 at all: its parser has no modifier beyond `alt`, and it is finished at `v1.3.10`. v2 decodes
+  the chord itself and asks the terminal for the protocol, and it rewrites the nine colour pairs a
+  theme needs anyway, so the palette is touched once. `plan-bubbletea-v2.md` has the measured shape,
+  the two traps (`styleReset` changes form, a paste stops being a key) and the step order.
 - **Repository map** (L) — every file and what it defines, no bodies: a few thousand tokens
   against 100k+ to read, and the blind list-search-open loop is where small models get lost.
   `go/parser` over the `.gitignore` walk, ranked exported-first and boosted by paths the
@@ -34,12 +39,21 @@ store, `/undo`, the audit log, the sandbox, `--json`) are named as history, not 
 - **A switch per tool** (S) — drop `exec_command` or `plan` from the list the model is shown,
   decided at session start, since a tool appearing mid-session costs the cache everything after
   it. Per-project settings are already built.
-- **Themes** (S) — the colours are one map in `internal/tui/palette.go`, so a theme is that map
-  in the settings file; a light terminal is the reason, faint-on-white is unreadable today.
 - **The OS sandbox retired in `f24211f`** (M) — `sandbox-exec` with a seatbelt profile, or
   `bwrap --ro-bind / --unshare-net`, around `exec_command`; that commit's parent has the code.
   Without it a model-run command holds the whole `$HOME` and the network, so a token written
   into `settings.yaml` is one `cat` away — `api_key_env` is the way that keeps it out of any file.
+- **An eval loop brought back** (M) — the same tasks run again, counting passes, seconds and prompt
+  tokens; nothing like it exists in the tree any more. Without it the thinking table
+  (`llm/thinking.go:14`, 1024 tokens at `minimal` to 32768 at `xhigh`) stays a guess, and so does
+  whether older thinking earns the tokens it costs before that setting is on by default.
+- **Budgets shown as the server gets them** (S) — `agent/budget.go:59-65` clamps every level to the
+  room the reply has left, so on a small window `low` and `xhigh` are the same number while the
+  settings panel and README still quote the nominal table. Showing the clamped figures is the fix;
+  another clamp is not.
+- **The room named where it ran out** (XS) — `agent/turn.go:150` and `agent/budget.go:49-51` say how
+  full the window is but never name `reserve()`, the room held back for the answer that is what
+  actually filled it, so the message reads as though the whole window were spare.
 
 ## Measured, do not retry
 
