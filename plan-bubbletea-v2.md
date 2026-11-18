@@ -131,10 +131,11 @@ screen's own goroutine (`applyLive` included), which is worth one line in AGENTS
 other single-owner rules; `internal/cli` never styles, since only `internal/tui` imports lipgloss.
 
 Two decisions this plan will not make for you: how many built-ins (`auto dark light` at least,
-`mono` for a terminal with no colour at all), and whether a theme may repaint the four code roles —
-`README.md:181-183` says those four are ykode's own on purpose, so painting them means rewriting
-those lines too. A user-supplied palette file is a second feature (colour parsing, a schema, a
-screen to edit it, and a `format` story when its shape changes): not in this pass.
+`mono` for a terminal with no colour at all), and whether a theme may repaint the four code roles
+that `highlight.go` maps (`styleCodeKeyword`, `styleCodeString`, `styleCodeComment`, `styleCodeName`)
+— those are ykode's own by design, so painting them is a decision worth a line in README as well.
+A user-supplied palette file is a second feature (colour parsing, a schema, a screen to edit it, and
+a `format` story when its shape changes): not in this pass.
 
 Tests pin the mechanism, not the taste: a named theme lands its pair on a role, `theme: marmalade`
 is refused with the key named, and a live change repaints something the screen already shows. The
@@ -159,10 +160,10 @@ a real terminal, so budget for that as separate work, not as a test.
 8. Add `ctrl+enter` and `shift+enter` to `InsertNewline.SetKeys`, cover them by feeding raw
    `\x1b[13;5u` and `\x1b[13;2u` through the fake terminal, as the pointer tests already feed escape
    bytes, and prove a plain `\r` still sends.
-9. Docs: README's shortcut row (`README.md:117`) loses the "most terminals cannot tell ctrl+enter
-   from enter" sentence and names the terminals that can; README's colours section (145, and 181-183
-   if the code roles become themeable) says what `theme` changes; AGENTS.md's dependency line, its
-   terminal-hygiene invariant and its single-owner rules gain the keyboard protocol and the
+9. Docs: the sentence in README's *The session* section that names `ctrl+j` and `alt+enter` adds the
+   new chords and says which terminals can tell them apart; a theme needs its own short README
+   section, which the current one does not have; AGENTS.md's dependency line, its terminal-hygiene
+   invariant and its single-owner rules gain the keyboard protocol and the
    styles-rebuilt-on-the-screen-goroutine rule.
 10. `make check`, then `make release`'s three targets — v2 pulls a Windows file, and the repo is
     unix-only by rule, so confirm nothing about the build tags changes.
