@@ -32,7 +32,7 @@ func streamServer(t *testing.T, sse string) (*Client, *ChatRequest) {
 		fmt.Fprint(w, sse)
 	}))
 	t.Cleanup(srv.Close)
-	return NewClient(srv.URL+"/v1", ""), &got
+	return NewClient(srv.URL + "/v1"), &got
 }
 
 func collect(t *testing.T, c *Client) (Turn, []Delta, error) {
@@ -98,7 +98,7 @@ func TestChatStreamQuotesTheServerErrorBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{}, nil)
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") || !strings.Contains(err.Error(), "tool call arguments") {
 		t.Fatalf("error = %v, want the status and the quoted body", err)
 	}
@@ -117,7 +117,7 @@ func TestModelsReadsContextSize(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := NewClient(srv.URL+"/v1", "").Models(context.Background())
+	models, err := NewClient(srv.URL + "/v1").Models(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestModelsSayWhetherTheyTakeImages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := NewClient(srv.URL+"/v1", "").Models(context.Background())
+	models, err := NewClient(srv.URL + "/v1").Models(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestModelsReportsEmptyAndFailedServers(t *testing.T) {
 		fmt.Fprint(w, `{"data":[]}`)
 	}))
 	defer empty.Close()
-	if _, err := NewClient(empty.URL+"/v1", "").Models(context.Background()); err == nil {
+	if _, err := NewClient(empty.URL + "/v1").Models(context.Background()); err == nil {
 		t.Fatal("an empty model list should be an error")
 	}
 
@@ -175,7 +175,7 @@ func TestModelsReportsEmptyAndFailedServers(t *testing.T) {
 		fmt.Fprint(w, "no healthy upstream")
 	}))
 	defer unavailable.Close()
-	_, err := NewClient(unavailable.URL+"/v1", "").Models(context.Background())
+	_, err := NewClient(unavailable.URL + "/v1").Models(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "no healthy upstream") {
 		t.Fatalf("error = %v", err)
 	}
@@ -194,7 +194,7 @@ func flakyServer(t *testing.T, fails int, status int, body string) (*Client, *at
 		fmt.Fprint(w, frame(`{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`))
 	}))
 	t.Cleanup(srv.Close)
-	return NewClient(srv.URL+"/v1", ""), &attempts
+	return NewClient(srv.URL + "/v1"), &attempts
 }
 
 func TestChatStreamRetriesATransientGatewayFailure(t *testing.T) {
@@ -249,7 +249,7 @@ func TestChatStreamRetriesADroppedConnection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(),
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(),
 		ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err == nil {
 		t.Fatal("want an error")
@@ -276,7 +276,7 @@ func TestChatStreamStopsPromptlyWhenCancelled(t *testing.T) {
 	}
 }
 
-func TestTheBearerTokenGoesWithEveryRequest(t *testing.T) {
+func TestNoRequestCarriesAnAuthHeader(t *testing.T) {
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Header.Get("Authorization"))
@@ -289,7 +289,7 @@ func TestTheBearerTokenGoesWithEveryRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "secret-token")
+	c := NewClient(srv.URL + "/v1")
 	if _, err := c.Models(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -297,25 +297,9 @@ func TestTheBearerTokenGoesWithEveryRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, got := range seen {
-		if got != "Bearer secret-token" {
-			t.Errorf("Authorization = %q, want the bearer token on /models and /chat", got)
+		if got != "" {
+			t.Errorf("Authorization = %q, want no header on /models and /chat", got)
 		}
-	}
-}
-
-func TestNoAuthHeaderWithoutAKey(t *testing.T) {
-	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("Authorization")
-		fmt.Fprint(w, `{"data":[{"id":"m","meta":{"n_ctx":8192}}]}`)
-	}))
-	defer srv.Close()
-
-	if _, err := NewClient(srv.URL+"/v1", "").Models(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if got != "" {
-		t.Errorf("Authorization = %q, want no header when no key is configured", got)
 	}
 }
 
@@ -329,7 +313,7 @@ func TestChatStreamGivesUpOnAStreamThatGoesQuiet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "")
+	c := NewClient(srv.URL + "/v1")
 	c.Idle = 50 * time.Millisecond
 	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "sent nothing for 50ms") {
@@ -347,7 +331,7 @@ func TestChatStreamWaitsForAServerToStartAnswering(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "")
+	c := NewClient(srv.URL + "/v1")
 	c.Idle, c.opening = 40*time.Millisecond, 2*time.Second
 	turn, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err != nil {
@@ -367,7 +351,7 @@ func TestChatStreamGivesUpWhenNoByteArrives(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "")
+	c := NewClient(srv.URL + "/v1")
 	c.Idle, c.opening = time.Minute, 50*time.Millisecond
 	_, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "sent nothing for 50ms") {
@@ -387,7 +371,7 @@ func TestChatStreamTakesAsLongAsItNeedsBetweenChunks(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "")
+	c := NewClient(srv.URL + "/v1")
 	c.Idle = 150 * time.Millisecond // longer than any gap, shorter than the whole stream
 	turn, err := c.ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}}, nil)
 	if err != nil {
@@ -407,7 +391,7 @@ func TestTheWireNeverCarriesYkodeOwnResultIds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{
+	if _, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{
 		Messages: []Message{{Role: "tool", Name: "read_file", ToolCallID: "c1", CallID: "r1", Content: "the text"}},
 	}, nil); err != nil {
 		t.Fatal(err)
@@ -444,7 +428,7 @@ func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL+"/v1", "")
+	c := NewClient(srv.URL + "/v1")
 	if _, err := c.Models(context.Background()); err != nil {
 		t.Fatal(err)
 	}

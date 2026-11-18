@@ -116,7 +116,7 @@ func newWiredModel(t *testing.T, answers ...string) *wired {
 	server := httptest.NewServer(&stubAnswers{answers: answers})
 	t.Cleanup(server.Close)
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
 	m := newModel(context.Background(), a, hub, config.Config{})
 	msgs := make(chan tea.Msg, 32)
@@ -170,7 +170,7 @@ func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
 	defer server.Close()
 
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
 	in, keys, err := os.Pipe()
 	if err != nil {
@@ -214,7 +214,7 @@ func TestPointerBytesSentToTheProgramReachNothing(t *testing.T) {
 	defer server.Close()
 
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
 	in, keys, err := os.Pipe()
 	if err != nil {
@@ -259,7 +259,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 	defer server.Close()
 
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
 	// the program reads keys from a descriptor, so an os pipe paces it the way a terminal does
 	in, keys, err := os.Pipe()
@@ -346,7 +346,7 @@ func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 	defer server.Close()
 
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 3, MaxTokens: 64, CtxSize: 8000}, hub)
 	in, keys, err := os.Pipe()
 	if err != nil {

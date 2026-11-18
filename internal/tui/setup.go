@@ -19,7 +19,6 @@ var ErrSetupCancelled = errors.New("setup cancelled: nothing was saved")
 // SetupStart is what the setup screen opens with.
 type SetupStart struct {
 	BaseURL string // prefilled; the built-in default on a first run
-	APIKey  string // a key already configured, used for probing when the field is left empty
 	Problem string // why the screen is up when it is not a first run, e.g. the server did not answer
 	Model   string // the model in use, marked in the list when the server has it
 	Inside  bool   // opened over a running session: esc closes it rather than quits
@@ -28,7 +27,6 @@ type SetupStart struct {
 // SetupResult is the server the user picked, and what to save.
 type SetupResult struct {
 	BaseURL string
-	APIKey  string // only what was typed; empty keeps what was configured
 	Model   string
 	CtxSize int
 	Vision  bool // the model picked reads pictures
@@ -61,8 +59,6 @@ type setupModel struct {
 	probe  probeFunc
 	step   setupStep
 	url    textinput.Model
-	key    textinput.Model
-	focus  int // 0 the URL, 1 the key
 	models []llm.ModelInfo
 	pick   int
 	found  string // the URL that answered, which may have gained /v1
@@ -82,17 +78,7 @@ func newSetup(start SetupStart, probe probeFunc) *setupModel {
 	url.Width = 56
 	url.Focus()
 
-	key := textinput.New()
-	key.Prompt = ""
-	key.Placeholder = "none"
-	if start.APIKey != "" {
-		key.Placeholder = "leave empty to keep the one configured"
-	}
-	key.EchoMode = textinput.EchoPassword
-	key.CharLimit = 500
-	key.Width = 56
-
-	return &setupModel{start: start, probe: probe, url: url, key: key, err: start.Problem, width: defaultWidth}
+	return &setupModel{start: start, probe: probe, url: url, err: start.Problem, width: defaultWidth}
 }
 
 func (m *setupModel) Init() tea.Cmd { return textinput.Blink }
@@ -140,7 +126,7 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			chosen := m.models[m.pick]
 			m.done, m.closed = true, true
-			m.result = SetupResult{BaseURL: m.found, APIKey: strings.TrimSpace(m.key.Value()), Model: chosen.ID, CtxSize: chosen.CtxSize, Vision: chosen.Vision}
+			m.result = SetupResult{BaseURL: m.found, Model: chosen.ID, CtxSize: chosen.CtxSize, Vision: chosen.Vision}
 			return m, tea.Quit
 		}
 		return m, nil
@@ -150,14 +136,6 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.closed = true
 		return m, tea.Quit
-	case "tab", "shift+tab", "up", "down":
-		m.focus = 1 - m.focus
-		if m.focus == 0 {
-			m.key.Blur()
-			return m, m.url.Focus()
-		}
-		m.url.Blur()
-		return m, m.key.Focus()
 	case "enter":
 		url := strings.TrimSuffix(strings.TrimSpace(m.url.Value()), "/")
 		if url == "" {
@@ -168,23 +146,15 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			url = "http://" + url
 		}
 		m.url.SetValue(url)
-		key := strings.TrimSpace(m.key.Value())
-		if key == "" {
-			key = m.start.APIKey
-		}
 		m.step, m.err = stepProbing, ""
 		probe := m.probe
 		return m, func() tea.Msg {
-			found, models, err := probe(context.Background(), url, key)
+			found, models, err := probe(context.Background(), url)
 			return probeDoneMsg{baseURL: found, models: models, err: err}
 		}
 	}
 	var cmd tea.Cmd
-	if m.focus == 0 {
-		m.url, cmd = m.url.Update(msg)
-	} else {
-		m.key, cmd = m.key.Update(msg)
-	}
+	m.url, cmd = m.url.Update(msg)
 	return m, cmd
 }
 
@@ -207,8 +177,7 @@ func (m *setupModel) View() string {
 	switch m.step {
 	case stepServer, stepProbing:
 		b.WriteString(setupDim.Render("ykode talks to an OpenAI-compatible server, such as llama.cpp's\nllama-server (started with --jinja for tool calls).") + "\n\n")
-		b.WriteString(field("Server URL", m.url.View(), m.focus == 0) + "\n\n")
-		b.WriteString(field("API key (optional)", m.key.View(), m.focus == 1) + "\n\n")
+		b.WriteString(field("Server URL", m.url.View()) + "\n\n")
 		if m.step == stepProbing {
 			b.WriteString(setupDim.Render("asking the server for its models…") + "\n\n")
 		} else if m.err != "" {
@@ -218,7 +187,7 @@ func (m *setupModel) View() string {
 		if m.start.Inside {
 			leave = "esc closes"
 		}
-		b.WriteString(setupDim.Render("enter connects · tab switches field · " + leave))
+		b.WriteString(setupDim.Render("enter connects · " + leave))
 	case stepModel:
 		b.WriteString(fmt.Sprintf("%s answered with %d model(s). Which one should ykode use?\n\n", m.found, len(m.models)))
 		for i, model := range m.models {
@@ -240,11 +209,7 @@ func (m *setupModel) View() string {
 	return setupBox.Render(b.String())
 }
 
-// field is one labelled input; the focused one is marked.
-func field(label, input string, focused bool) string {
-	mark := "  "
-	if focused {
-		mark = setupPick.Render("❯ ")
-	}
-	return setupLabel.Render(label) + "\n" + mark + input
+// field is one labelled input, marked as the one a key press goes to.
+func field(label, input string) string {
+	return setupLabel.Render(label) + "\n" + setupPick.Render("❯ ") + input
 }

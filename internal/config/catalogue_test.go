@@ -17,7 +17,7 @@ func TestEachSettingSaysWhatItIsNowAndWhence(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := cfg.Catalogue()
-	if len(list) < 15 {
+	if len(list) < 14 {
 		t.Fatalf("the list holds %d settings; the file has more to show", len(list))
 	}
 
@@ -56,26 +56,6 @@ func TestAFlagOutranksTheEnvironmentAndTheFile(t *testing.T) {
 	got, _ := findSetting(cfg.Catalogue(), "model")
 	if got.From != FromFlag || got.Value != "from-flag" {
 		t.Errorf("model = %s from %s, want from-flag from flag", got.Value, got.From)
-	}
-}
-
-// a token in the settings is reported as set, never spelled out
-func TestTheTokenStaysOutOfTheList(t *testing.T) {
-	t.Setenv("LOCAL_LLM_API_KEY", "sk-secret-token")
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out strings.Builder
-	for _, s := range cfg.Catalogue() {
-		out.WriteString(s.Key + " " + s.Value + " ")
-	}
-	if strings.Contains(out.String(), "sk-secret-token") {
-		t.Errorf("the list repeated the token: %s", out.String())
-	}
-	got, _ := findSetting(cfg.Catalogue(), "api_key")
-	if got.Value == "" || got.From != FromEnv {
-		t.Errorf("api_key = %q from %s, want it marked as set from env", got.Value, got.From)
 	}
 }
 

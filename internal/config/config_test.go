@@ -179,24 +179,6 @@ func TestLoadReportsHelp(t *testing.T) {
 	}
 }
 
-func TestTheApiKeyComesFromTheEnvOrTheFlag(t *testing.T) {
-	t.Setenv("LOCAL_LLM_API_KEY", "env-key")
-	cfg, err := Load(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.APIKey != "env-key" {
-		t.Fatalf("APIKey = %q, want the env fallback", cfg.APIKey)
-	}
-	cfg, err = Load([]string{"--api-key", "flag-key"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.APIKey != "flag-key" {
-		t.Fatalf("APIKey = %q, want the flag to win", cfg.APIKey)
-	}
-}
-
 func TestTheOneShotFlags(t *testing.T) {
 	cfg, err := Load([]string{"-p", "fix the flaky test"})
 	if err != nil {
@@ -313,13 +295,13 @@ func TestTwoRunsInTheSameSecondGetTheirOwnConversation(t *testing.T) {
 
 func TestEveryFlagReachesItsSetting(t *testing.T) {
 	tempHome(t)
-	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--api-key", "k", "--model", "m", "--max-turns", "3",
+	cfg, err := Load([]string{"--base-url", "http://h/v1/", "--model", "m", "--max-turns", "3",
 		"--max-tokens", "99", "--ctx", "5000", "--no-think", "--yes",
 		"-p", "task", "--version"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BaseURL != "http://h/v1" || cfg.APIKey != "k" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
+	if cfg.BaseURL != "http://h/v1" || cfg.Model != "m" || cfg.MaxTurns != 3 ||
 		cfg.MaxTokens != 99 || cfg.CtxSize != 5000 || cfg.ThinkingLevel != "off" || !cfg.AssumeYes ||
 		cfg.Prompt != "task" || !cfg.Version {
 		t.Errorf("flags did not all land: %+v", cfg)

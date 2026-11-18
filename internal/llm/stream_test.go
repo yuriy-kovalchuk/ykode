@@ -112,7 +112,7 @@ func TestChatStreamRefusesAPlainJSONAnswer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	turn, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{Model: "m"}, nil)
+	turn, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{Model: "m"}, nil)
 	if err == nil {
 		t.Fatalf("no error, got turn %+v", turn)
 	}
@@ -155,7 +155,7 @@ func TestChatStreamWorksWithoutADeltaCallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	turn, err := NewClient(srv.URL+"/v1", "").ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "?"}}}, nil)
+	turn, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "?"}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

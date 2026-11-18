@@ -148,7 +148,7 @@ func newAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*Agent, 
 		tools.NewReadFile(root, dir),
 		tools.NewWriteFile(root, dir),
 	)
-	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", opts, sink)
+	a := New(llm.NewClient(server.URL+"/v1"), registry, "test-model", opts, sink)
 	return a, func() { server.Close(); root.Close() }
 }
 
@@ -160,7 +160,7 @@ func newAgentIn(t *testing.T, stub *stubServer, opts Options, sink Sink, dir str
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := New(llm.NewClient(server.URL+"/v1", ""), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
+	a := New(llm.NewClient(server.URL+"/v1"), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
 		"test-model", opts, sink)
 	return a, func() { server.Close(); root.Close() }
 }
@@ -189,7 +189,7 @@ func newBuiltInAgent(t *testing.T, stub *stubServer, opts Options, sink Sink) (*
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { root.Close() })
-	a := New(llm.NewClient(server.URL+"/v1", ""), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
+	a := New(llm.NewClient(server.URL+"/v1"), tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000}),
 		"test-model", opts, sink)
 	a.opts.Root = dir
 	return a, dir

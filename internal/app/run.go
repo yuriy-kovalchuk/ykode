@@ -131,11 +131,11 @@ func startupConfig(args []string, version string) (config.Config, bool, error) {
 
 // askForServer saves the choice to this project's settings file; a flag or environment value still wins
 func askForServer(cfg config.Config, problem string) (config.Config, error) {
-	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Problem: problem})
+	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, Problem: problem})
 	if err != nil {
 		return cfg, err
 	}
-	path, local, err := config.SaveEndpoint(cfg.Root, res.BaseURL, res.APIKey, res.Model)
+	path, local, err := config.SaveEndpoint(cfg.Root, res.BaseURL, res.Model)
 	if err != nil {
 		return cfg, err
 	}
@@ -145,15 +145,12 @@ func askForServer(cfg config.Config, problem string) (config.Config, error) {
 	}
 	fmt.Fprintf(os.Stderr, "ykode: saved %s (%s) to %s\n", res.BaseURL, res.Model, where)
 	cfg.BaseURL, cfg.Model, cfg.EndpointSet = res.BaseURL, res.Model, true
-	if res.APIKey != "" {
-		cfg.APIKey = res.APIKey
-	}
 	return cfg, nil
 }
 
 // connect finds the model and its window, printing what was decided for the user without being asked
 func connect(cfg config.Config) (*llm.Client, llm.ModelInfo, int, string, error) {
-	client := llm.NewClient(cfg.BaseURL, cfg.APIKey)
+	client := llm.NewClient(cfg.BaseURL)
 	client.Session = cfg.Session // so a proxy keeps one conversation on the slot holding its cache
 	client.Idle = cfg.StreamIdle
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), startupProbeTimeout)

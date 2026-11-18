@@ -17,7 +17,7 @@ func agentOnAServerWithModels(t *testing.T, opts Options) *Agent {
 		_, _ = w.Write([]byte(`{"data":[{"id":"small","meta":{"n_ctx":32768}},{"id":"big","meta":{"n_ctx":262144}}]}`))
 	}))
 	t.Cleanup(srv.Close)
-	return New(llm.NewClient(srv.URL, ""), tools.NewRegistry(), "big", opts, &captureSink{})
+	return New(llm.NewClient(srv.URL), tools.NewRegistry(), "big", opts, &captureSink{})
 }
 
 // /model on its own lists what the server offers, numbered, with the one in use marked

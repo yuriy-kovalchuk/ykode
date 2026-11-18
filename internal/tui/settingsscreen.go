@@ -29,7 +29,7 @@ type settingsScreen struct {
 const detailRows = 6
 
 // handled are the knobs the server row stands for: they are not listed twice.
-var handled = map[string]bool{"base_url": true, "model": true, "api_key": true}
+var handled = map[string]bool{"base_url": true, "model": true}
 
 // liveKnobs are the settings a running session takes up at once, from config's one key list
 var liveKnobs = config.LiveKnobs()
@@ -308,7 +308,7 @@ func (m *model) openSettings() {
 
 // openServer is the first row: the screen a first run starts with, over this one.
 func (m *model) openServer() {
-	m.modal = newSetup(SetupStart{BaseURL: m.cfg.BaseURL, APIKey: m.cfg.APIKey, Model: m.agent.Model(), Inside: true}, m.probe)
+	m.modal = newSetup(SetupStart{BaseURL: m.cfg.BaseURL, Model: m.agent.Model(), Inside: true}, m.probe)
 	m.modal.width = m.width
 }
 

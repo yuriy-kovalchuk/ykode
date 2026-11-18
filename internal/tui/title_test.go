@@ -43,7 +43,7 @@ func TestTheTabOfTheTerminalSaysWhichProjectItRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	hub := NewHub()
-	a := agent.New(llm.NewClient("http://127.0.0.1:1/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient("http://127.0.0.1:1/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{Root: root, MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
 	// the program reads keys from a file descriptor, so an os pipe paces it the way a terminal does
 	in, keys, err := os.Pipe()

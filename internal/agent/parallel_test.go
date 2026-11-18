@@ -83,7 +83,7 @@ func TestReadOnlyCallsInOneTurnRunTogether(t *testing.T) {
 	defer server.Close()
 
 	registry := tools.NewRegistry(pair[0], pair[1])
-	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
+	a := New(llm.NewClient(server.URL+"/v1"), registry, "test-model", Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{})
 
 	done := make(chan struct{})
 	go func() {
@@ -129,7 +129,7 @@ func TestAWriteInTheBatchKeepsTheOrder(t *testing.T) {
 	defer server.Close()
 
 	registry := tools.NewRegistry(rec, &writeStub{order: &order})
-	a := New(llm.NewClient(server.URL+"/v1", ""), registry, "test-model", Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{decision: Allow})
+	a := New(llm.NewClient(server.URL+"/v1"), registry, "test-model", Options{MaxTurns: 3, MaxTokens: 128, CtxSize: 8000}, &captureSink{decision: Allow})
 
 	if err := a.Ask(context.Background(), "read then write"); err != nil {
 		t.Fatal(err)

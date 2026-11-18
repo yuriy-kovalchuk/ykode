@@ -190,7 +190,7 @@ func TestARunThatAsksWaitsForWhatIsTypedIntoTheBox(t *testing.T) {
 	defer server.Close()
 
 	hub := NewHub()
-	a := agent.New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		agent.Options{MaxTurns: 4, MaxTokens: 64, CtxSize: 8000}, hub)
 	in, keys, err := os.Pipe()
 	if err != nil {

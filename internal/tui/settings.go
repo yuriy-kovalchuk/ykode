@@ -148,16 +148,13 @@ func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
 
 // applyEndpoint saves the choice to this project's file and switches the running session to it
 func (m *model) applyEndpoint(res SetupResult) {
-	path, local, err := config.SaveEndpoint(m.cfg.Root, res.BaseURL, res.APIKey, res.Model)
+	path, local, err := config.SaveEndpoint(m.cfg.Root, res.BaseURL, res.Model)
 	if err != nil {
 		m.err = err.Error()
 		return
 	}
-	if res.APIKey != "" {
-		m.cfg.APIKey = res.APIKey
-	}
 	m.cfg.BaseURL, m.cfg.Model, m.cfg.EndpointSet = res.BaseURL, res.Model, true
-	client := llm.NewClient(res.BaseURL, m.cfg.APIKey)
+	client := llm.NewClient(res.BaseURL)
 	client.Session, client.Idle = m.cfg.Session, m.cfg.StreamIdle
 	if !m.agent.SetEndpoint(client, llm.ModelInfo{ID: res.Model, CtxSize: res.CtxSize, Vision: res.Vision}, cmp.Or(m.cfg.CtxSize, res.CtxSize)) {
 		// the choice is saved either way: only switching this run over had to wait

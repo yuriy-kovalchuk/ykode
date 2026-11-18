@@ -45,10 +45,6 @@ func knobs() []knob {
 	return []knob{
 		{"base_url", "the server ykode asks; a first session asks for it", kindText, nil,
 			func(c Config) string { return c.BaseURL }, false},
-		{"api_key", "bearer token, for a server that asks for one; api_key_env is the safer way", kindText, nil,
-			func(c Config) string { return shownKey(c.APIKey) }, false},
-		{"api_key_env", "name of a variable that holds the token, so it stays out of the file", kindText, nil,
-			func(c Config) string { return c.APIKeyEnv }, false},
 		{"model", "model id; empty takes the first one the server lists", kindText, nil,
 			func(c Config) string { return c.Model }, false},
 		{"thinking_level", "how deeply the model thinks before answering", kindText,
@@ -139,7 +135,6 @@ func (c Config) where(key string, global, project map[string]bool) string {
 // the flags that set a knob, and the variables that do.
 var flagFor = map[string]string{
 	"base_url":       "base-url",
-	"api_key":        "api-key",
 	"model":          "model",
 	"max_turns":      "max-turns",
 	"max_tokens":     "max-tokens",
@@ -147,7 +142,6 @@ var flagFor = map[string]string{
 }
 var envFor = map[string]string{
 	"base_url": "LOCAL_LLM_URL",
-	"api_key":  "LOCAL_LLM_API_KEY",
 	"model":    "LOCAL_LLM_MODEL",
 }
 
@@ -212,14 +206,6 @@ func count(n int) string {
 		return "no cap"
 	}
 	return fmt.Sprint(n)
-}
-
-// shownKey keeps a token out of the screen that lists settings, though the file itself may hold it
-func shownKey(key string) string {
-	if key == "" {
-		return ""
-	}
-	return "set (not shown)"
 }
 
 // ModelFromFile says the model came from a settings file, a remembered choice rather than a request

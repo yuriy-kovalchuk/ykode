@@ -9,7 +9,6 @@ import (
 // flagValues carries only what the command line said; unset fields stay zero.
 type flagValues struct {
 	BaseURL       string
-	APIKey        string
 	Model         string
 	Root          string
 	MaxTurns      int
@@ -37,7 +36,6 @@ func given(fs *flag.FlagSet) map[string]bool {
 func (c *Config) applyFlags(f flagValues, set map[string]bool) {
 	setters := map[string]func(){
 		"base-url":   func() { c.BaseURL, c.EndpointSet = f.BaseURL, true },
-		"api-key":    func() { c.APIKey = f.APIKey },
 		"model":      func() { c.Model = f.Model },
 		"max-turns":  func() { c.MaxTurns = f.MaxTurns },
 		"max-tokens": func() { c.MaxTokens = f.MaxTokens },

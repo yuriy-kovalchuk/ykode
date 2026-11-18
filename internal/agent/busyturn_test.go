@@ -43,7 +43,7 @@ func TestAChangeBetweenTurnsRefusesWhileOneRuns(t *testing.T) {
 	server := httptest.NewServer(held)
 	defer func() { held.done(); server.Close() }()
 
-	a := New(llm.NewClient(server.URL+"/v1", ""), nil, "test-model", Options{}, &captureSink{})
+	a := New(llm.NewClient(server.URL+"/v1"), nil, "test-model", Options{}, &captureSink{})
 	if a.turnBusy() {
 		t.Fatal("a fresh agent says a turn is running")
 	}
@@ -61,7 +61,7 @@ func TestAChangeBetweenTurnsRefusesWhileOneRuns(t *testing.T) {
 	}
 
 	// every one of these rewrites something the round-trip in flight is reading
-	if a.SetEndpoint(llm.NewClient(server.URL+"/v1", ""), llm.ModelInfo{ID: "other-model"}, 4096) {
+	if a.SetEndpoint(llm.NewClient(server.URL+"/v1"), llm.ModelInfo{ID: "other-model"}, 4096) {
 		t.Error("switching server was accepted while a turn ran")
 	}
 	if a.SetModel("another-model") {
@@ -127,7 +127,7 @@ func TestATurnCannotBeStartedOverOneAlreadyRunning(t *testing.T) {
 	server := httptest.NewServer(held)
 	defer func() { held.done(); server.Close() }()
 
-	a := New(llm.NewClient(server.URL+"/v1", ""), nil, "test-model", Options{}, &captureSink{})
+	a := New(llm.NewClient(server.URL+"/v1"), nil, "test-model", Options{}, &captureSink{})
 	first := make(chan error, 1)
 	go func() { first <- a.Ask(context.Background(), "the first ask") }()
 	if !waitUntil(func() bool { return a.turnBusy() }, time.Second) {
@@ -158,7 +158,7 @@ func TestSwitchingConversationMidTurnIsRefusedAndKeepsThisOne(t *testing.T) {
 	server := httptest.NewServer(held)
 	defer func() { held.done(); server.Close() }()
 
-	a := New(llm.NewClient(server.URL+"/v1", ""), nil, "test-model", Options{Root: dir}, &captureSink{})
+	a := New(llm.NewClient(server.URL+"/v1"), nil, "test-model", Options{Root: dir}, &captureSink{})
 	a.add(llm.Message{Role: "user", Content: "what this run is saying"})
 	go func() { _ = a.Ask(context.Background(), "work") }()
 	if !waitUntil(func() bool { return a.turnBusy() }, time.Second) {

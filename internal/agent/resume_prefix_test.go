@@ -34,7 +34,7 @@ func (s *rawStub) agent(t *testing.T, dir string, log *session.Log) (*Agent, fun
 	srv := httptest.NewServer(s)
 	root, _ := os.OpenRoot(dir)
 	registry := tools.BuiltIn(root, dir, tools.Options{MaxResultBytes: 4000})
-	a := New(llm.NewClient(srv.URL+"/v1", ""), registry, "test-model",
+	a := New(llm.NewClient(srv.URL+"/v1"), registry, "test-model",
 		Options{MaxTurns: 6, MaxTokens: 256, CtxSize: 100000, Root: dir, Session: log, AssumeYes: true}, &captureSink{decision: Allow})
 	return a, func() { srv.Close(); root.Close() }
 }

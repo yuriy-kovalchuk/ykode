@@ -11,7 +11,4 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("LOCAL_LLM_MODEL"); v != "" {
 		c.Model = v
 	}
-	if v := os.Getenv("LOCAL_LLM_API_KEY"); v != "" {
-		c.APIKey = v
-	}
 }

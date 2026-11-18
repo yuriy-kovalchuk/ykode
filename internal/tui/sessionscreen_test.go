@@ -32,7 +32,7 @@ func pickerModel(t *testing.T) (*model, string) {
 	saveConversation(t, sessions, foreignID, "/somewhere/else", "another project's ask")
 
 	own := session.New(sessions, ownID, dir)
-	a := agent.New(llm.NewClient("http://127.0.0.1:1/v1", ""), nil, "test-model",
+	a := agent.New(llm.NewClient("http://127.0.0.1:1/v1"), nil, "test-model",
 		agent.Options{Session: own, Root: dir}, nil)
 	m := newModel(context.Background(), a, NewHub(), config.Config{
 		Root: dir, Session: ownID, SessionDir: sessions, SessionFile: own.Path(),

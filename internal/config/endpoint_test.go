@@ -11,19 +11,19 @@ import (
 // the first-run answer lands in a fresh home as the seeded file plus the server
 func TestSavingTheEndpointToAFreshHome(t *testing.T) {
 	fakeHome(t)
-	path, _, err := SaveEndpoint(t.TempDir(), "http://gpu.local:8080/v1", "sk-1", "qwen")
+	path, _, err := SaveEndpoint(t.TempDir(), "http://gpu.local:8080/v1", "qwen")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("settings.yaml with a key in it: %v, mode %v", err, info.Mode().Perm())
+		t.Fatalf("a settings file written for one user: %v, mode %v", err, info.Mode().Perm())
 	}
 	cfg, err := Load(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BaseURL != "http://gpu.local:8080/v1" || cfg.APIKey != "sk-1" || cfg.Model != "qwen" || !cfg.EndpointSet {
-		t.Errorf("the saved server did not come back: %q %q %q set=%v", cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.EndpointSet)
+	if cfg.BaseURL != "http://gpu.local:8080/v1" || cfg.Model != "qwen" || !cfg.EndpointSet {
+		t.Errorf("the saved server did not come back: %q %q set=%v", cfg.BaseURL, cfg.Model, cfg.EndpointSet)
 	}
 	if cfg.ReadLines != 2000 || cfg.ThinkingLevel != "medium" {
 		t.Error("the rest of the seeded defaults did not come with it")
@@ -33,8 +33,8 @@ func TestSavingTheEndpointToAFreshHome(t *testing.T) {
 // a file the user wrote is edited in place: comments and other keys stay, the server is replaced
 func TestSavingTheEndpointKeepsWhatTheUserWrote(t *testing.T) {
 	fakeHome(t)
-	writeSettings(t, home.Settings(), "# my laptop setup\nbase_url: http://old:1/v1 # the old box\napi_key: sk-keep\nmax_turns: 40\n")
-	if _, _, err := SaveEndpoint(t.TempDir(), "http://new:2/v1", "", "m2"); err != nil {
+	writeSettings(t, home.Settings(), "# my laptop setup\nbase_url: http://old:1/v1 # the old box\nkeep_sessions: 24h\nmax_turns: 40\n")
+	if _, _, err := SaveEndpoint(t.TempDir(), "http://new:2/v1", "m2"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(home.Settings())
@@ -42,7 +42,7 @@ func TestSavingTheEndpointKeepsWhatTheUserWrote(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	for _, want := range []string{"# my laptop setup", "max_turns: 40", "base_url: http://new:2/v1", "model: m2", "api_key: sk-keep"} {
+	for _, want := range []string{"# my laptop setup", "max_turns: 40", "base_url: http://new:2/v1", "model: m2", "keep_sessions: 24h"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("after saving, the file lost %q:\n%s", want, text)
 		}

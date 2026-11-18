@@ -197,7 +197,7 @@ func TestAnOverflowIsRecoveredFromOnce(t *testing.T) {
 	}))
 	defer server.Close()
 	sink := &captureSink{}
-	a := New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model", Options{CtxSize: 8000, MaxTurns: 4}, sink)
+	a := New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model", Options{CtxSize: 8000, MaxTurns: 4}, sink)
 	before := a.meter.bytesPerTok
 	if err := a.Ask(context.Background(), "say something"); err != nil {
 		t.Fatalf("the overflow ended the turn: %v", err)
@@ -233,7 +233,7 @@ func TestAnOverflowDropIsLoggedOnce(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	saved := session.New(dir, "s20260101-120000", dir)
-	a := New(llm.NewClient(server.URL+"/v1", ""), tools.NewRegistry(), "test-model",
+	a := New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
 		Options{CtxSize: 8000, MaxTurns: 4, Session: saved}, &captureSink{})
 	a.add(llm.Message{Role: "user", Content: "an older ask"})
 	a.add(llm.Message{Role: "assistant", Content: "its answer"})

@@ -22,8 +22,6 @@ import (
 // fileSettings mirrors settings.yaml; a non-nil pointer means the file set that key.
 type fileSettings struct {
 	BaseURL       *string `yaml:"base_url,omitempty"`
-	APIKey        *string `yaml:"api_key,omitempty"`
-	APIKeyEnv     *string `yaml:"api_key_env,omitempty"` // name of the variable that holds it, which beats the key
 	KeepSessions  *string `yaml:"keep_sessions,omitempty"`
 	Model         *string `yaml:"model,omitempty"`
 	MaxTurns      *int    `yaml:"max_turns,omitempty"`
@@ -193,8 +191,6 @@ func stripUnsafe(s *fileSettings) (names, shown []string) {
 		clear()
 	}
 	drop("base_url", s.BaseURL != nil, s.BaseURL, func() { s.BaseURL = nil })
-	drop("api_key", s.APIKey != nil, "(not shown)", func() { s.APIKey = nil })
-	drop("api_key_env", s.APIKeyEnv != nil, s.APIKeyEnv, func() { s.APIKeyEnv = nil })
 	drop("model", s.Model != nil, s.Model, func() { s.Model = nil })
 	drop("assume_yes", s.AssumeYes != nil, s.AssumeYes, func() { s.AssumeYes = nil })
 	drop("keep_sessions", s.KeepSessions != nil, s.KeepSessions, func() { s.KeepSessions = nil }) // every project's conversations share one folder
@@ -236,14 +232,6 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	pick(s.BaseURL, &c.BaseURL)
 	if s.BaseURL != nil {
 		c.EndpointSet = true
-	}
-	// a named variable keeps the secret out of the file; api_key still works for a single-user box
-	pick(s.APIKey, &c.APIKey)
-	pick(s.APIKeyEnv, &c.APIKeyEnv)
-	if s.APIKeyEnv != nil {
-		if fromEnv := os.Getenv(*s.APIKeyEnv); fromEnv != "" {
-			c.APIKey = fromEnv
-		}
 	}
 	pick(s.Model, &c.Model)
 	pick(s.MaxTurns, &c.MaxTurns)

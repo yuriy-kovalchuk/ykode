@@ -27,7 +27,6 @@ const (
 // Config is the fully resolved set of settings.
 type Config struct {
 	BaseURL         string   // OpenAI-compatible base, no trailing slash
-	APIKey          string   // sent as a bearer token when set
 	Args            []string // what Load was given, so the settings screen can read the file again
 	Notices         []string // what startup found worth saying, which the full screen shows first
 	EndpointSet     bool     // base_url came from a settings file, $LOCAL_LLM_URL or --base-url, not the built-in default
@@ -52,10 +51,9 @@ type Config struct {
 	Continue        string                     // resume a saved conversation: "last" or its id
 	SessionDir      string                     // where conversations are saved
 	ProjectSettings string                     // <root>/.ykode/settings.yaml, when the project ships one
-	APIKeyEnv       string                     // a variable that holds the token, named by the file
 	flagsGiven      map[string]bool            // which flags the command line actually typed
 	HeldKeys        []string                   // what that file sets that only applies to a trusted project
-	HeldValues      []string                   // the same keys with what they ask for, secrets masked
+	HeldValues      []string                   // the same keys with what they ask for, for the trust prompt
 	ProjectHash     string                     // sha256 of the project file as read, so trust covers what was shown
 	SessionFile     string                     // the conversation this run reads and writes
 	Version         bool                       // print the version and exit
@@ -68,11 +66,10 @@ func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
 		// a help text that cannot be written has nowhere to go and no result to change
-		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--api-key KEY] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--yes] [-p TASK] [--continue ID] [--version]")
+		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--yes] [-p TASK] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
-	fs.StringVar(&f.APIKey, "api-key", "", "bearer token for servers that ask for one ($LOCAL_LLM_API_KEY)")
 	fs.StringVar(&f.Model, "model", "", "model id; default is the first from /models ($LOCAL_LLM_MODEL)")
 	fs.StringVar(&f.Root, "root", ".", "project root; every file tool is confined to it")
 	fs.IntVar(&f.MaxTurns, "max-turns", 0, "max model round-trips per user request; 0 for no limit (default 100)")

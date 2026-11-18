@@ -26,7 +26,7 @@ func modelScreenModel(t *testing.T, listing string) *model {
 		fmt.Fprint(w, listing)
 	}))
 	t.Cleanup(srv.Close)
-	a := agent.New(llm.NewClient(srv.URL+"/v1", ""), nil, "qwen-small", agent.Options{}, nil)
+	a := agent.New(llm.NewClient(srv.URL+"/v1"), nil, "qwen-small", agent.Options{}, nil)
 	m := newModel(context.Background(), a, NewHub(), config.Config{})
 	m.Update(tea.WindowSizeMsg{Width: 92, Height: 24})
 	return m

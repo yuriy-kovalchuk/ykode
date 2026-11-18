@@ -17,12 +17,11 @@ import (
 // a probe that answers like a server with two models, and records what it was asked
 type fakeServer struct {
 	asked   []string
-	key     string
 	refuses bool
 }
 
-func (f *fakeServer) probe(_ context.Context, url, key string) (string, []llm.ModelInfo, error) {
-	f.asked, f.key = append(f.asked, url), key
+func (f *fakeServer) probe(_ context.Context, url string) (string, []llm.ModelInfo, error) {
+	f.asked = append(f.asked, url)
 	if f.refuses {
 		return url, nil, errors.New("connection refused")
 	}
@@ -44,7 +43,6 @@ func press(m *setupModel, keys ...tea.KeyMsg) {
 var (
 	enter = tea.KeyMsg{Type: tea.KeyEnter}
 	down  = tea.KeyMsg{Type: tea.KeyDown}
-	tab   = tea.KeyMsg{Type: tea.KeyTab}
 	esc   = tea.KeyMsg{Type: tea.KeyEsc}
 )
 
@@ -101,30 +99,6 @@ func TestSetupCleansUpATypedURL(t *testing.T) {
 	}
 }
 
-// the key is typed hidden; left empty, the one already configured is what the probe uses
-func TestSetupKeepsAConfiguredKeyWhenTheFieldIsEmpty(t *testing.T) {
-	server := &fakeServer{}
-	m := newSetup(SetupStart{BaseURL: "http://gpu/v1", APIKey: "sk-old"}, server.probe)
-	press(m, enter)
-	if server.key != "sk-old" {
-		t.Errorf("the probe used key %q, want the configured one", server.key)
-	}
-	if m.result.APIKey != "" {
-		t.Error("an untouched key field is reported as a new key to save")
-	}
-
-	server = &fakeServer{}
-	m = newSetup(SetupStart{BaseURL: "http://gpu/v1"}, server.probe)
-	press(m, tab, typed("sk-new"))
-	if strings.Contains(m.View(), "sk-new") {
-		t.Error("the key is shown as typed")
-	}
-	press(m, enter, enter)
-	if server.key != "sk-new" || m.result.APIKey != "sk-new" {
-		t.Errorf("the typed key did not travel: probe %q, result %q", server.key, m.result.APIKey)
-	}
-}
-
 // a screen opened because the server went away says so first
 func TestSetupShowsWhyItOpened(t *testing.T) {
 	m := newSetup(SetupStart{BaseURL: "http://old/v1", Problem: "cannot reach server at http://old/v1"}, (&fakeServer{}).probe)
@@ -157,14 +131,14 @@ func TestTheProbeAddsTheV1PeopleLeaveOff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	found, models, err := probeServer(context.Background(), srv.URL, "")
+	found, models, err := probeServer(context.Background(), srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found != srv.URL+"/v1" || len(models) != 1 || models[0].ID != "qwen" {
 		t.Errorf("found %q with %v, want %s/v1 and the one model", found, models, srv.URL)
 	}
-	if _, _, err := probeServer(context.Background(), srv.URL+"/nothing", ""); err == nil {
+	if _, _, err := probeServer(context.Background(), srv.URL+"/nothing"); err == nil {
 		t.Error("a URL nothing answers at was reported as working")
 	}
 }

@@ -21,7 +21,7 @@ func serverWith(t *testing.T, id string) *llm.Client {
 		_, _ = w.Write([]byte(`{"data":[{"id":"` + id + `","meta":{"n_ctx":262144}}]}`))
 	}))
 	t.Cleanup(srv.Close)
-	return llm.NewClient(srv.URL, "")
+	return llm.NewClient(srv.URL)
 }
 
 // a model pinned in settings.yaml belongs to its endpoint: another endpoint picks its own, and says so

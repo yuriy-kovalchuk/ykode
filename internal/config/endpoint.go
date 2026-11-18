@@ -12,7 +12,7 @@ import (
 )
 
 // SaveEndpoint edits this project's settings file in place, so comments and other keys survive
-func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
+func SaveEndpoint(root, baseURL, model string) (string, bool, error) {
 	path, local := SettingsTarget(root)
 	wasAccepted := local && localAccepted(root)
 	doc, err := readSettingsDoc(path)
@@ -21,9 +21,6 @@ func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 	}
 	top := doc.Content[0]
 	setKey(top, "base_url", text(baseURL))
-	if apiKey != "" {
-		setKey(top, "api_key", text(apiKey))
-	}
 	if model != "" {
 		setKey(top, "model", text(model))
 	}
@@ -31,7 +28,7 @@ func SaveEndpoint(root, baseURL, apiKey, model string) (string, bool, error) {
 		return path, local, err
 	}
 	if local {
-		if err := trustWritten(root, wasAccepted, "base_url", "api_key", "model"); err != nil {
+		if err := trustWritten(root, wasAccepted, "base_url", "model"); err != nil {
 			return path, local, err
 		}
 	}
@@ -63,7 +60,7 @@ func readSettingsDoc(path string) (*yaml.Node, error) {
 	return &doc, nil
 }
 
-// writeSettingsDoc saves a document back, readable only by you, because it may hold a token.
+// writeSettingsDoc saves a document back, readable only by you, as any settings file should be.
 func writeSettingsDoc(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {

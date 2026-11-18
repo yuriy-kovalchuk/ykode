@@ -61,7 +61,7 @@ func TestOutsideRootIsConfirmedEvenWithAssumeYes(t *testing.T) {
 	}
 	defer root.Close()
 	sink := &captureSink{decision: Refuse}
-	a := New(llm.NewClient(server.URL+"/v1", ""),
+	a := New(llm.NewClient(server.URL+"/v1"),
 		tools.NewRegistry(tools.NewReadFile(root, project)), "test-model", opts, sink)
 
 	if err := a.Ask(context.Background(), "read the file above the root"); err != nil {

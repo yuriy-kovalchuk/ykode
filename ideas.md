@@ -41,8 +41,8 @@ store, `/undo`, the audit log, the sandbox, `--json`) are named as history, not 
   it. Per-project settings are already built.
 - **The OS sandbox retired in `f24211f`** (M) — `sandbox-exec` with a seatbelt profile, or
   `bwrap --ro-bind / --unshare-net`, around `exec_command`; that commit's parent has the code.
-  Without it a model-run command holds the whole `$HOME` and the network, so a token written
-  into `settings.yaml` is one `cat` away — `api_key_env` is the way that keeps it out of any file.
+  Without it a model-run command holds the whole `$HOME` and the network, so it reads every file
+  you can read: the ssh keys, the browser's passwords, whatever is mounted.
 - **An eval loop brought back** (M) — the same tasks run again, counting passes, seconds and prompt
   tokens; nothing like it exists in the tree any more. Without it the thinking table
   (`llm/thinking.go:14`, 1024 tokens at `minimal` to 32768 at `xhigh`) stays a guess, and so does
