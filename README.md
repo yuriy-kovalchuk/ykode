@@ -15,7 +15,8 @@ down to what an image reader is sent.
 - A unix system. ykode runs commands in their own process group so that
   cancelling a command takes its children with it, which is a `setpgid` and
   `kill(-pid)` thing; there is no port and none is planned.
-- Go 1.25 or newer.
+- Go 1.27 or newer — the language floor is ours, and `golang.org/x/image`, `/sys` and `/text`
+  already ask for 1.26 of it.
 - A server speaking `/v1/chat/completions` with tool calling over SSE. For
   `llama-server`, tool calling needs `--jinja`, and reading pictures needs
   `--mmproj` pointing at a vision encoder: ykode asks the server what it takes and
