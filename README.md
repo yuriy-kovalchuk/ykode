@@ -27,12 +27,23 @@ ykode --version
 ```
 
 `sh scripts/install.sh` clones and installs without cloning by hand (`--add-to-path` appends the
-PATH line). A tagged release needs no toolchain at all: it publishes the three cross-built binaries
-(`ykode-linux-amd64`, `ykode-linux-arm64`, `ykode-darwin-arm64`) and their `SHA256SUMS` on the
-Releases page, which is empty until the first `v*` tag. `make check` is the gate (vet, gofmt, tests,
-lint), `make audit` reports dependency updates and known CVEs through Trivy in Docker, `make release`
-cross-builds the three shipped targets into `dist/`, `make install-hooks` makes git check your commit
-subjects and tag names, and `make uninstall` takes `PURGE=1` to remove `~/.ykode` as well.
+PATH line). A tagged release needs no toolchain at all: it publishes the three cross-built binaries —
+`ykode-linux-amd64` (Linux x86-64), `ykode-linux-arm64` (Linux ARM64) and `ykode-darwin-arm64` (Apple
+silicon) — with `SHA256SUMS` and a cosign signature per binary, on the Releases page, which is empty
+until the first `v*` tag. Checking a download you did not build yourself:
+
+```sh
+cosign verify-blob ykode-darwin-arm64-v0.1.0 \
+  --signature ykode-darwin-arm64-v0.1.0.sig \
+  --certificate ykode-darwin-arm64-v0.1.0.pem \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/yuriy-kovalchuk/ykode/\.github/workflows/cd\.yml@refs/tags/v'
+```
+
+`make check` is the gate (vet, gofmt, tests, lint), `make audit` reports dependency updates and known
+CVEs through Trivy in Docker, `make release` cross-builds the three shipped targets into `dist/`,
+`make install-hooks` makes git check your commit subjects and tag names, and `make uninstall` takes
+`PURGE=1` to remove `~/.ykode` as well.
 
 The default server is `http://127.0.0.1:8080/v1`, which is what `llama-server --host 127.0.0.1
 --port 8080` answers. That server needs `--jinja` before it takes a tool call, and `--mmproj` with a
@@ -133,6 +144,15 @@ kept, with the whole of it saved under `$YKODE_HOME/logs` for 24 h (`tools.comma
   whatever your permissions reach, including the network. A jailed `exec_command` is on the ideas
   list, not in the code.
 - **No pointer grabbing**: the screen never takes the mouse and always leaves the terminal clean.
+
+## Releasing
+
+A release is a `vX.Y.Z` tag, and it is prepared in a commit before the tag: move the `[Unreleased]`
+entries of `CHANGELOG.md` under a new `[X.Y.Z] - YYYY-MM-DD` heading and start `[Unreleased]` again.
+Then `git tag vX.Y.Z && git push origin vX.Y.Z`. CD re-runs the CI gate, refuses a tag that is not
+semver or has no `CHANGELOG.md` section, and publishes the three binaries with their `SHA256SUMS` and
+cosign signatures as a GitHub Release whose notes are that changelog section. There is no `:latest`
+and no rolling artifact: a release is a tag, and the newest tag is the newest release.
 
 ## Licence
 

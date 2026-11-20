@@ -18,24 +18,40 @@ jobs:
       contents: read
 
   release:
-    name: Publish the three binaries
+    name: Publish the three signed binaries
     needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write # the only job that writes: it creates the GitHub Release
+      id-token: write # keyless cosign signing: the signature names this workflow, no key to store
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # First, before anything is published: an unparseable tag would build binaries named after it
-      # anyway, and .githooks/pre-push only guards the machine that pushed.
-      - name: Verify the tag is semver
+      # First, before anything is published: the tag must be semver, and CHANGELOG.md must already
+      # carry this release. Its section is the release notes, so a forgotten release-prep commit
+      # fails here instead of shipping a release nobody described. .githooks/pre-push only guards the
+      # machine that pushed, so the tag name is re-checked.
+      - name: Verify the release-prep commit
         run: |
-          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+          ver="${GITHUB_REF_NAME#v}"
+          if ! [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::tag $GITHUB_REF_NAME is not semver (expected e.g. v0.1.0, or v0.1.0-rc1)"
             exit 1
           fi
+          awk -v ver="$ver" '
+            index($0, "## [" ver "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            echo "::error::CHANGELOG.md has no '## [$ver]' section; move the [Unreleased] entries" \
+              "under it, with today's date, before tagging (README 'Releasing')"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/notes.md"
 
       - name: Set up Go
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
@@ -57,5 +73,25 @@ jobs:
           (cd dist && sha256sum ykode-* > SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes \
+            --notes-file "$RUNNER_TEMP/notes.md" \
             dist/ykode-* dist/SHA256SUMS
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      # The list is taken before any signature exists, so the glob cannot pick up a .sig or a .pem.
+      - name: Sign the binaries (keyless cosign)
+        run: |
+          binaries=(dist/ykode-*)
+          for f in "${binaries[@]}"; do
+            cosign sign-blob --yes \
+              --output-signature "$f.sig" --output-certificate "$f.pem" \
+              "$f"
+          done
+
+      # The signatures are release assets too: verifying a download needs the binary, its .sig and
+      # its .pem, and nothing else.
+      - name: Attach the signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.sig dist/*.pem --clobber

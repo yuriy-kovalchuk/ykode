@@ -24,9 +24,10 @@ golangci-lint is not installed: the gate must not fail because a machine lacks a
 CI installs it, so the gate there is the strict one.
 
 CI (`.github/workflows/ci.yml`) runs `make build check`, then govulncheck and a cross-build of the
-three targets; `cd.yml` calls that same workflow and, on a `v*` tag, publishes the three binaries and
-their `SHA256SUMS` as a GitHub Release. The Go patch CI pins is the standard library govulncheck
-judges, so move it together with go.mod's `go` directive, not ahead of it.
+three targets; `cd.yml` calls that same workflow and, on a `v*` tag, publishes the three binaries,
+their `SHA256SUMS` and keyless cosign signatures as a GitHub Release, with the tag's `CHANGELOG.md`
+section as its notes — a tag with no section is refused. The Go patch CI pins is the standard library
+govulncheck judges, so move it together with go.mod's `go` directive, not ahead of it.
 
 ## Layout
 
@@ -91,6 +92,9 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
 - No provider SDK and no new dependency without a reason stated in the commit. HTTP, JSON and SSE
   are the standard library; `charmbracelet` is the screen, `chroma` the code colouring,
   `goldmark` the markdown, `yaml.v3` the settings file.
+- User-visible changes get a line under `[Unreleased]` in `CHANGELOG.md` (Keep a Changelog): CD cuts
+  the release notes out of that file, so an entry is not optional and a release needs a release-prep
+  commit that renames `[Unreleased]` to `[X.Y.Z] - date`.
 - MIT licence, in `LICENSE` and nowhere else: no per-file headers, and do not edit the copyright line.
 
 ## Tests
