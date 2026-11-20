@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // window92 is a terminal wide enough for a list to have something to say in.
@@ -20,7 +20,7 @@ func TestHelpListsTheCommands(t *testing.T) {
 	if m.picker == nil {
 		t.Fatal("/help did not open the list")
 	}
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"ykode · help", "commands the session answers", "/compact", "/sessions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the help list lacks %q:\n%s", want, view)
@@ -34,9 +34,9 @@ func TestHelpWritesTheChosenCommandInThePromptBox(t *testing.T) {
 	m.Update(window92)
 	m.input.SetValue("/help")
 	m.submit()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("compact")})
+	m.Update(typedKeys("compact"))
 
-	if view := stripCodes(m.View()); strings.Contains(view, "/sessions") {
+	if view := stripCodes(m.render()); strings.Contains(view, "/sessions") {
 		t.Errorf("the narrowed help list still holds the rest:\n%s", view)
 	}
 	m.Update(enter)

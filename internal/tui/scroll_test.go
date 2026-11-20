@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -26,7 +26,7 @@ func longSession(t *testing.T) *model {
 }
 
 func wheel(b tea.MouseButton) tea.MouseMsg {
-	return tea.MouseMsg{Button: b, Action: tea.MouseActionPress}
+	return tea.MouseWheelMsg{Button: b}
 }
 
 // the wheel scrolls the transcript; it never reaches the input box
@@ -35,14 +35,14 @@ func TestTheWheelScrollsTheTranscriptNotTheHistory(t *testing.T) {
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
 	before := m.view.at
-	m.Update(wheel(tea.MouseButtonWheelUp))
+	m.Update(wheel(tea.MouseWheelUp))
 	if m.view.at != before-wheelStep {
 		t.Errorf("one notch up moved the transcript from %d to %d, want %d", before, m.view.at, before-wheelStep)
 	}
 	if got := m.input.Value(); got != "" {
 		t.Errorf("the wheel put %q in the input box", got)
 	}
-	m.Update(wheel(tea.MouseButtonWheelDown))
+	m.Update(wheel(tea.MouseWheelDown))
 	if m.view.at != before {
 		t.Errorf("one notch down did not come back: %d, want %d", m.view.at, before)
 	}
@@ -53,11 +53,11 @@ func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 	m := longSession(t)
 	m.history, m.histIdx = []string{"an earlier prompt"}, 1
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if got := m.input.Value(); got != "" {
 		t.Errorf("an arrow wrote into the box: %q", got)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	if got := m.input.Value(); got != "an earlier prompt" {
 		t.Errorf("ctrl+p gave %q, want the earlier prompt", got)
 	}
@@ -67,9 +67,9 @@ func TestScrollingStaysScrollingAndCtrlPWalksTheHistory(t *testing.T) {
 func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	m := longSession(t)
 	for i := 0; i < 5; i++ {
-		m.Update(wheel(tea.MouseButtonWheelUp))
+		m.Update(wheel(tea.MouseWheelUp))
 	}
-	if !strings.Contains(stripCodes(m.View()), "↑") || !strings.Contains(stripCodes(m.View()), "end returns") {
+	if !strings.Contains(stripCodes(m.render()), "↑") || !strings.Contains(stripCodes(m.render()), "end returns") {
 		t.Errorf("scrolled up, the screen does not say so:\n%s", stripCodes(m.bottomArea()))
 	}
 	offset := m.view.at
@@ -77,15 +77,15 @@ func TestScrolledUpTheScreenSaysSoAndMarksNewOutput(t *testing.T) {
 	if m.view.at != offset {
 		t.Error("new output pulled a reader who scrolled up back to the end")
 	}
-	if !strings.Contains(stripCodes(m.View()), "new output below") {
+	if !strings.Contains(stripCodes(m.render()), "new output below") {
 		t.Errorf("new output below a scrolled-up reader is not marked:\n%s", stripCodes(m.bottomArea()))
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	if !m.view.atBottom() || m.unseen {
 		t.Error("end with an empty box did not return to the end and clear the mark")
 	}
-	if strings.Contains(stripCodes(m.View()), "end returns") {
+	if strings.Contains(stripCodes(m.render()), "end returns") {
 		t.Error("back at the end, the screen still says the reader is scrolled up")
 	}
 }
@@ -96,10 +96,10 @@ func TestAPointerReportNeverWritesIntoTheBox(t *testing.T) {
 	m.input.SetValue("a prompt half typed")
 	before := m.view.at
 	for _, msg := range []tea.MouseMsg{
-		{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
-		{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease},
-		{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
-		{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionRelease},
+		tea.MouseClickMsg{Button: tea.MouseLeft},
+		tea.MouseReleaseMsg{Button: tea.MouseLeft},
+		tea.MouseMotionMsg{Button: tea.MouseLeft},
+		tea.MouseReleaseMsg{Button: tea.MouseWheelUp},
 	} {
 		if _, cmd := m.Update(msg); cmd != nil {
 			t.Errorf("a pointer report asked for a command: %v", msg)
@@ -112,14 +112,14 @@ func TestAPointerReportNeverWritesIntoTheBox(t *testing.T) {
 		}
 	}
 	// while an overlay holds a text box, the same rule holds: the wheel scrolls the session under it
-	m.scrollWithOverlayOpen(t, wheel(tea.MouseButtonWheelUp))
+	m.scrollWithOverlayOpen(t, wheel(tea.MouseWheelUp))
 }
 
 // scrollWithOverlayOpen checks the wheel reaches the transcript under an open list, typing nothing
 func (m *model) scrollWithOverlayOpen(t *testing.T, msg tea.MouseMsg) {
 	t.Helper()
 	m.input.SetValue("/settings")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.screen == nil {
 		t.Fatal("/settings did not open the screen")
 	}
@@ -139,7 +139,7 @@ func TestCtrlTIsNotBoundToThePointer(t *testing.T) {
 	m := longSession(t)
 	m.input.SetValue("x")
 	before := m.view.at
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
 	if cmd != nil {
 		if msg := cmd(); msg != nil {
 			if name := strings.ToLower(fmt.Sprintf("%T", msg)); strings.Contains(name, "mouse") {
@@ -162,10 +162,10 @@ func TestTheScreenFillsTheTerminalExactly(t *testing.T) {
 		}
 		m.err = "the server went away"
 		m.refresh()
-		if h := lipgloss.Height(m.View()); h != 24 {
+		if h := lipgloss.Height(m.render()); h != 24 {
 			t.Errorf("at width %d the screen is %d rows, want 24", width, h)
 		}
-		for i, line := range strings.Split(m.View(), "\n") {
+		for i, line := range strings.Split(m.render(), "\n") {
 			if w := lipgloss.Width(line); w > width {
 				t.Errorf("at width %d, row %d is %d wide", width, i, w)
 			}

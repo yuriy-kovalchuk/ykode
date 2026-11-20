@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // normalize rejects nonsense settings and pins the root to an existing absolute directory.
@@ -27,6 +28,9 @@ func (c *Config) normalize() error {
 	}
 	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
 		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))
+	}
+	if err := theme.Check(c.Theme); err != nil {
+		return err
 	}
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)

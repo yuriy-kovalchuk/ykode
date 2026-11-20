@@ -66,6 +66,7 @@ edits it on screen.
 | `base_url` | `http://127.0.0.1:8080/v1` | the server ykode asks; a first session asks for it |
 | `model` | the first one the server lists | model id |
 | `thinking_level` | `medium` | `off` `minimal` `low` `medium` `high` `xhigh` `max` |
+| `theme` | `auto` | the screen's colours; see below |
 | `max_turns` | `100` | round-trips one ask may take before it is stopped as runaway |
 | `max_tokens` | none | a cap on one reply; unset leaves it the room the window has left |
 | `context.safety_margin` | `4096` | tokens kept free for the reply, never more than a quarter of the window |
@@ -82,6 +83,17 @@ Everything ykode keeps lives under `$YKODE_HOME`, default `~/.ykode`.
 
 Requests stay byte-stable: the system prompt and the tool list never change mid-session, and news
 about the date or the git state travels on the newest ask, so the server's prompt cache keeps hitting.
+
+### Themes
+
+`theme: auto` draws with ykode's own dark or light palette, picked from the background the terminal
+reports. `ykode-dark` and `ykode-light` force one of them, and `terminal` uses only the terminal's
+sixteen colours, so the screen follows the scheme the terminal already has. The others are the
+well-known schemes — `dracula`, `nord`, `solarized-dark`, `solarized-light`, `gruvbox-dark`,
+`gruvbox-light`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `one-dark`, `monokai` — and
+each repaints the terminal's background and text colour while the screen is up, so it looks the same on
+any terminal; leaving puts the terminal's own colours back. A theme applies at once: on `/settings`,
+←/→ on the `theme` row steps through them.
 
 ## Tools
 
@@ -128,7 +140,7 @@ kept, with the whole of it saved under `$YKODE_HOME/logs` for 24 h (`tools.comma
 | key | what it does |
 |---|---|
 | `enter` | send |
-| `ctrl+j`, `alt+enter` | start a new line. `shift+enter` too where the terminal reports the modifier: most cannot tell `ctrl+enter` from `enter`, so it is not offered |
+| `ctrl+j`, `alt+enter` | start a new line, in every terminal. `ctrl+enter` and `shift+enter` too where the terminal speaks the kitty keyboard protocol or xterm's modifyOtherKeys (kitty, Ghostty, WezTerm, foot, iTerm2, recent xterm); elsewhere they arrive as a plain `enter` and send |
 | `ctrl+p`, `ctrl+n` | walk earlier prompts, so a wrong ask is edited rather than repeated |
 | `tab` | complete a command |
 | `esc`, `ctrl+c` | stop a run; at an idle prompt `ctrl+c` quits |

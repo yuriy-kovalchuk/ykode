@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -56,7 +56,7 @@ func TestTheTabOfTheTerminalSaysWhichProjectItRuns(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	waitFor(t, screen, "\x1b]0;ykode: tiny-api\x07")

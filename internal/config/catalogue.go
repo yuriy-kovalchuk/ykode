@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // Where a value came from, said the way a screen reports it.
@@ -50,6 +51,8 @@ func knobs() []knob {
 		{"thinking_level", "how deeply the model thinks before answering", kindText,
 			[]string{"off", "minimal", "low", "medium", "high", "xhigh", "max"},
 			func(c Config) string { return c.ThinkingLevel }, true},
+		{"theme", "the colours the screen draws with; auto follows the terminal's background", kindText,
+			theme.Names(), func(c Config) string { return c.Theme }, true},
 		{"max_tokens", "tokens per answer; empty leaves the answer the room the window has left", kindCount, nil,
 			func(c Config) string { return count(c.MaxTokens) }, true},
 		{"max_turns", "round-trips one ask may take before it is stopped as runaway; 0 for no limit", kindCount, nil,

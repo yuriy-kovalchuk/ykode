@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -21,7 +21,7 @@ func newTestModel() *model {
 func TestAScreenThatWasNeverResizedStillDraws(t *testing.T) {
 	m := newTestModel()
 	m.Update(eventMsg{ev: agent.Event{Kind: agent.Answer, Text: "the answer"}})
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if !strings.Contains(out, "the answer") || !strings.Contains(out, "test-model") {
 		t.Errorf("an unsized terminal drew nothing useful:\n%s", out)
 	}
@@ -65,7 +65,7 @@ func BenchmarkAFrameOfALongSession(b *testing.B) {
 			for b.Loop() {
 				m.bottom = "" // what every message does: what sits under the session is rebuilt
 				m.refresh()
-				_ = m.View()
+				_ = m.render()
 			}
 		})
 	}

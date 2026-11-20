@@ -5,13 +5,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // defaultSize is what the screen assumes until the terminal reports its own.
@@ -63,6 +64,15 @@ type model struct {
 	screen *settingsScreen // the list of every setting /settings opens over the session; nil when closed
 	picker overlay         // the conversations /sessions opens over the session, to continue one; nil when closed
 	modal  *setupModel     // the server and model screen /settings opens over the session; nil when closed
+
+	altScreen bool // the frame takes the whole terminal; a test's fake terminal draws inline
+
+	theme   string        // the theme setting: auto, or a palette's name
+	dark    bool          // the terminal's background as it reported it; dark until it says
+	painted theme.Palette // the palette drawing now, whose background and text colour the terminal takes
+
+	boxLook  boxLook // what the box showed when it was last drawn
+	boxDrawn string  // that drawing, reused while the look is the same
 }
 
 func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) *model {
@@ -70,10 +80,13 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 	input.Placeholder = "Hello hello"
 	input.Prompt = ""
 	input.ShowLineNumbers = false
+	// the box sizes itself to its wrapped rows, so its count and its drawing can never disagree
+	input.DynamicHeight, input.MinHeight, input.MaxHeight = true, 1, maxInputLines
+	input.MaxContentHeight = maxInputRows // without it MaxHeight would also cap the lines that can be typed
 	input.SetHeight(1)
 	input.Focus() // an unfocused box swallows every keystroke, so nothing can be typed
-	// enter sends, so a newline must be asked for: ctrl+j always, alt/shift+enter when reported
-	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "alt+enter", "shift+enter")
+	// enter sends, so a newline must be asked for: ctrl+j always, ctrl/shift+enter where the terminal says so
+	input.KeyMap.InsertNewline.SetKeys("ctrl+j", "alt+enter", "shift+enter", "ctrl+enter")
 
 	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(styleWorking))
 
@@ -93,6 +106,8 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 		width:  defaultWidth,
 		height: defaultHeight,
 	}
+	m.theme, m.dark = cfg.Theme, true
+	m.setPalette()        // before anything is drawn, so even the first rows carry the chosen colours
 	m.log.root = a.Root() // a call names its file from where the project starts
 	for _, note := range cfg.Notices {
 		m.log.notice(note) // what startup decided for the user is the first thing on the screen
@@ -105,7 +120,8 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 	return m
 }
 
-func (m *model) Init() tea.Cmd { return tea.Batch(textarea.Blink, m.watchBranch()) }
+// Init asks the terminal for its background, since the palette that reads on it depends on the answer
+func (m *model) Init() tea.Cmd { return tea.Batch(m.watchBranch(), tea.RequestBackgroundColor) }
 
 // frameInterval is the least time between draws: thirty frames a second reads as typing
 const frameInterval = time.Second / 30
@@ -160,6 +176,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.useBackground(msg.IsDark())
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.input.SetWidth(m.width - lipgloss.Width(promptMark) - boxEdges*2) // inside the card's sides
@@ -222,8 +241,39 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refresh()
 		return m, cmd
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		return m.handleKey(msg)
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// useBackground keeps the shade the terminal reported, which only auto draws by
+func (m *model) useBackground(dark bool) {
+	m.dark = dark
+	if _, named := theme.Named(m.theme); !named {
+		m.applyTheme()
+	}
+}
+
+// useTheme draws with the theme a setting names, from the next frame on.
+func (m *model) useTheme(name string) {
+	m.theme = name
+	m.applyTheme()
+}
+
+// applyTheme switches to the chosen palette and draws the session again in it.
+func (m *model) applyTheme() {
+	m.setPalette()
+	m.refresh() // rows already built carry the old palette's colours, so every one is built again
+}
+
+// setPalette makes the chosen theme the palette; auto, or a name no longer known, follows the background
+func (m *model) setPalette() {
+	p := paletteFor(m.theme, m.dark)
+	m.painted = p
+	usePalette(p)
+	m.input.SetStyles(boxStyles(p))
+	m.spin.Style = styleWorking
 }

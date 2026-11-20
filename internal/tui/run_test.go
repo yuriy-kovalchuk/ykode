@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -17,13 +17,13 @@ func TestAnAskTypedIntoARunningTurnWaitsAboveThePrompt(t *testing.T) {
 	m.running = true
 	m.input.SetValue("also check the tests")
 
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
 		t.Fatal("an ask handed to the run should not start another")
 	}
 	if got := m.agent.Waiting(); len(got) != 1 || got[0] != "also check the tests" {
 		t.Fatalf("the run was not handed the ask: %v", got)
 	}
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if !strings.Contains(out, "also check the tests") || !strings.Contains(out, "waits for the next round-trip") {
 		t.Errorf("the waiting ask is not kept above the prompt:\n%s", out)
 	}
@@ -68,16 +68,16 @@ func TestASlashCommandAnswersWithoutTheModel(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 80, 24
 	m.input.SetValue("/usage")
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
 		t.Fatal("/usage should not quit")
 	}
-	if m.picker == nil || !strings.Contains(stripCodes(m.View()), "this session") {
-		t.Errorf("/usage answered nothing:\n%s", stripCodes(m.View()))
+	if m.picker == nil || !strings.Contains(stripCodes(m.render()), "this session") {
+		t.Errorf("/usage answered nothing:\n%s", stripCodes(m.render()))
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyEscape}) // the report gives the session its screen back
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape}) // the report gives the session its screen back
 	m.input.SetValue("/exit")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("/exit did not stop the program")
 	}
@@ -215,7 +215,7 @@ func TestTheSpeedsStayLiveWhileACallIsBeingWritten(t *testing.T) {
 	m.running = true
 	m.handle(agent.Event{Kind: agent.ToolDraft, Call: 0, Tool: "write_file", Text: `{"path":"a.go","content":"x`})
 	m.handle(agent.Event{Kind: agent.Progress, Stats: agent.Stats{PrefillTokSec: 512.4, DecodeTokSec: 71.3}})
-	line := stripCodes(m.View())
+	line := stripCodes(m.render())
 	if !strings.Contains(line, "↑ 512 tok/s") || !strings.Contains(line, "↓ 71 tok/s") {
 		t.Errorf("a queued transcript draw hid the speeds: %s", line)
 	}
@@ -245,7 +245,7 @@ func TestStartingOverForgetsWhatTheServerWasDoing(t *testing.T) {
 	m.took = 51 * time.Second
 
 	m.handle(agent.Event{Kind: agent.Cleared})
-	line := stripCodes(m.View())
+	line := stripCodes(m.render())
 	if strings.Contains(line, "tok/s") || strings.Contains(line, "done in") {
 		t.Errorf("the report still speaks of a conversation that is gone: %s", line)
 	}

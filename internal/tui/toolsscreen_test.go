@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -36,7 +36,7 @@ func TestToolsListsWhatTheModelMayCall(t *testing.T) {
 	if m.picker == nil {
 		t.Fatal("/tools did not open the list")
 	}
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"ykode · tools", "read_file", "edit_file", "bytes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the tools list lacks %q:\n%s", want, view)
@@ -49,9 +49,9 @@ func TestToolsNarrowsToTheOneYouAreLookingFor(t *testing.T) {
 	m := toolsModel(t)
 	m.input.SetValue("/tools")
 	m.submit()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("edit")})
+	m.Update(typedKeys("edit"))
 
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	if !strings.Contains(view, "edit_file") || strings.Contains(view, "read_file") {
 		t.Errorf("the narrowed list still holds the rest:\n%s", view)
 	}
@@ -67,7 +67,7 @@ func TestToolsHasNothingToChoose(t *testing.T) {
 	if m.picker == nil {
 		t.Fatal("enter closed a list that has nothing to choose")
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "nothing to choose") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "nothing to choose") {
 		t.Errorf("the box does not say what it is for:\n%s", view)
 	}
 	m.Update(esc)

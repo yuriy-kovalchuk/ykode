@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // every setting says what it is now, what it would be with nothing set, and who set it
@@ -71,6 +73,25 @@ func TestAKnobWithChoicesSaysWhatTheyAre(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(got.Options, ","), "xhigh") {
 		t.Errorf("choices = %v", got.Options)
+	}
+}
+
+// the theme knob lists every palette, auto first, and a running screen takes a change at once
+func TestTheThemeKnobListsEveryPaletteAndIsLive(t *testing.T) {
+	fakeHome(t)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := findSetting(cfg.Catalogue(), "theme")
+	if !ok || got.Value != theme.Auto || got.Default != theme.Auto {
+		t.Fatalf("theme = %+v; want it listed, auto by default", got)
+	}
+	if strings.Join(got.Options, ",") != strings.Join(theme.Names(), ",") {
+		t.Errorf("choices = %v, want %v", got.Options, theme.Names())
+	}
+	if !LiveKnobs()["theme"] {
+		t.Error("a theme change waits for the next start")
 	}
 }
 

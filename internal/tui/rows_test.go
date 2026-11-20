@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // a call row says what the call touches and never holds the text it was asked to write
@@ -223,7 +223,6 @@ func TestACallRowKeepsItsSummaryApartFromItsChange(t *testing.T) {
 
 // a call carries no ground: its state is the mark's colour, and the row is its words' width
 func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
-	withColour(t)
 	var log transcript
 	args := `{"path":"a.go"}`
 	log.toolStart("read_file", args)
@@ -253,7 +252,6 @@ func TestACallIsMarkedByItsStateAndNotPaintedBehindIt(t *testing.T) {
 
 // a call's ground is a tint, not the terminal's solid colour: a full row of green is noise
 func TestACallsGroundIsQuietEnoughToRead(t *testing.T) {
-	withColour(t)
 	var log transcript
 	args := `{"path":"a.go"}`
 	log.toolStart("read_file", args)

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // a change is drawn once and kept, a frame copying the rows in view, so length costs rows not time
@@ -199,7 +199,7 @@ func changeRows(change string, limit int, width int) []string {
 			digits = max(digits, len(strconv.Itoa(line.number)))
 		}
 	}
-	sides := diffSides()
+	sides := diffSurface
 	shown := len(lines)
 	if limit > 0 {
 		shown = min(shown, limit)

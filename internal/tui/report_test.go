@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -22,7 +22,7 @@ func TestCtxOpensTheFiguresPanel(t *testing.T) {
 	if m.picker == nil {
 		t.Fatal("/ctx did not open the panel")
 	}
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"ykode · this session", "window", "32k tokens", "tool descriptions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the panel lacks %q:\n%s", want, view)

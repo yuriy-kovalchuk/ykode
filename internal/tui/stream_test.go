@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -119,8 +118,6 @@ func aStreamedAnswer(sections int) string {
 
 // BenchmarkAnAnswerStreamed is a whole answer arriving; per op is the screen's share of it
 func BenchmarkAnAnswerStreamed(b *testing.B) {
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	b.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
 	for _, sections := range []int{1, 4} {
 		answer := aStreamedAnswer(sections)
 		b.Run(fmt.Sprintf("%dKB", len(answer)/1024), func(b *testing.B) {
@@ -133,7 +130,7 @@ func BenchmarkAnAnswerStreamed(b *testing.B) {
 					m.handle(agent.Event{Kind: agent.Answer, Text: answer[at:min(at+4, len(answer))]})
 					if tokens%20 == 0 {
 						m.refresh()
-						_ = m.View()
+						_ = m.render()
 					}
 				}
 			}
@@ -208,8 +205,6 @@ func TestAnEscapedEmojiIsOneCharacter(t *testing.T) {
 
 // the note beside a suggested command is counted in columns: colour takes bytes, no room
 func TestASuggestionKeepsItsNoteWhenColoured(t *testing.T) {
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	m.suggest = suggestions("/us")

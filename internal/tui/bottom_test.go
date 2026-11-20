@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -14,24 +14,24 @@ import (
 func TestQuestionMarkShowsTheKeys(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 24})
-	if strings.Contains(stripCodes(m.View()), "ctrl+o fold") {
+	if strings.Contains(stripCodes(m.render()), "ctrl+o fold") {
 		t.Error("the keys are listed before anyone asked")
 	}
-	if !strings.Contains(stripCodes(m.View()), "? keys") {
+	if !strings.Contains(stripCodes(m.render()), "? keys") {
 		t.Error("nothing says ? shows the keys")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	view := stripCodes(m.View())
+	m.Update(typedKeys("?"))
+	view := stripCodes(m.render())
 	if !strings.Contains(view, "ctrl+o fold the plan") || m.input.Value() != "" {
 		t.Errorf("? with an empty box did not list the keys:\n%s", view)
 	}
-	for i, line := range strings.Split(m.View(), "\n") {
+	for i, line := range strings.Split(m.render(), "\n") {
 		if w := lipgloss.Width(line); w > 50 {
 			t.Errorf("row %d is %d wide on a 50-wide screen", i, w)
 		}
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if strings.Contains(stripCodes(m.View()), "ctrl+o fold") {
+	m.Update(typedKeys("?"))
+	if strings.Contains(stripCodes(m.render()), "ctrl+o fold") {
 		t.Error("a second ? did not hide the keys")
 	}
 }
@@ -40,7 +40,7 @@ func TestQuestionMarkShowsTheKeys(t *testing.T) {
 func TestQuestionMarkInAPromptIsTyped(t *testing.T) {
 	m := newTestModel()
 	m.input.SetValue("why")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m.Update(typedKeys("?"))
 	if m.input.Value() != "why?" || m.showKeys {
 		t.Errorf("input %q, keys shown %v: ? was taken as a command", m.input.Value(), m.showKeys)
 	}
@@ -130,7 +130,7 @@ func TestTheInputGrowsWithWhatIsTyped(t *testing.T) {
 		t.Fatalf("an empty input is %d rows", m.input.Height())
 	}
 	m.input.SetValue("one\ntwo\nthree")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	m.Update(typedKeys("!"))
 	if m.input.Height() != 3 || m.view.height != short-2 {
 		t.Errorf("three lines: input %d rows, transcript %d (was %d)", m.input.Height(), m.view.height, short)
 	}
@@ -151,7 +151,7 @@ func TestTheBoxGrowsWithWrappedRowsToo(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.input.SetValue(strings.Repeat("word ", 40))
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	m.Update(typedKeys("!"))
 	if m.input.Height() < 3 {
 		t.Errorf("a prompt wrapping over several rows leaves the box at %d rows", m.input.Height())
 	}
@@ -162,7 +162,7 @@ func TestTheBoxHoldsTenRowsAndScrollsTheRest(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+	m.Update(typedKeys("!"))
 	if m.input.Height() != maxInputLines {
 		t.Errorf("twelve rows typed: the box holds %d rows, want %d", m.input.Height(), maxInputLines)
 	}
@@ -174,8 +174,8 @@ func TestALongPromptOnAShortScreenKeepsTheSessionVisible(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 14})
 	m.log.answer("the file holds 1,204 lines")
 	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
-	if got := len(strings.Split(m.View(), "\n")); got != 14 {
+	m.Update(typedKeys("!"))
+	if got := len(strings.Split(m.render(), "\n")); got != 14 {
 		t.Errorf("the screen is %d rows, want the 14 it was given", got)
 	}
 	if m.view.height < 3 {
@@ -188,12 +188,12 @@ func TestTheKeysHelpDoesNotPushTheFramePastTheTerminal(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 22})
 	m.input.SetValue("1\n2\n3\n4\n5\n6\n7\n8\n9\n10")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m.Update(typedKeys("!"))
+	m.Update(typedKeys("?"))
 	if m.input.Height() != maxInputLines {
 		t.Fatalf("the box holds %d rows, want %d", m.input.Height(), maxInputLines)
 	}
-	if got := len(strings.Split(m.View(), "\n")); got != 22 {
+	if got := len(strings.Split(m.render(), "\n")); got != 22 {
 		t.Errorf("the frame is %d rows on a 22 row terminal: keys help pushed it past the screen", got)
 	}
 }
@@ -218,7 +218,7 @@ func TestAWaitingAskKeepsItsRowAboveThePrompt(t *testing.T) {
 	m.running = true
 	m.agent.Steer("and the tests too")
 
-	rows := strings.Split(stripCodes(m.View()), "\n")
+	rows := strings.Split(stripCodes(m.render()), "\n")
 	waiting, prompt := -1, -1
 	for i, row := range rows {
 		if strings.Contains(row, "waits for the next round-trip") {
@@ -236,6 +236,48 @@ func TestAWaitingAskKeepsItsRowAboveThePrompt(t *testing.T) {
 	}
 }
 
+// the keys come in groups, named in a column on a wide screen and above their keys on a narrow one
+func TestTheKeysListIsGroupedByWhatTheKeysAreFor(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	rows := strings.Split(stripCodes(m.keysHelp()), "\n")
+	want := []string{"prompt   enter send", "edit     ctrl+a", "scroll   ↑ ↓", "session  esc stop the run"}
+	if len(rows) != len(want) {
+		t.Fatalf("a wide screen lists the keys in %d rows, want one per group:\n%s", len(rows), strings.Join(rows, "\n"))
+	}
+	for i, start := range want {
+		if !strings.HasPrefix(rows[i], start) {
+			t.Errorf("row %d is %q, want it to start %q", i, rows[i], start)
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 30, Height: 30})
+	if rows := strings.Split(stripCodes(m.keysHelp()), "\n"); rows[0] != "prompt" || rows[1] != "enter send" {
+		t.Errorf("a narrow screen does not put the group's name above its keys:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+// a group that wraps is cut into rows of the same length, so no row holds a lone entry
+func TestAGroupThatWrapsIsSplitEvenly(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	rows := strings.Split(stripCodes(m.keysHelp()), "\n")
+	if rows[0] != "prompt   enter send · ctrl+j alt/ctrl+enter newline" ||
+		strings.TrimSpace(rows[1]) != "tab complete a /command · ctrl+p ctrl+n earlier prompts" {
+		t.Errorf("the prompt keys are not split two and two:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+// the list names every newline key, ctrl+enter among them, on the row that says what they do
+func TestTheKeysListNamesCtrlEnterForANewLine(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m.Update(tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl})
+	shown := stripCodes(m.render())
+	if !strings.Contains(shown, "ctrl+j alt/ctrl+enter newline") {
+		t.Errorf("the keys list does not offer ctrl+enter for a new line:\n%s", shown)
+	}
+}
+
 // the keys are laid out by what the terminal shows: the arrows take more bytes than they do columns
 func TestTheKeysListStaysInsideANarrowScreen(t *testing.T) {
 	m := newTestModel()
@@ -244,5 +286,25 @@ func TestTheKeysListStaysInsideANarrowScreen(t *testing.T) {
 		if got := lipgloss.Width(stripCodes(row)); got > 30 {
 			t.Errorf("a keys row takes %d columns of a 30 column screen: %q", got, stripCodes(row))
 		}
+	}
+}
+
+// the box drawn last frame is reused only while it shows the same thing: a value set without a key shows
+func TestTheBoxIsDrawnAgainWhenWhatItShowsChanges(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.render()
+	m.input.SetValue("an earlier prompt") // as walking the history does, with no key reaching the box
+	m.bottom = ""
+	if !strings.Contains(stripCodes(m.render()), "an earlier prompt") {
+		t.Error("the box kept its last drawing after its text changed")
+	}
+	m.input.SetValue("an earlier prompt, longer")
+	m.input.SetCursorColumn(3)
+	m.bottom = ""
+	before := m.boxDrawn
+	m.render()
+	if m.boxDrawn == before {
+		t.Error("the box kept its last drawing after its cursor moved")
 	}
 }

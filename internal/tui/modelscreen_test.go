@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -46,7 +46,7 @@ func openModels(t *testing.T, m *model) string {
 		t.Fatal("/model did not ask the server what it offers")
 	}
 	m.Update(cmd())
-	return stripCodes(m.View())
+	return stripCodes(m.render())
 }
 
 // a bare /model shows the server's models with their windows, marking the one in use
@@ -78,7 +78,7 @@ func TestEnterSwitchesTheRunToAnotherModel(t *testing.T) {
 	if got := m.agent.Model(); got != "qwen-big" {
 		t.Errorf("the run is on %q, not the model that was picked", got)
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "model: qwen-big") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "model: qwen-big") {
 		t.Errorf("the switch was not reported:\n%s", view)
 	}
 }
@@ -95,7 +95,7 @@ func TestTheModelInUseIsNotSwitchedTo(t *testing.T) {
 	if got := m.agent.Model(); got != "qwen-small" {
 		t.Errorf("the run moved to %q without being asked to", got)
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "this is the model this run is using") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "this is the model this run is using") {
 		t.Errorf("the box does not say why nothing happened:\n%s", view)
 	}
 }
@@ -108,7 +108,7 @@ func TestModelOpensWhileTheServerIsStillAnswering(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("/model did not ask the server what it offers")
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "asking the server") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "asking the server") {
 		t.Errorf("the empty box does not say the server has not answered:\n%s", view)
 	}
 }

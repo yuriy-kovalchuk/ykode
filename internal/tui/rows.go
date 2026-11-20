@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -20,8 +20,8 @@ const (
 
 // rows is the session as one element per row, drawing again only the blocks that changed
 func (t *transcript) rows(width int) []string {
-	if width != t.width {
-		t.width, t.stale = width, 0
+	if width != t.width || t.gen != paletteGen {
+		t.width, t.gen, t.stale = width, paletteGen, 0
 		t.rowsCache, t.rowStart = nil, nil
 	}
 	if t.stale < len(t.rowStart) {

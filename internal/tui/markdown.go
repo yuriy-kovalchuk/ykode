@@ -4,8 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -27,12 +26,16 @@ type layout struct {
 	settled int       // how many of the answer's blocks the rows below hold
 	rows    []string  // the rows of the blocks that will not change
 	code    codeCache // the coloured code of this answer
+	gen     int       // the palette the rows and the code were coloured in
 }
 
 // draw lays out an answer: headings, lists, tables and code given shape, marks as words
 func (l *layout) draw(source string, width int, lead string) []string {
+	if l.gen != paletteGen {
+		*l = layout{gen: paletteGen} // every row and every coloured line carries the old palette's codes
+	}
 	if l.width != width || l.lead != lead {
-		*l = layout{width: width, lead: lead, code: l.code} // the colours do not depend on the width
+		*l = layout{width: width, lead: lead, gen: l.gen, code: l.code} // the colours do not depend on the width
 	}
 	src := []byte(source)
 	doc := answers.Parser().Parse(text.NewReader(src))
@@ -221,7 +224,7 @@ func (k ink) write(words string) string {
 	if k.struck {
 		lines += "\x1b[9m"
 	}
-	if lines == "" || lipgloss.ColorProfile() == termenv.Ascii {
+	if lines == "" {
 		return written
 	}
 	return lines + strings.TrimSuffix(written, styleReset) + styleReset

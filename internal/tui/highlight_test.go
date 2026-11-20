@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // the styles a code block is coloured with, so a test can ask whether any of them was used
@@ -15,7 +15,6 @@ func codeStyles() []lipgloss.Style {
 
 // an answer that names a language for its fence gets that language's shapes in colour
 func TestAFenceNamingALanguageIsColoured(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.answer("the change:\n\n```go\nfunc main() {\n\tcount := \"three\"\n}\n```\n")
 	got := log.render(70)
@@ -32,7 +31,6 @@ func TestAFenceNamingALanguageIsColoured(t *testing.T) {
 
 // prose and languages without a grammar stay exactly as they came: guessing colours a sentence
 func TestAFenceNobodyNamedIsLeftAlone(t *testing.T) {
-	withColour(t)
 	for _, c := range []struct{ what, answer string }{
 		{"no language", "```\n\"case one\" or \"case two\"\n```"},
 		{"no grammar", "```not_a_real_language\nconst a = 1\n```"},
@@ -52,7 +50,6 @@ func TestAFenceNobodyNamedIsLeftAlone(t *testing.T) {
 
 // thinking shows as it was thought: a fence in it is code, coloured code belongs to the answer
 func TestThinkingIsNeverColoured(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.thinking("the fence is:\n```go\nfunc main() {}\n```\n")
 	if strings.Contains(log.render(70), codeOf(styleCodeKeyword)) {
@@ -62,7 +59,6 @@ func TestThinkingIsNeverColoured(t *testing.T) {
 
 // an open fence is coloured as it arrives, so the screen never seems to fall behind
 func TestAFenceStillArrivingIsColoured(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.answer("```go\nfunc main() {")
 	if !strings.Contains(log.render(70), codeOf(styleCodeKeyword)+"func") {
@@ -82,7 +78,6 @@ func TestAFenceStillArrivingIsColoured(t *testing.T) {
 
 // a block still arriving is read a chunk at a time: the settled lines are not read again
 func TestALongBlockArrivingIsReadInChunks(t *testing.T) {
-	withColour(t)
 	line := "func pad() int { return 1 } // a line of the block\n"
 	var cache codeCache
 	code := ""
@@ -105,7 +100,6 @@ func TestALongBlockArrivingIsReadInChunks(t *testing.T) {
 
 // a block longer than one reading is still coloured once it has closed, and is read once
 func TestABlockOfAnyLengthIsColoured(t *testing.T) {
-	withColour(t)
 	block := "```go\n" + strings.Repeat("func pad() int { return 1 }\n", 2*codeExactBytes/28) + "```\n"
 	var log transcript
 	log.answer(block)
@@ -122,7 +116,6 @@ func TestABlockOfAnyLengthIsColoured(t *testing.T) {
 
 // a diff block says which lines went and which came, in the same two colours the rows of a change use
 func TestADiffBlockSaysWhatMoved(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.answer("```diff\n--- a/x\n+++ b/x\n-const a = 1\n+const a = 2\n```\n")
 	got := log.render(70)
@@ -133,7 +126,6 @@ func TestADiffBlockSaysWhatMoved(t *testing.T) {
 
 // a coloured row is still cut to the screen, and the colour does not run into the rows under it
 func TestAColouredRowStaysInsideTheScreen(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.answer("```go\n" + strings.Repeat("func aVeryLongFunctionName(argument int) int { return 1 }\n", 4) + "```\n")
 	for _, row := range strings.Split(log.render(30), "\n") {
@@ -142,14 +134,13 @@ func TestAColouredRowStaysInsideTheScreen(t *testing.T) {
 		}
 	}
 	rows := strings.Split(log.render(30), "\n")
-	if last := rows[len(rows)-1]; strings.Contains(last, "\x1b[") && !strings.HasSuffix(last, "\x1b[0m") {
+	if last := rows[len(rows)-1]; strings.Contains(last, "\x1b[") && !strings.HasSuffix(last, styleReset) {
 		t.Errorf("a cut row left its colour open: %q", last)
 	}
 }
 
 // a closed block is read once and fetched by its text, since a width change redraws every answer
 func TestEachBlockOfAnAnswerIsColouredOnce(t *testing.T) {
-	withColour(t)
 	var blocks codeCache
 	block := "func main() {}"
 	first := blocks.rows(block, "go", true)
@@ -182,7 +173,6 @@ func TestEachBlockOfAnAnswerIsColouredOnce(t *testing.T) {
 
 // the cache belongs to one entry and goes with it
 func TestAColouredAnswerKeepsItsBlocksAcrossRedraws(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.answer("```go\nfunc main() {}\n```\n")
 	first := log.render(60)
@@ -198,7 +188,6 @@ func TestAColouredAnswerKeepsItsBlocksAcrossRedraws(t *testing.T) {
 
 // a change shown to the reader is not an answer: a call keeps the diff's colours and rules
 func TestACallIsNotColouredAsAnAnswer(t *testing.T) {
-	withColour(t)
 	var log transcript
 	log.toolStart("write_file", `{"path":"x.go"}`)
 	log.toolEnd("write_file", `{"path":"x.go"}`, "--- a/x.go\n+++ b/x.go\n-const a = 1\n+const a = 2\n")

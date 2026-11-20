@@ -131,7 +131,7 @@ func startupConfig(args []string, version string) (config.Config, bool, error) {
 
 // askForServer saves the choice to this project's settings file; a flag or environment value still wins
 func askForServer(cfg config.Config, problem string) (config.Config, error) {
-	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, Problem: problem})
+	res, err := tui.Setup(context.Background(), tui.SetupStart{BaseURL: cfg.BaseURL, Problem: problem, Theme: cfg.Theme})
 	if err != nil {
 		return cfg, err
 	}

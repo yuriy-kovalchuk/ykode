@@ -1,19 +1,14 @@
 # Ideas
 
 One bullet per item: what it is, and the constraint or measurement that decides it. Not
-committed work — an item decided enough to be written out gets a plan file of its own, like
-`plan-bubbletea-v2.md`. Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
+committed work — an item decided enough to be written out gets a plan file of its own, deleted
+once it is built. Effort: XS < 30 min · S ≈ 1–2 h · M ≈ half a day · L ≈ a day or more.
 
 Things the reduction deleted (`find_files`, `search_text`, `outline`, `recall` and the write
 store, `/undo`, the audit log, the sandbox, `--json`) are named as history, not as code to build on.
 
 ## Worth building
 
-- **The screen on Bubble Tea v2, themes in the same pass** (L) — `ctrl+enter` cannot be a newline on
-  v1 at all: its parser has no modifier beyond `alt`, and it is finished at `v1.3.10`. v2 decodes
-  the chord itself and asks the terminal for the protocol, and it rewrites the nine colour pairs a
-  theme needs anyway, so the palette is touched once. `plan-bubbletea-v2.md` has the measured shape,
-  the two traps (`styleReset` changes form, a paste stops being a key) and the step order.
 - **Repository map** (L) — every file and what it defines, no bodies: a few thousand tokens
   against 100k+ to read, and the blind list-search-open loop is where small models get lost.
   `go/parser` over the `.gitignore` walk, ranked exported-first and boosted by paths the

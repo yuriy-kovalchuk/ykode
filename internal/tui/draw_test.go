@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -18,7 +18,7 @@ func TestTheSessionStartsBelowTheTopEdge(t *testing.T) {
 	}
 	m.refresh()
 
-	rows := strings.Split(m.View(), "\n")
+	rows := strings.Split(m.render(), "\n")
 	if len(rows) != 24 {
 		t.Fatalf("the screen is %d rows, want the terminal's 24", len(rows))
 	}
@@ -26,6 +26,6 @@ func TestTheSessionStartsBelowTheTopEdge(t *testing.T) {
 		t.Errorf("the first row is not the margin: %q", rows[0])
 	}
 	if strings.TrimSpace(rows[1]) == "" {
-		t.Errorf("the margin cost a row of the session as well:\n%.200s", m.View())
+		t.Errorf("the margin cost a row of the session as well:\n%.200s", m.render())
 	}
 }

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
@@ -34,7 +34,7 @@ func TestAChoiceLongerThanTheTerminalIsReadAcrossRows(t *testing.T) {
 	m.width, m.height = 66, 24
 	askedAbout(m, "which of these should the sessions list do when you press enter?",
 		"continue the conversation here in this run", "print the command to run it in its own terminal")
-	plain := stripCodes(m.View())
+	plain := stripCodes(m.render())
 	for _, want := range []string{"which of these should the", "run it in its own terminal", "1 ", "2 "} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("the ask lost %q:\n%s", want, plain)
@@ -56,7 +56,7 @@ func TestALongQuestionIsReadAcrossRows(t *testing.T) {
 		"row at the bottom where the model and the context already live; of those two changes, or " +
 		"both, or neither, which do you want?"
 	askedAbout(m, long, "the split", "the split and the help line", "neither")
-	plain := stripCodes(m.View())
+	plain := stripCodes(m.render())
 	// the bar down the left of each row is not part of the question, so it comes out before comparing
 	flat := strings.Join(strings.Fields(strings.ReplaceAll(plain, askBar, " ")), " ")
 	if !strings.Contains(flat, strings.Join(strings.Fields(long), " ")) {
@@ -73,7 +73,7 @@ func TestTheQuestionTheModelAskedShowsItsChoicesNumbered(t *testing.T) {
 	m := newTestModel()
 	m.width = 90
 	askedAbout(m, "which way should the footer follow the branch?", "stat HEAD each 5s", "a file watcher", "leave it")
-	screen := stripCodes(m.View())
+	screen := stripCodes(m.render())
 	for _, want := range []string{
 		"which way should the footer follow the branch?",
 		"1 stat HEAD each 5s", "2 a file watcher", "3 leave it",
@@ -93,7 +93,7 @@ func TestANumberAnswersWithTheChoiceItPointsAt(t *testing.T) {
 	m := newTestModel()
 	words := askedAbout(m, "which of these?", "the stat poll", "fsnotify")
 	typeText(m, "2")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := <-words; got != "fsnotify" {
 		t.Errorf("the model was told %q", got)
 	}
@@ -109,7 +109,7 @@ func TestWordsTypedAnswerInThoseWords(t *testing.T) {
 	m := newTestModel()
 	words := askedAbout(m, "which file should I start with?")
 	typeText(m, "internal/tui/status.go")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := <-words; got != "internal/tui/status.go" {
 		t.Errorf("the model was told %q", got)
 	}
@@ -120,7 +120,7 @@ func TestANumberNobodyOfferedIsReadAsTyped(t *testing.T) {
 	m := newTestModel()
 	words := askedAbout(m, "which of these?", "one", "two")
 	typeText(m, "9")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := <-words; got != "9" {
 		t.Errorf("the model was told %q", got)
 	}
@@ -130,7 +130,7 @@ func TestANumberNobodyOfferedIsReadAsTyped(t *testing.T) {
 func TestAnEmptyAnswerLetsTheRunGoOn(t *testing.T) {
 	m := newTestModel()
 	words := askedAbout(m, "which of these?", "one", "two")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := <-words; got != "" {
 		t.Errorf("the model was told %q", got)
 	}
@@ -140,7 +140,7 @@ func TestAnEmptyAnswerLetsTheRunGoOn(t *testing.T) {
 func TestTypingWhileTheModelWaitsIsTyping(t *testing.T) {
 	m := newTestModel()
 	words := askedAbout(m, "shall I rename the file?", "yes", "no")
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m.Update(typedKeys("n"))
 	if m.input.Value() != "n" {
 		t.Errorf("the box holds %q, so a letter answered the question", m.input.Value())
 	}
@@ -155,7 +155,7 @@ func TestEscAnswersTheQuestionByStoppingTheRun(t *testing.T) {
 	m := newTestModel()
 	m.running = true // the run is sitting on the question, which is the only way one arrives
 	words := askedAbout(m, "which of these?", "one", "two")
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	select {
 	case got := <-words:
 		if got != "" {
@@ -202,7 +202,7 @@ func TestARunThatAsksWaitsForWhatIsTypedIntoTheBox(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	writeKeys(t, keys, "pick the footer way\r")
@@ -303,7 +303,7 @@ func TestChoicesAreCutToTheRowsTheScreenHas(t *testing.T) {
 		words := askedAbout(m, "which way should the footer follow the branch?",
 			"stat HEAD every 5s", "a file watcher", "ask the model each turn", "on demand only",
 			"read HEAD once at startup", "leave it as it is")
-		return m, words, stripCodes(m.View())
+		return m, words, stripCodes(m.render())
 	}
 
 	_, _, screen := ask(24)
@@ -329,7 +329,7 @@ func TestChoicesAreCutToTheRowsTheScreenHas(t *testing.T) {
 	}
 
 	typeText(short, "6") // the sixth choice never showed, and its number still means it
-	short.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	short.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := <-words; got != "leave it as it is" {
 		t.Errorf("the model was told %q", got)
 	}

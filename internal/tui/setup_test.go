@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // a probe that answers like a server with two models, and records what it was asked
@@ -28,11 +31,11 @@ func (f *fakeServer) probe(_ context.Context, url string) (string, []llm.ModelIn
 	return url, []llm.ModelInfo{{ID: "qwen-small", CtxSize: 32768}, {ID: "qwen-big", CtxSize: 131072}}, nil
 }
 
-func press(m *setupModel, keys ...tea.KeyMsg) {
+func press(m *setupModel, keys ...tea.KeyPressMsg) {
 	for _, k := range keys {
 		_, cmd := m.Update(k)
 		// only enter's command is the probe; other keys return the cursor's blink timer
-		if cmd != nil && k.Type == tea.KeyEnter {
+		if cmd != nil && k.Code == tea.KeyEnter {
 			if msg, ok := cmd().(probeDoneMsg); ok {
 				m.Update(msg)
 			}
@@ -41,12 +44,12 @@ func press(m *setupModel, keys ...tea.KeyMsg) {
 }
 
 var (
-	enter = tea.KeyMsg{Type: tea.KeyEnter}
-	down  = tea.KeyMsg{Type: tea.KeyDown}
-	esc   = tea.KeyMsg{Type: tea.KeyEsc}
+	enter = tea.KeyPressMsg{Code: tea.KeyEnter}
+	down  = tea.KeyPressMsg{Code: tea.KeyDown}
+	esc   = tea.KeyPressMsg{Code: tea.KeyEscape}
 )
 
-func typed(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+func typed(s string) tea.KeyPressMsg { return typedKeys(s) }
 
 // the whole first run: a URL, enter, a model, enter - and the answer is what gets saved
 func TestSetupConnectsAndPicksAModel(t *testing.T) {
@@ -57,7 +60,7 @@ func TestSetupConnectsAndPicksAModel(t *testing.T) {
 	if m.step != stepModel {
 		t.Fatalf("after connecting, the screen is at step %d, want the model list (err %q)", m.step, m.err)
 	}
-	if view := m.View(); !strings.Contains(view, "qwen-small") || !strings.Contains(view, "131k context") {
+	if view := m.render(); !strings.Contains(view, "qwen-small") || !strings.Contains(view, "131k context") {
 		t.Errorf("the models and their windows are not listed:\n%s", view)
 	}
 	press(m, down, enter)
@@ -74,8 +77,8 @@ func TestSetupSaysWhyAServerDidNotAnswer(t *testing.T) {
 	server := &fakeServer{refuses: true}
 	m := newSetup(SetupStart{BaseURL: "http://nowhere:1/v1"}, server.probe)
 	press(m, enter)
-	if m.step != stepServer || !strings.Contains(m.View(), "connection refused") {
-		t.Fatalf("a refused connection is not explained on the form:\n%s", m.View())
+	if m.step != stepServer || !strings.Contains(m.render(), "connection refused") {
+		t.Fatalf("a refused connection is not explained on the form:\n%s", m.render())
 	}
 	server.refuses = false
 	press(m, enter)
@@ -102,8 +105,8 @@ func TestSetupCleansUpATypedURL(t *testing.T) {
 // a screen opened because the server went away says so first
 func TestSetupShowsWhyItOpened(t *testing.T) {
 	m := newSetup(SetupStart{BaseURL: "http://old/v1", Problem: "cannot reach server at http://old/v1"}, (&fakeServer{}).probe)
-	if !strings.Contains(m.View(), "cannot reach server") {
-		t.Errorf("the reason the setup opened is not shown:\n%s", m.View())
+	if !strings.Contains(m.render(), "cannot reach server") {
+		t.Errorf("the reason the setup opened is not shown:\n%s", m.render())
 	}
 }
 
@@ -140,5 +143,30 @@ func TestTheProbeAddsTheV1PeopleLeaveOff(t *testing.T) {
 	}
 	if _, _, err := probeServer(context.Background(), srv.URL+"/nothing"); err == nil {
 		t.Error("a URL nothing answers at was reported as working")
+	}
+}
+
+// run on its own the server screen is in the chosen theme, and auto still follows the terminal
+func TestTheServerScreenRunOnItsOwnTakesTheTheme(t *testing.T) {
+	t.Cleanup(func() { usePalette(theme.For(true)) })
+	m := newSetup(SetupStart{Theme: "nord"}, nil)
+	m.ownPalette()
+	nord, _ := theme.Named("nord")
+	if v := m.View(); v.BackgroundColor == nil {
+		t.Error("the screen left the terminal its own ground under nord")
+	}
+	if codeOf(setupTitle) != codeOf(lipgloss.NewStyle().Foreground(colour(nord.Cyan)).Bold(true)) {
+		t.Error("the title is not in nord's cyan")
+	}
+	m.Update(tea.BackgroundColorMsg{Color: color.White})
+	if m.painted.Name != "nord" {
+		t.Errorf("a light terminal swapped nord for %s", m.painted.Name)
+	}
+
+	auto := newSetup(SetupStart{Theme: theme.Auto}, nil)
+	auto.ownPalette()
+	auto.Update(tea.BackgroundColorMsg{Color: color.White})
+	if auto.painted.Name != "ykode-light" || auto.View().BackgroundColor != nil {
+		t.Errorf("auto on a light terminal drew %s", auto.painted.Name)
 	}
 }

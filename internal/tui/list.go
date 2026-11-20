@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // the lists that answer commands share filter, cursor, row window and box, held here once
@@ -62,7 +62,7 @@ func newChooser(title, subtitle, hint string) chooser {
 	in.Prompt = "  "
 	in.Placeholder = "type to narrow"
 	in.Focus()
-	return chooser{title: title, subtitle: subtitle, hint: hint, filter: in, detailRows: listDetail, scroll: viewport.New(1, 1)}
+	return chooser{title: title, subtitle: subtitle, hint: hint, filter: in, detailRows: listDetail, scroll: viewport.New(viewport.WithWidth(1), viewport.WithHeight(1))}
 }
 
 // load puts the rows in: all of them, and what the filter leaves, which is everything to start with.
@@ -184,7 +184,7 @@ func (c *chooser) shown() string {
 func (c *chooser) view(width, height int, detail func(id string) []string) string {
 	inner := overlayInner(width)
 	c.inner = inner
-	c.filter.Width = max(inner-4, 1)
+	c.filter.SetWidth(max(inner-4, 1))
 	// what the box has left is shared two thirds to the pane, the list keeping two rows when it can
 	spare := height - listChrome - listFloor
 	details := min(c.detailRows, max(spare*2/3, listNarrow))
@@ -224,8 +224,8 @@ func (c *chooser) reading(detail func(id string) []string, inner, keep int) stri
 	if !c.expanded {
 		return c.pane(detail, inner, keep)
 	}
-	c.scroll.Width = inner
-	c.scroll.Height = keep
+	c.scroll.SetWidth(inner)
+	c.scroll.SetHeight(keep)
 	var body []string
 	for _, line := range detail(c.shown()) {
 		body = append(body, wrapKept(line, inner)...)
@@ -245,7 +245,7 @@ func (c *chooser) hintWith(box viewport.Model) string {
 	} else if !c.expanded {
 		return hint
 	}
-	if rest := box.TotalLineCount() - box.YOffset - box.Height; rest > 0 {
+	if rest := box.TotalLineCount() - box.YOffset() - box.Height(); rest > 0 {
 		hint += fmt.Sprintf(" · %d rows more", rest)
 	}
 	return hint

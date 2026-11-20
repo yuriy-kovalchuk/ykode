@@ -43,6 +43,22 @@ has been tagged yet, so everything below describes what `main` does today.
   `SHA256SUMS` and keyless cosign signatures as a GitHub Release. Dependabot bumps modules and
   Actions weekly, and `make install-hooks` makes git check commit subjects and tag names.
 
+### Changed
+
+- The screen runs on Bubble Tea v2, Lip Gloss v2 and Bubbles v2. Colours live in one palette, a dark
+  and a light one, picked from the background the terminal reports when the screen opens; a session
+  already on screen is redrawn in the palette that answer chose. In the prompt box, a row the text
+  fills to the edge puts the cursor on a row of its own below it.
+- `ctrl+enter` starts a new line, as `shift+enter` does, where the terminal speaks the kitty keyboard
+  protocol or modifyOtherKeys; elsewhere it still arrives as `enter`. The screen and the server
+  screen switch those protocols off before they draw and on the way out, as they do pointer tracking.
+- The key list `?` and `ctrl+/` open is grouped — prompt, edit, scroll, session — one row per group
+  with its name in a column, wrapped into even rows when the screen is narrower.
+- `theme` setting, applied at once: `auto` (the default), `ykode-dark`, `ykode-light`, `terminal`
+  (the terminal's sixteen colours), and `dracula`, `nord`, `solarized-dark`, `solarized-light`,
+  `gruvbox-dark`, `gruvbox-light`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `one-dark`,
+  `monokai`, which repaint the terminal's background while the screen is up.
+
 ### Removed
 
 - The API key. No request carries an `Authorization` header, and no key is read from a flag, a file

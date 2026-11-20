@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 	"time"
 )
 
@@ -37,6 +38,7 @@ type Config struct {
 	CtxSize         int    // server context window; 0 = read it from the server
 	SafetyMargin    int    // tokens kept free for the reply
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
+	Theme           string // the palette the screen draws with; auto follows the terminal's background
 	AssumeYes       bool
 	ReadLines       int // read_file window when the model does not ask for one
 	ExecTimeout     time.Duration
@@ -112,6 +114,7 @@ func defaults() Config {
 		MaxTokens:       0, // no cap: the context window decides
 		SafetyMargin:    defaultSafety,
 		ThinkingLevel:   defaultThinkingLevel,
+		Theme:           theme.Auto,
 		ReadLines:       defaultReadLines,
 		ExecTimeout:     defaultExecTimeout,
 		StreamIdle:      defaultStreamIdle,

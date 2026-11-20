@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func typeText(m *model, text string) {
 	for _, r := range text {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.Update(typedKeys(string([]rune{r})))
 	}
 }
 
@@ -35,7 +35,7 @@ const sentence = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambd
 func TestTheStartOfWhatIsTypedStaysVisibleAsTheLineWraps(t *testing.T) {
 	m := inputModel(40)
 	for i, r := range sentence {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.Update(typedKeys(string([]rune{r})))
 		if rows := boxRows(m); !strings.HasPrefix(sentence, rows[0]) {
 			t.Fatalf("after %d characters the first row of the box is %q, which is not where the text starts\n%s", i+1, rows[0], strings.Join(rows, "\n"))
 		}
@@ -61,7 +61,7 @@ func TestTheBoxHoldsExactlyTheRowsOfTheText(t *testing.T) {
 // a paste of several lines shows all of them, up to the most the box grows to
 func TestAPasteOfSeveralLinesIsAllVisible(t *testing.T) {
 	m := inputModel(60)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("one\ntwo\nthree\nfour\nfive"), Paste: true})
+	m.Update(tea.PasteMsg{Content: "one\ntwo\nthree\nfour\nfive"})
 	rows := boxRows(m)
 	if len(rows) != 5 || rows[0] != "one" || rows[4] != "five" {
 		t.Errorf("a five line paste shows %q", rows)
@@ -73,7 +73,7 @@ func TestErasingBackAcrossWrappedRowsKeepsTheStartInView(t *testing.T) {
 	m := inputModel(40)
 	typeText(m, sentence)
 	for i := 0; i < len(sentence)-3; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 		if rows := boxRows(m); !strings.HasPrefix(sentence, rows[0]) {
 			t.Fatalf("after erasing %d characters the first row is %q, which is not where the text starts", i+1, rows[0])
 		}
@@ -88,7 +88,7 @@ func TestTypingInTheMiddleOfTheTextKeepsTheStartInView(t *testing.T) {
 	m := inputModel(40)
 	typeText(m, "alpha beta gamma delta epsilon zeta eta theta")
 	for i := 0; i < 20; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	}
 	typeText(m, " inserted words that push the end onto another row")
 	if rows := boxRows(m); !strings.HasPrefix(rows[0], "alpha") {
@@ -104,11 +104,12 @@ func TestAVeryLongTextScrollsAndComesBackWholeWhenItFitsAgain(t *testing.T) {
 	if got := m.input.Height(); got != maxInputLines {
 		t.Fatalf("the box is %d rows, want it held at %d", got, maxInputLines)
 	}
-	if rows := boxRows(m); !strings.HasSuffix(strings.Join(rows, " "), "end") {
+	// a row the text fills to the edge leaves the cursor a row of its own below it
+	if rows := boxRows(m); !strings.HasSuffix(strings.TrimSpace(strings.Join(rows, " ")), "end") {
 		t.Errorf("the end of the text is not in view: %q", rows)
 	}
 	for i := 0; i < len(long)+3; i++ { // erase most of it
-		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	}
 	if rows := boxRows(m); !strings.HasPrefix(rows[0], "start") {
 		t.Errorf("with the text short again, the first row is %q: the start is scrolled out of the box", rows[0])
@@ -120,7 +121,7 @@ func TestAnEarlierPromptOfSeveralRowsComesBackFromItsStart(t *testing.T) {
 	m := inputModel(40)
 	m.history = []string{sentence}
 	m.histIdx = 1
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	if rows := boxRows(m); len(rows) != 3 || !strings.HasPrefix(rows[0], "alpha") {
 		t.Errorf("an earlier prompt shows as %q", rows)
 	}

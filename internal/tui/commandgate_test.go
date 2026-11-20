@@ -20,7 +20,7 @@ func TestEveryCommandThatWaitsIsHeldOutOfATurn(t *testing.T) {
 		if m.picker != nil {
 			t.Errorf("%s opened an overlay over a turn that is running", spec.Name)
 		}
-		if !strings.Contains(stripCodes(m.View()), "waits for the turn") {
+		if !strings.Contains(stripCodes(m.render()), "waits for the turn") {
 			t.Errorf("%s was refused without saying why", spec.Name)
 		}
 	}
@@ -33,7 +33,7 @@ func TestACommandThatDoesNotWaitAnswersMidTurn(t *testing.T) {
 		m.running = true
 		m.input.SetValue(name)
 		m.submit()
-		if strings.Contains(stripCodes(m.View()), "waits for the turn") {
+		if strings.Contains(stripCodes(m.render()), "waits for the turn") {
 			t.Errorf("%s was held behind a turn that it does not touch", name)
 		}
 	}

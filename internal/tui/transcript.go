@@ -56,6 +56,7 @@ type transcript struct {
 	entries []entry
 	stale   int    // the first entry that may need drawing again; len(entries) when none do
 	width   int    // the screen the rows were drawn for
+	gen     int    // the palette they were drawn in
 	root    string // the project the session runs in, so a path reads from there
 
 	rowsCache []string // the rows the screen reads, one per row on the terminal

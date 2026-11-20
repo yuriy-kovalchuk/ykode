@@ -1,14 +1,17 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
 
-// handleKey sends a key to its owner: question, session keys, scrolling, then the typing box
-func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
+// handleKey sends a key or a paste to its owner: question, session keys, scrolling, then the box
+func (m *model) handleKey(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key := "" // a paste is no key: it only ever reaches the typing box
+	if press, ok := msg.(tea.KeyPressMsg); ok {
+		key = press.String()
+	}
 	switch {
 	case len(m.pending) > 0 && !m.awaitingWords():
 		m.answer(key) // a call to allow or refuse answers itself: y, a, n
@@ -28,8 +31,6 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.scrollKey(key) {
 		return m, nil
 	}
-	// the key goes to a box with room to grow, since textarea scrolls and never scrolls back
-	m.input.SetHeight(maxInputLines)
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.trackSuggestions()

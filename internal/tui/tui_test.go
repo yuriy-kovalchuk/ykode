@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/session"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -182,7 +183,7 @@ func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	writeKeys(t, keys, "/exit\r")
@@ -201,7 +202,7 @@ func TestARunLeavesTheTerminalWithNoPointerTracking(t *testing.T) {
 			t.Errorf("the run switched pointer reporting on with %s", on)
 		}
 	}
-	for _, off := range []string{"?9l", "?1000l", "?1002l", "?1003l", "?1006l", "?1015l", "?1005l"} {
+	for _, off := range []string{"?9l", "?1000l", "?1002l", "?1003l", "?1006l", "?1015l", "?1005l", "[>4m", "[<1u"} {
 		if strings.Count(raw, off) < 2 {
 			t.Errorf("%s is switched off %d times; once before drawing and once on the way out are needed", off, strings.Count(raw, off))
 		}
@@ -226,7 +227,7 @@ func TestPointerBytesSentToTheProgramReachNothing(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	for _, burst := range []string{
@@ -272,7 +273,7 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	writeKeys(t, keys, "first\r")
@@ -288,6 +289,55 @@ func TestTwoPromptsInARowBothRun(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the session would not exit")
+	}
+}
+
+// the newline chords as the terminal sends them start a new line, and a plain return still sends
+func TestTheNewlineChordsArriveAsTheTerminalSendsThem(t *testing.T) {
+	server := httptest.NewServer(&stubAnswers{answers: []string{"answer one", "answer two", "answer three"}})
+	defer server.Close()
+	hub := NewHub()
+	a := agent.New(llm.NewClient(server.URL+"/v1"), tools.NewRegistry(), "test-model",
+		agent.Options{MaxTurns: 2, MaxTokens: 64, CtxSize: 8000}, hub)
+	in, keys, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Close()
+	defer in.Close()
+	screen := &lockedBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
+	}()
+
+	chords := []struct{ name, bytes, answer string }{
+		{"kitty ctrl+enter", "\x1b[13;5u", "answer one"},
+		{"kitty shift+enter", "\x1b[13;2u", "answer two"},
+		{"xterm ctrl+enter", "\x1b[27;5;13~", "answer three"},
+	}
+	for _, c := range chords {
+		writeKeys(t, keys, "top"+c.bytes+"bottom\r")
+		waitFor(t, screen, c.answer)
+	}
+	var asked []string
+	for _, m := range a.Conversation() {
+		if m.Role == "user" {
+			text, _ := session.SplitEnvironment(m.Content)
+			asked = append(asked, text)
+		}
+	}
+	if len(asked) != len(chords) {
+		t.Fatalf("%d prompts were sent, want one per return: %q", len(asked), asked)
+	}
+	for i, c := range chords {
+		if asked[i] != "top\nbottom" {
+			t.Errorf("%s sent %q; want the chord to be a newline and the return to send", c.name, asked[i])
+		}
+	}
+	writeKeys(t, keys, "/exit\r")
+	if err := <-done; err != nil {
+		t.Errorf("the session ended with an error: %v", err)
 	}
 }
 
@@ -358,7 +408,7 @@ func TestAnAskTypedMidRunReachesTheModelInThatRun(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), a, hub, config.Config{}, screen, tea.WithInput(in), tea.WithOutput(screen))
+		done <- run(context.Background(), a, hub, config.Config{}, screen, false, tea.WithInput(in), tea.WithOutput(screen), tea.WithWindowSize(100, 30))
 	}()
 
 	writeKeys(t, keys, "count the files\r")

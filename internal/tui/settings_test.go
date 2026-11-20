@@ -1,7 +1,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -147,17 +147,17 @@ func TestSettingsIsAnsweredWhileATurnRuns(t *testing.T) {
 	m.input.SetValue("/settings max_turns")
 	m.submit()
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if !strings.Contains(out, "round-trips one ask may take") {
 		t.Errorf("a running turn was not allowed to answer /settings:\n%s", out)
 	}
 }
 
 // modalKeys sends keys as the terminal does, running the probe command a key returns
-func modalKeys(m *model, keys ...tea.KeyMsg) {
+func modalKeys(m *model, keys ...tea.KeyPressMsg) {
 	for _, k := range keys {
 		_, cmd := m.Update(k)
-		if cmd != nil && k.Type == tea.KeyEnter {
+		if cmd != nil && k.Code == tea.KeyEnter {
 			if msg, ok := cmd().(probeDoneMsg); ok {
 				m.Update(msg)
 			}
@@ -171,18 +171,18 @@ func TestSettingsOpensTheListOfEverySetting(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 40})
 	m.input.SetValue("/settings")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.screen == nil {
 		t.Fatal("/settings did not open the screen")
 	}
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "assume_yes", "esc closes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the list lacks %q:\n%s", want, view)
 		}
 	}
 	m.Update(esc)
-	if m.screen != nil || strings.Contains(stripCodes(m.View()), "ykode · settings") {
+	if m.screen != nil || strings.Contains(stripCodes(m.render()), "ykode · settings") {
 		t.Error("esc did not give the session back")
 	}
 }
@@ -244,7 +244,7 @@ func TestASwitchTurnsOverAndTheSessionFollows(t *testing.T) {
 	if !m.cfg.AssumeYes {
 		t.Error("the screen still reads the old value")
 	}
-	if got := stripCodes(m.View()); !regexp.MustCompile(`assume_yes\s+on`).MatchString(got) {
+	if got := stripCodes(m.render()); !regexp.MustCompile(`assume_yes\s+on`).MatchString(got) {
 		t.Errorf("the row does not show the new value:\n%s", got)
 	}
 }
@@ -259,7 +259,7 @@ func TestAChoiceCyclesAndIsAppliedAtOnce(t *testing.T) {
 	if m.agent.ThinkingLevel() == before || !fileHas(t, dir, "thinking_level: "+m.agent.ThinkingLevel()) {
 		t.Errorf("level %q after enter, file does not say it", m.agent.ThinkingLevel())
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.agent.ThinkingLevel() != before {
 		t.Errorf("left did not go back to %q: %q", before, m.agent.ThinkingLevel())
 	}
@@ -312,7 +312,7 @@ func TestAListTakesAnEntryAndStartupSettingsSaySo(t *testing.T) {
 		t.Error("the entry was not added")
 	}
 	openRow(t, m, "stream_idle_sec")
-	if view := stripCodes(m.View()); !strings.Contains(view, "read when ykode starts") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "read when ykode starts") {
 		t.Errorf("a startup-only setting does not say so:\n%s", view)
 	}
 }
@@ -345,7 +345,7 @@ func TestChoosingInTheServerScreenSwitchesTheSession(t *testing.T) {
 
 	modalKeys(m, enter, down, enter) // connect, pick the second model, accept
 	if m.modal != nil {
-		t.Fatalf("the server screen is still open: %s", stripCodes(m.View()))
+		t.Fatalf("the server screen is still open: %s", stripCodes(m.render()))
 	}
 	if m.agent.Model() != "qwen-big" || m.agent.CtxSize() != 131072 {
 		t.Errorf("the session runs %q with %d tokens, want qwen-big with its window", m.agent.Model(), m.agent.CtxSize())
@@ -382,7 +382,7 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 90, Height: 40})
 	m.openSettings()
-	rows := strings.Split(stripCodes(m.View()), "\n")
+	rows := strings.Split(stripCodes(m.render()), "\n")
 	count := 0
 	for _, row := range rows {
 		if strings.Contains(row, "command_log_dir") {
@@ -400,11 +400,10 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 // the thinking level shows every level's budget, the selected one marked, following the cursor
 func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
 	settingsHome(t, "")
-	withColour(t)
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	openRow(t, m, "thinking_level")
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"off · minimal 1,024", "low 2,048", "medium 8,192", "high 16,384", "xhigh 32,768", "max no cap"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the budgets lack %q:\n%s", want, view)
@@ -414,13 +413,13 @@ func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
 		t.Errorf("the selected level is not marked, or its meaning is not said:\n%s", view)
 	}
 	m.Update(enter) // medium -> high
-	if view := stripCodes(m.View()); !strings.Contains(view, "[high 16,384]") || strings.Contains(view, "[medium") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "[high 16,384]") || strings.Contains(view, "[medium") {
 		t.Errorf("the mark did not follow the level:\n%s", view)
 	}
 	for m.cfg.ThinkingLevel != "max" {
 		m.Update(enter)
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "[max no cap]") || !strings.Contains(view, "no cap on thinking") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "[max no cap]") || !strings.Contains(view, "no cap on thinking") {
 		t.Errorf("max does not say it has no cap:\n%s", view)
 	}
 }
@@ -431,9 +430,9 @@ func TestTheSettingsBoxDoesNotChangeHeightWithTheCursor(t *testing.T) {
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	openRow(t, m, "thinking_level")
-	with := strings.Count(stripCodes(m.View()), "\n")
+	with := strings.Count(stripCodes(m.render()), "\n")
 	openRow(t, m, "max_turns")
-	without := strings.Count(stripCodes(m.View()), "\n")
+	without := strings.Count(stripCodes(m.render()), "\n")
 	if with != without {
 		t.Errorf("the screen is %d rows on the thinking level and %d elsewhere", with, without)
 	}
@@ -447,7 +446,7 @@ func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.openSettings()
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if !strings.Contains(out, "⚠ global ·") || !strings.Contains(out, "/create-local-setting") {
 		t.Errorf("nothing warned that the global file is the one being changed:\n%s", out)
 	}
@@ -455,7 +454,7 @@ func TestTheSettingsScreenSaysWhichFileItWrites(t *testing.T) {
 	if _, err := config.CreateLocal(m.cfg.Root, "http://127.0.0.1:8080/v1", "test-model"); err != nil {
 		t.Fatal(err)
 	}
-	if out = stripCodes(m.View()); strings.Contains(out, "⚠ global ·") {
+	if out = stripCodes(m.render()); strings.Contains(out, "⚠ global ·") {
 		t.Errorf("the warning stayed though the project has a file of its own:\n%s", out)
 	}
 	if !strings.Contains(out, "this project · .ykode/settings.yaml") {

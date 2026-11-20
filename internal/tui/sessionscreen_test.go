@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -60,7 +60,7 @@ func openList(t *testing.T, m *model) string {
 	if m.picker == nil {
 		t.Fatal("/sessions did not open the list")
 	}
-	return stripCodes(m.View())
+	return stripCodes(m.render())
 }
 
 // rowHolding is the first list row saying what it looks for, to check a mark without coordinates
@@ -99,9 +99,9 @@ func TestSessionsOpensTheListOfSavedConversations(t *testing.T) {
 func TestTypingNarrowsTheList(t *testing.T) {
 	m, _ := pickerModel(t)
 	openList(t, m)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("timer")})
+	m.Update(typedKeys("timer"))
 
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	if !strings.Contains(view, "fix the flaky timer test") {
 		t.Errorf("the conversation that matches was hidden:\n%s", view)
 	}
@@ -115,7 +115,7 @@ func TestEnterContinuesTheConversationUnderTheCursor(t *testing.T) {
 	m, sessions := pickerModel(t)
 	openList(t, m)
 	m.Update(down)
-	if view := stripCodes(m.View()); !strings.Contains(view, "enter continues it") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "enter continues it") {
 		t.Errorf("the row that can be continued does not say so:\n%s", view)
 	}
 	m.Update(enter)
@@ -129,7 +129,7 @@ func TestEnterContinuesTheConversationUnderTheCursor(t *testing.T) {
 	if m.agent.SessionFile() != filepath.Join(sessions, pickedID+".jsonl") {
 		t.Errorf("the run goes on saving to %q", m.agent.SessionFile())
 	}
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, want := range []string{"came back to " + pickedID, "fix the flaky timer test", "done",
 		"what this run was doing stays saved"} {
 		if !strings.Contains(view, want) {
@@ -159,7 +159,7 @@ func TestEscClosesTheListWithoutContinuingAnything(t *testing.T) {
 	if got := m.agent.Conversation(); len(got) != 1 || m.cfg.Session != ownID {
 		t.Errorf("closing the list changed the run: %d messages, session %s", len(got), m.cfg.Session)
 	}
-	if view := stripCodes(m.View()); strings.Contains(view, "ykode · sessions") {
+	if view := stripCodes(m.render()); strings.Contains(view, "ykode · sessions") {
 		t.Errorf("the session is still hidden:\n%s", view)
 	}
 }
@@ -168,7 +168,7 @@ func TestEscClosesTheListWithoutContinuingAnything(t *testing.T) {
 func TestAnotherProjectsConversationIsNotContinued(t *testing.T) {
 	m, _ := pickerModel(t)
 	openList(t, m)
-	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	m.Update(enter)
 
 	if m.picker == nil {
@@ -178,7 +178,7 @@ func TestAnotherProjectsConversationIsNotContinued(t *testing.T) {
 		t.Errorf("the run reads %d messages after a refused pick", len(got))
 	}
 	want := "ykode --continue " + foreignID + " --root /somewhere/else"
-	if view := stripCodes(m.View()); !strings.Contains(view, want) {
+	if view := stripCodes(m.render()); !strings.Contains(view, want) {
 		t.Errorf("the list does not say how to continue it there, wanting %q:\n%s", want, view)
 	}
 }
@@ -193,7 +193,7 @@ func TestSessionsWaitsForTheTurnToFinish(t *testing.T) {
 	if m.picker != nil {
 		t.Error("the list opened over a turn that is running")
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "press esc to stop this one first") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "press esc to stop this one first") {
 		t.Errorf("a running turn was not told why there is no list:\n%s", view)
 	}
 }
@@ -204,7 +204,7 @@ func TestTheListFitsASmallTerminal(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 46, Height: 12})
 	openList(t, m)
 
-	view := stripCodes(m.View())
+	view := stripCodes(m.render())
 	for _, line := range strings.Split(view, "\n") {
 		if lipgloss.Width(line) > 46 {
 			t.Errorf("a row runs past the terminal (%d columns): %q", lipgloss.Width(line), line)
@@ -233,7 +233,7 @@ func TestSessionsWithNothingSavedSaysSo(t *testing.T) {
 	if m.picker != nil {
 		t.Error("an empty folder opened an empty list")
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "nothing saved yet") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "nothing saved yet") {
 		t.Errorf("an empty sessions folder answered:\n%s", view)
 	}
 }

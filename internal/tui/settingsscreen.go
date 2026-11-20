@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -36,7 +36,8 @@ var liveKnobs = config.LiveKnobs()
 
 func newSettingsScreen(cfg config.Config) *settingsScreen {
 	in := textinput.New()
-	in.Prompt, in.CharLimit, in.Width = "", 300, 40
+	in.Prompt, in.CharLimit = "", 300
+	in.SetWidth(40)
 	s := &settingsScreen{input: in}
 	s.load(cfg)
 	return s
@@ -162,12 +163,6 @@ func (s *settingsScreen) commit(key, value string, write func(key, value string)
 	return true
 }
 
-var (
-	settingsBox  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 2)
-	settingsKey  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	settingsLive = lipgloss.NewStyle().Foreground(colorOK)
-)
-
 // view draws the screen within width and height columns and rows of terminal.
 func (s *settingsScreen) view(width, height int, cfg config.Config, model string) string {
 	inner := min(max(width-8, 40), 100)
@@ -192,7 +187,7 @@ func (s *settingsScreen) view(width, height int, cfg config.Config, model string
 	}
 	b.WriteString("\n" + s.detail(inner))
 	b.WriteString("\n" + setupDim.Render(s.hint()))
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, settingsBox.Width(inner).Render(b.String()))
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, settingsBox.Width(framed(settingsBox, inner)).Render(b.String()))
 }
 
 func (s *settingsScreen) row(i, keyW, inner int, cfg config.Config, model string) string {
@@ -351,6 +346,9 @@ func (m *model) writeSetting(key, value string) error {
 
 // applyLive hands the session what the change moved. Only the knobs in liveKnobs are here.
 func (m *model) applyLive(before, now config.Config) {
+	if now.Theme != before.Theme {
+		m.useTheme(now.Theme) // the settings screen itself is redrawn in it as the choice lands
+	}
 	if now.ThinkingLevel != before.ThinkingLevel {
 		// only a change to the level is written: saving the old value would undo an unsaved /think
 		m.agent.SetThinkingLevel(now.ThinkingLevel) // a turn in flight refuses, and says so itself

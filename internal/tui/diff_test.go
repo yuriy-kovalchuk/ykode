@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // what edit_file answers with: one summary line, then the change itself
@@ -29,7 +29,6 @@ func diffLines(t *testing.T, result string, width int) []string {
 
 // a change is drawn like a review tool: numbered lines, one ground per side, to the screen edge
 func TestAChangeIsNumberedAndSitsOnItsSidesGround(t *testing.T) {
-	withColour(t)
 	rows := diffLines(t, "edited a.go\n@@ -8,3 +8,3 @@\n ctx\n-timeout=500, rate=0.001\n+timeout=100, rate=0.001\n last\n", 80)
 	plain := strings.Split(stripCodes(strings.Join(rows, "\n")), "\n")
 	for i, want := range []string{"     8   ctx", "     9 - timeout=500, rate=0.001", "     9 + timeout=100, rate=0.001", "    10   last"} {
@@ -37,7 +36,7 @@ func TestAChangeIsNumberedAndSitsOnItsSidesGround(t *testing.T) {
 			t.Errorf("row %d reads %q, want %q", i, plain[i], want)
 		}
 	}
-	sides := diffSides()
+	sides := diffSurface
 	del, add := rows[1], rows[2]
 	if !strings.Contains(del, codeOf(sides.del)) || !strings.Contains(add, codeOf(sides.add)) {
 		t.Fatalf("the sides do not sit on their grounds:\n%q\n%q", del, add)
@@ -57,9 +56,8 @@ func TestAChangeIsNumberedAndSitsOnItsSidesGround(t *testing.T) {
 
 // only the words that differ sit on the stronger shade; what the lines share keeps its ground
 func TestTheWordsThatChangedStandOut(t *testing.T) {
-	withColour(t)
 	rows := diffLines(t, "edited a.go\n@@ -1,1 +1,1 @@\n-timeout=500, rate=0.001\n+timeout=100, rate=0.001\n", 80)
-	sides := diffSides()
+	sides := diffSurface
 	if !strings.Contains(rows[0], codeOf(sides.delWord)+"500"+styleReset) {
 		t.Errorf("the number that went is not marked: %q", rows[0])
 	}

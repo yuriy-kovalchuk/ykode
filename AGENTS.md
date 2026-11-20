@@ -45,10 +45,11 @@ govulncheck judges, so move it together with go.mod's `go` directive, not ahead 
 | `internal/images` | a picture shrunk and encoded for a vision encoder |
 | `internal/home` | `$YKODE_HOME`, so every caller agrees on where files live |
 | `internal/size` | byte counts as the words a listing would use |
+| `internal/theme` | the palettes, as names and hex, so the settings and the screen read one list |
 
 The dependency direction is one way: `app` is the only package that wires the two front ends,
 `tui` and `cli` only consume `agent`'s events, and `agent` uses `tools` and `llm`, which use
-nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import a front end.
+nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import a front end; `theme` imports nothing of ykode.
 
 ## Invariants that break quietly
 
@@ -77,7 +78,10 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
   outside. `exec_command` is deliberately outside that boundary; its environment stays scrubbed
   (`PATH`, `HOME`, `TERM`, `LANG`) so secrets never reach a model-run command.
 - **The screen never takes the pointer** and always leaves the terminal with pointer tracking off
-  (`tui/scroll.go`, `tui/tui.go`).
+  and the keyboard protocols v2 asks for popped, before it draws and on the way out — the server
+  screen run on its own wears the same belt (`tui/scroll.go`, `tui/tui.go`: `writeModesOff`).
+- **Styles are rebuilt only on the screen's goroutine** (`tui/palette.go`: `usePalette`). They are
+  package variables read by every drawing, so a theme switch happens in `Update`, never from a run.
 
 ## House rules
 
@@ -90,7 +94,7 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
 - Unix only: no Windows port, no `_windows.go` files, no build tags. `exec_command` relies on
   `setpgid` and `kill(-pid)`.
 - No provider SDK and no new dependency without a reason stated in the commit. HTTP, JSON and SSE
-  are the standard library; `charmbracelet` is the screen, `chroma` the code colouring,
+  are the standard library; `charm.land`'s Bubble Tea, Bubbles and Lip Gloss v2 are the screen, `chroma` the code colouring,
   `goldmark` the markdown, `yaml.v3` the settings file.
 - User-visible changes get a line under `[Unreleased]` in `CHANGELOG.md` (Keep a Changelog): CD cuts
   the release notes out of that file, so an entry is not optional and a release needs a release-prep
@@ -112,6 +116,8 @@ in the test file of the component it verifies.
 
 ## Where a change goes
 
+- **New theme:** one `Palette` in `internal/theme/theme.go`; the setting's choices, the screen and
+  `theme_test.go`'s checks all read that list. Leave the change grounds empty when it has a background.
 - **New tool:** a file in `internal/tools` implementing the `Tool` interface and `Class()`, added
   in `tools.BuiltIn`, with its class decision left to `agent/class.go`.
 - **New slash command:** one row in `agent/commands.go` (name, argument, meaning, waits-or-not),

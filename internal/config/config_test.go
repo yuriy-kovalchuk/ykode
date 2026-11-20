@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 	"testing"
 )
 
@@ -42,6 +43,7 @@ func TestLoadDefaults(t *testing.T) {
 		MaxTokens:       0, // no cap: the window decides
 		SafetyMargin:    defaultSafety,
 		ThinkingLevel:   defaultThinkingLevel,
+		Theme:           theme.Auto,
 		ReadLines:       defaultReadLines,
 		ExecTimeout:     defaultExecTimeout,
 		StreamIdle:      defaultStreamIdle,
@@ -350,6 +352,24 @@ func TestTheFullScreenSessionIsTheDefault(t *testing.T) {
 	}
 	if _, err := Load([]string{"--tui"}); err == nil {
 		t.Error("--tui is still accepted though it is the default now")
+	}
+}
+
+// a theme the file names is the one the screen gets, and one ykode does not have stops the start
+func TestAThemeFromTheFileIsTakenAndAnUnknownOneRefused(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), "theme: nord\n")
+	cfg, err := Load([]string{"--root", root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme != "nord" {
+		t.Errorf("theme = %q, want nord", cfg.Theme)
+	}
+	writeSettings(t, filepath.Join(root, ".ykode", "settings.yaml"), "theme: neon\n")
+	if _, err := Load([]string{"--root", root}); err == nil || !strings.Contains(err.Error(), "dracula") {
+		t.Errorf("an unknown theme gave %v; want it refused with the choices", err)
 	}
 }
 

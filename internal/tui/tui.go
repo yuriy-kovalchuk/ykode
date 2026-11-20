@@ -7,7 +7,8 @@ import (
 	"os"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -171,26 +172,30 @@ func newerSpeeds(before, next agent.Stats) agent.Stats {
 
 // Run draws the session until quit or ctx: the screen never takes the pointer, keys scroll
 func Run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) error {
-	return run(ctx, a, hub, cfg, os.Stdout, tea.WithAltScreen())
+	return run(ctx, a, hub, cfg, os.Stdout, true)
 }
 
 // mouseOff switches off every pointer-tracking mode, since a leftover one corrupts the next program
 const mouseOff = "\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?1005l"
 
-// writeMouseOff runs last whatever happened first, on the terminal the screen drew on
-func writeMouseOff(terminal io.Writer) {
-	_, _ = io.WriteString(terminal, mouseOff)
+// keysPlain undoes the keyboard protocols v2 asks for, which left on change how a shell reads keys
+var keysPlain = ansi.ResetModifyOtherKeys + ansi.PopKittyKeyboard(1)
+
+// writeModesOff runs last whatever happened first, on the terminal the screen drew on
+func writeModesOff(terminal io.Writer) {
+	_, _ = io.WriteString(terminal, mouseOff+keysPlain)
 }
 
 // run is Run with the program options a test needs: a fake terminal, named on the same writer
-func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, opts ...tea.ProgramOption) error {
-	// before anything that can return: no path out may leave the terminal tracking the pointer
-	defer writeMouseOff(terminal)
-	// and nothing the last program left is allowed to survive into this one
-	writeMouseOff(terminal)
+func run(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config, terminal io.Writer, altScreen bool, opts ...tea.ProgramOption) error {
+	// before anything that can return: no path out may leave the terminal tracking the pointer or the keys
+	defer writeModesOff(terminal)
+	// and nothing the last program left, a killed one included, is allowed to survive into this one
+	writeModesOff(terminal)
 	// naming the tab is decoration: a terminal that refuses it still gets the session
 	_, _ = io.WriteString(terminal, titleSequence(a.Root())) // the tab says which project this is, before the first frame
 	m := newModel(ctx, a, hub, cfg)
+	m.altScreen = altScreen
 	program := tea.NewProgram(m, opts...)
 	// everything a run reports reaches the screen through the hub, set before the program starts
 	hub.wire(program.Send)

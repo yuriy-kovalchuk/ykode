@@ -1,8 +1,8 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // some commands answer with a box over the session; lists and reports share one slot and keys
@@ -20,16 +20,16 @@ const (
 	closeOverlay
 )
 
-// overlayBox is the frame every overlay is drawn in, so a command's list or report reads as one thing.
-var overlayBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorAccent).Padding(0, 2)
-
 // place is an overlay over the whole terminal: the box centred, the session covered behind it
 func place(width, height int, body string) string {
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, overlayBox.Width(boxWidth(width)).Render(body))
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, overlayBox.Width(framed(overlayBox, boxWidth(width))).Render(body))
 }
 
 // boxWidth is the frame an overlay draws at: narrower than the terminal, so it reads as a box
 func boxWidth(width int) int { return min(max(width-6, 30), 100) }
+
+// framed is a width that leaves out the border, as lipgloss v1 measured it, since v2 counts the border in
+func framed(box lipgloss.Style, width int) int { return width + box.GetHorizontalBorderSize() }
 
 // overlayInner is what an overlay's text can use: that box less its border and its padding.
 func overlayInner(width int) int { return boxWidth(width) - 4 }

@@ -3,20 +3,21 @@ package tui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 const wheelStep = 3 // lines one notch of the wheel moves the transcript
 
 // wheel scrolls the transcript when a report arrives at all; other pointer reports are dropped
 func (m *model) wheel(msg tea.MouseMsg) {
-	if msg.Action != tea.MouseActionPress {
+	notch, ok := msg.(tea.MouseWheelMsg)
+	if !ok {
 		return
 	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
+	switch notch.Button {
+	case tea.MouseWheelUp:
 		m.view.scroll(-wheelStep)
-	case tea.MouseButtonWheelDown:
+	case tea.MouseWheelDown:
 		m.view.scroll(wheelStep)
 		m.seenIfAtBottom()
 	}

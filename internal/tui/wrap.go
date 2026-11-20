@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -40,7 +40,7 @@ func wrap(text string, width int) []string {
 	return rows
 }
 
-const styleReset = "\x1b[0m"
+const styleReset = "\x1b[m" // lipgloss closes a style this way, so a carried style closes as its own do
 
 // carryStyles keeps a style over a break on both sides, since rows draw on their own
 func carryStyles(rows []string) {
@@ -88,12 +88,13 @@ type flow struct {
 	width int
 	upto  int      // how much of the text the rows below cover
 	rows  []string // the paragraphs that ended, as the screen draws them
+	gen   int      // the palette dress coloured those rows in
 }
 
 // wrap breaks text to width and passes every row through dress, which gives a row its mark and style.
 func (f *flow) wrap(text string, width int, dress func(string) string) []string {
-	if width != f.width || len(text) < f.upto {
-		*f = flow{width: width}
+	if width != f.width || len(text) < f.upto || f.gen != paletteGen {
+		*f = flow{width: width, gen: paletteGen}
 	}
 	if end := strings.LastIndexByte(text, '\n'); end >= f.upto {
 		for _, row := range wrap(text[f.upto:end], width) {

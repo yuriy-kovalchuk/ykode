@@ -1,49 +1,92 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
-	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
-// ykode's own palette, a dark and a light shade of each, picked from the terminal's background.
-var (
-	colorAccent = lipgloss.AdaptiveColor{Dark: "#A78BFA", Light: "#6D28D9"} // violet
-	colorCyan   = lipgloss.AdaptiveColor{Dark: "#67E8F9", Light: "#0E7490"}
-	colorOK     = lipgloss.AdaptiveColor{Dark: "#4ADE80", Light: "#15803D"}
-	colorWarn   = lipgloss.AdaptiveColor{Dark: "#FBBF24", Light: "#B45309"}
-	colorBad    = lipgloss.AdaptiveColor{Dark: "#F87171", Light: "#B91C1C"}
-	colorTool   = lipgloss.AdaptiveColor{Dark: "#F472B6", Light: "#BE185D"} // pink
-	colorMuted  = lipgloss.AdaptiveColor{Dark: "#7C8394", Light: "#8A8F98"}
-	colorThink  = lipgloss.AdaptiveColor{Dark: "#9D8CD6", Light: "#7C6BB8"}
-	colorBorder = lipgloss.AdaptiveColor{Dark: "#454B61", Light: "#C9CCD6"}
-)
+// colour reads a theme's colour, hex or ANSI index; "" is the terminal's own
+func colour(s string) color.Color {
+	if s == "" {
+		return lipgloss.NoColor{}
+	}
+	return lipgloss.Color(s)
+}
 
+// paletteGen goes up with every switch, so rows kept from the last palette are drawn again
+var paletteGen int
+
+// the styles every drawing reads; usePalette rebuilds them all, on the goroutine that draws
 var (
-	styleDim     = lipgloss.NewStyle().Foreground(colorMuted)
-	styleThink   = lipgloss.NewStyle().Foreground(colorThink).Italic(true)
-	styleBold    = lipgloss.NewStyle().Bold(true)
-	styleAccent  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	styleOK      = lipgloss.NewStyle().Foreground(colorOK)
-	styleWarn    = lipgloss.NewStyle().Foreground(colorWarn)
-	styleBad     = lipgloss.NewStyle().Foreground(colorBad)
-	styleWorking = lipgloss.NewStyle().Foreground(colorTool).Bold(true)
-	styleBorder  = lipgloss.NewStyle().Foreground(colorBorder)
-	styleRail    = lipgloss.NewStyle().Foreground(colorTool)
-	styleGutter  = lipgloss.NewStyle().Foreground(colorThink)
+	styleDim, styleThink, styleBold, styleAccent, styleOK, styleWarn      lipgloss.Style
+	styleBad, styleWorking, styleBorder, styleRail, styleGutter, styleKey lipgloss.Style
 	// a change marks its side with one coloured glyph; the words keep the terminal's own colour
-	styleAddMark = lipgloss.NewStyle().Foreground(colorOK)
-	styleDelMark = lipgloss.NewStyle().Foreground(colorBad)
-	styleCode    = lipgloss.NewStyle().Foreground(colorCyan)
-	styleKey     = lipgloss.NewStyle().Foreground(colorAccent)
+	styleAddMark, styleDelMark, styleCode lipgloss.Style
 	// code marks only what a reader looks for, keeping the source's tabs so a copy is the source
-	styleCodeDefault = lipgloss.NewStyle().TabWidth(-1)
-	styleCodeKeyword = lipgloss.NewStyle().TabWidth(-1).Foreground(colorTool).Bold(true)
-	styleCodeString  = lipgloss.NewStyle().TabWidth(-1).Foreground(colorOK)
-	styleCodeComment = lipgloss.NewStyle().TabWidth(-1).Foreground(colorMuted).Italic(true)
-	styleCodeName    = lipgloss.NewStyle().TabWidth(-1).Foreground(colorCyan)
+	styleCodeDefault, styleCodeKeyword, styleCodeString, styleCodeComment, styleCodeName lipgloss.Style
+	// the four change grounds, deep or pale by the palette, the words left their own colour
+	diffSurface                                        diffSurfaces
+	overlayBox, settingsBox, settingsKey, settingsLive lipgloss.Style
+	// the server screen keeps the cyan it always had, now the theme's cyan
+	setupBox, setupTitle, setupPick, setupError lipgloss.Style
 )
+
+// a dark background is the guess until the terminal answers, as most terminals a coder runs are
+func init() { usePalette(theme.For(true)) }
+
+// usePalette makes p the palette every style draws with from here on.
+func usePalette(p theme.Palette) {
+	paletteGen++
+	fg := func(c string) lipgloss.Style { return lipgloss.NewStyle().Foreground(colour(c)) }
+	styleDim, styleThink, styleBold = fg(p.Muted), fg(p.Think).Italic(true), lipgloss.NewStyle().Bold(true)
+	styleAccent, styleOK, styleWarn, styleBad = fg(p.Accent).Bold(true), fg(p.OK), fg(p.Warn), fg(p.Bad)
+	styleWorking, styleBorder, styleRail, styleGutter = fg(p.Tool).Bold(true), fg(p.Border), fg(p.Tool), fg(p.Think)
+	styleAddMark, styleDelMark, styleCode, styleKey = fg(p.OK), fg(p.Bad), fg(p.Cyan), fg(p.Accent)
+	code := lipgloss.NewStyle().TabWidth(-1)
+	styleCodeDefault, styleCodeKeyword = code, code.Foreground(colour(p.Tool)).Bold(true)
+	styleCodeString, styleCodeName = code.Foreground(colour(p.OK)), code.Foreground(colour(p.Cyan))
+	styleCodeComment = code.Foreground(colour(p.Muted)).Italic(true)
+	bg := func(c string) lipgloss.Style { return lipgloss.NewStyle().Background(colour(c)) }
+	diffSurface = diffSurfaces{add: bg(p.AddGround), del: bg(p.DelGround), addWord: bg(p.AddWordGround), delWord: bg(p.DelWordGround)}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colour(p.Accent)).Padding(0, 2)
+	overlayBox, settingsBox, settingsKey, settingsLive = box, box, fg(p.Accent).Bold(true), fg(p.OK)
+	setupBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colour(p.Cyan)).Padding(1, 2)
+	setupTitle, setupPick, setupError = fg(p.Cyan).Bold(true), fg(p.Cyan).Bold(true), fg(p.Bad)
+}
+
+// paletteFor is the theme a setting names; auto, or a name ykode does not have, follows the background
+func paletteFor(name string, dark bool) theme.Palette {
+	if p, named := theme.Named(name); named {
+		return p
+	}
+	return theme.For(dark)
+}
+
+// paintTerminal has the terminal take a theme's own ground and text colour while the screen is up
+func paintTerminal(v *tea.View, p theme.Palette) {
+	if p.Background != "" {
+		v.BackgroundColor = colour(p.Background)
+	}
+	if p.Foreground != "" {
+		v.ForegroundColor = colour(p.Foreground)
+	}
+}
+
+// boxStyles are the typing box's shades for p: no bar behind the cursor's row, the placeholder muted
+func boxStyles(p theme.Palette) textarea.Styles {
+	s := textarea.DefaultStyles(p.Dark)
+	for _, state := range []*textarea.StyleState{&s.Focused, &s.Blurred} {
+		state.CursorLine = lipgloss.NewStyle()
+		state.Placeholder = lipgloss.NewStyle().Foreground(colour(p.Muted))
+	}
+	return s
+}
 
 // card is text in a rounded frame, title left, label right; body rows fit width-4 columns
 func card(title, label string, body []string, width int) []string {
@@ -68,22 +111,5 @@ func card(title, label string, body []string, width int) []string {
 	return append(rows, styleBorder.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
 
-// diffSurfaces are the four change grounds, deep or pale by the terminal, words left its own
+// diffSurfaces are the four change grounds a diff is drawn on.
 type diffSurfaces struct{ add, del, addWord, delWord lipgloss.Style }
-
-var diffSides = sync.OnceValue(func() diffSurfaces {
-	dark := lipgloss.HasDarkBackground()
-	return diffSurfaces{
-		add:     ground(dark, "#1f4d2a", "#d9f2dd"),
-		del:     ground(dark, "#5c2630", "#fbdfe2"),
-		addWord: ground(dark, "#2f7d45", "#a4e0af"),
-		delWord: ground(dark, "#93404d", "#f3adb5"),
-	}
-})
-
-func ground(isDark bool, darkShade, lightShade string) lipgloss.Style {
-	if isDark {
-		return lipgloss.NewStyle().Background(lipgloss.Color(darkShade))
-	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(lightShade))
-}

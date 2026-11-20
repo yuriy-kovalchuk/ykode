@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 )
@@ -17,14 +18,14 @@ func TestTheAnswerTravelsBackToTheRun(t *testing.T) {
 	reply := make(chan agent.Decision, 1)
 	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/a.go?", Target: []string{"/tmp/a.go"}}, reply: reply})
 
-	if !strings.Contains(m.View(), "y yes · a always · n no") {
+	if !strings.Contains(stripCodes(m.render()), "y yes · a always · n no") {
 		t.Error("the screen does not ask")
 	}
-	if !strings.Contains(m.View(), "/tmp/a.go") {
+	if !strings.Contains(stripCodes(m.render()), "/tmp/a.go") {
 		t.Error("an outside path is not shown")
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m.Update(typedKeys("a"))
 	if got := <-reply; got != agent.AllowAlways {
 		t.Errorf("answering 'a' came back as %v", got)
 	}
@@ -33,12 +34,18 @@ func TestTheAnswerTravelsBackToTheRun(t *testing.T) {
 	}
 }
 
+// typedKeys is text typed at the keyboard, arriving as the one press a terminal reports for it
+func typedKeys(s string) tea.KeyPressMsg {
+	r, _ := utf8.DecodeRuneInString(s)
+	return tea.KeyPressMsg{Code: r, Text: s}
+}
+
 func TestRefusingIsTheDefaultAnswer(t *testing.T) {
-	for _, key := range []tea.KeyMsg{
-		{Type: tea.KeyEnter},
-		{Type: tea.KeyEscape},
-		{Type: tea.KeyRunes, Runes: []rune("n")},
-		{Type: tea.KeyCtrlC},
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyEnter},
+		{Code: tea.KeyEscape},
+		{Code: 'n', Text: "n"},
+		{Code: 'c', Mod: tea.ModCtrl},
 	} {
 		m := newTestModel()
 		reply := make(chan agent.Decision, 1)
@@ -63,7 +70,7 @@ func TestCtrlCCancelsARunBeforeItQuits(t *testing.T) {
 	_ = turnCtx
 	m.cancel = func() { cancelled = true; cancel() }
 
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd != nil {
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd != nil {
 		t.Error("ctrl+c quit while a run was going")
 	}
 	if !cancelled {
@@ -71,7 +78,7 @@ func TestCtrlCCancelsARunBeforeItQuits(t *testing.T) {
 	}
 
 	m.running = false
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Error("ctrl+c should quit once nothing is running")
 	}
 }
@@ -82,20 +89,20 @@ func TestCtrlPWalksOlderPromptsAndKeepsWhatWasTyped(t *testing.T) {
 	m.history = []string{"first question", "second question"}
 	m.histIdx = len(m.history)
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	if m.input.Value() != "second question" {
 		t.Errorf("ctrl+p gave %q", m.input.Value())
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	if m.input.Value() != "second question" {
 		t.Errorf("ctrl+n gave %q", m.input.Value())
 	}
 
 	m.histIdx = len(m.history) // as it sits after a prompt was sent
 	m.input.SetValue("typing")
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	if m.input.Value() != "typing" {
 		t.Errorf("walking back past the end lost the line being typed: %q", m.input.Value())
 	}
@@ -114,7 +121,7 @@ func TestAScrollMovesTheSessionNotThePrompt(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	}
 	if m.view.atBottom() {
 		t.Error("the arrows did not move the session")
@@ -138,7 +145,7 @@ func TestTheArrowsMoveTheCaretInAMultiLinePrompt(t *testing.T) {
 	m.input.SetValue("one\ntwo")
 	m.refresh()
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.input.Line() != 1 {
 		t.Errorf("the caret is on line %d, want it moved down through the prompt", m.input.Line())
 	}
@@ -169,7 +176,7 @@ func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/a.go?"}, reply: first})
 	m.Update(confirmMsg{ev: agent.Event{Kind: agent.Confirm, Text: "write src/b.go?"}, reply: second})
 
-	screen := m.View()
+	screen := m.render()
 	if !strings.Contains(screen, "write src/a.go?") {
 		t.Errorf("the second question cut in front:\n%s", screen)
 	}
@@ -177,7 +184,7 @@ func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 		t.Error("the screen hides that another call is waiting")
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.Update(typedKeys("y"))
 	got, ok := answered(first)
 	if !ok {
 		t.Fatal("the first question is still waiting: its caller is blocked")
@@ -185,10 +192,10 @@ func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 	if got != agent.Allow {
 		t.Errorf("the first question got %v", got)
 	}
-	if !strings.Contains(m.View(), "write src/b.go?") {
+	if !strings.Contains(m.render(), "write src/b.go?") {
 		t.Error("the second question never came up")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m.Update(typedKeys("n"))
 	got, ok = answered(second)
 	if !ok {
 		t.Fatal("the second question is still waiting")
@@ -200,23 +207,23 @@ func TestTwoQuestionsAreAnsweredOneAtATime(t *testing.T) {
 
 func TestATypedEnterSendsOneLine(t *testing.T) {
 	w := newWiredModel(t, "already fixed")
-	w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix the bug")})
-	w.m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	w.m.Update(typedKeys("fix the bug"))
+	w.m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if len(w.m.history) != 1 || w.m.history[0] != "fix the bug" {
 		t.Fatalf("typed keys did not make a prompt: %v", w.m.history)
 	}
 }
 
 func TestCtrlJStartsANewLineInsteadOfSending(t *testing.T) {
-	for _, newline := range []tea.KeyMsg{{Type: tea.KeyCtrlJ}, {Type: tea.KeyEnter, Alt: true}} {
+	for _, newline := range []tea.KeyPressMsg{{Code: 'j', Mod: tea.ModCtrl}, {Code: tea.KeyEnter, Mod: tea.ModAlt}} {
 		w := newWiredModel(t, "ran them")
-		w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("go test ./...")})
+		w.m.Update(typedKeys("go test ./..."))
 		w.m.Update(newline)
 		if len(w.m.history) != 0 {
 			t.Fatalf("%s sent the prompt", newline)
 		}
-		w.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("run the ones that fail")})
-		w.m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		w.m.Update(typedKeys("run the ones that fail"))
+		w.m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		if len(w.m.history) != 1 {
 			t.Fatalf("%s: nothing was sent afterwards", newline)
 		}
@@ -228,7 +235,7 @@ func TestCtrlJStartsANewLineInsteadOfSending(t *testing.T) {
 
 func TestAPasteKeepsItsOwnNewlines(t *testing.T) {
 	m := newTestModel()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("func main() {\n\tprintln(1)\n}"), Paste: true})
+	m.Update(tea.PasteMsg{Content: "func main() {\n\tprintln(1)\n}"})
 	if got := m.input.Value(); strings.Count(got, "\n") != 2 {
 		t.Errorf("the paste lost its shape: %q", got)
 	}
@@ -239,7 +246,7 @@ func TestAPasteKeepsItsOwnNewlines(t *testing.T) {
 
 func TestPastingTheWordEnterDoesNotSend(t *testing.T) {
 	m := newTestModel()
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("enter"), Paste: true})
+	m.Update(tea.PasteMsg{Content: "enter"})
 	if len(m.history) != 0 {
 		t.Error(`pasting the word "enter" sent the prompt`)
 	}
@@ -252,11 +259,11 @@ func TestPastingTheWordEnterDoesNotSend(t *testing.T) {
 func TestCtrlSlashShowsTheKeysOverATypedPrompt(t *testing.T) {
 	m := newTestModel()
 	m.input.SetValue("count the lines")
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlUnderscore})
+	m.Update(tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl})
 	if !m.showKeys {
 		t.Fatal("ctrl+? over typed text did not open the list")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlUnderscore})
+	m.Update(tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl})
 	if m.showKeys {
 		t.Fatal("ctrl+? again did not hide the list")
 	}
@@ -266,15 +273,15 @@ func TestCtrlSlashShowsTheKeysOverATypedPrompt(t *testing.T) {
 func TestCtrlAAndCtrlEMoveTheCaretWithinTheirLine(t *testing.T) {
 	m := inputModel(40)
 	typeText(m, "one")
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m.Update(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
 	typeText(m, "two three")
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
 	typeText(m, "X")
 	if got := m.input.Value(); got != "one\nXtwo three" {
 		t.Fatalf("ctrl+a put the caret somewhere else: %q", got)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m.Update(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
 	typeText(m, "Y")
 	if got := m.input.Value(); got != "one\nXtwo threeY" {
 		t.Errorf("ctrl+e put the caret somewhere else: %q", got)
@@ -286,14 +293,14 @@ func TestCtrlKAndCtrlWKillWhatTheyPointAt(t *testing.T) {
 	m := inputModel(40)
 	typeText(m, "one two three")
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m.Update(tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl})
 	typeText(m, "!")
 	if got := m.input.Value(); got != "one two !" {
 		t.Errorf("ctrl+w left %q, want the word before the caret gone", got)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
 	if got := m.input.Value(); got != "" {
 		t.Errorf("ctrl+k left %q, want the line ahead of the caret killed", got)
 	}
@@ -305,7 +312,7 @@ func TestCtrlUScrollsWithTextInTheBox(t *testing.T) {
 	typeText(m, "beta gamma")
 	before := m.view.at
 
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m.Update(tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 	if m.view.at != before-m.pageRows(true) {
 		t.Errorf("ctrl+u moved the transcript from row %d to %d, want half a page up", before, m.view.at)
 	}

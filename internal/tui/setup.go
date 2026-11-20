@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
 // ErrSetupCancelled is the user leaving the setup screen without choosing a server.
@@ -22,6 +24,7 @@ type SetupStart struct {
 	Problem string // why the screen is up when it is not a first run, e.g. the server did not answer
 	Model   string // the model in use, marked in the list when the server has it
 	Inside  bool   // opened over a running session: esc closes it rather than quits
+	Theme   string // the theme setting, so the first screen a user sees is already in it
 }
 
 // SetupResult is the server the user picked, and what to save.
@@ -34,8 +37,13 @@ type SetupResult struct {
 
 // Setup asks which server to talk to, checks it answers, and lets the user pick a model.
 func Setup(ctx context.Context, start SetupStart) (SetupResult, error) {
+	// the same belt the session wears: no mode this program, or a killed one before it, outlives it
+	writeModesOff(os.Stdout)
+	defer writeModesOff(os.Stdout)
 	m := newSetup(start, probeServer)
-	final, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx)).Run()
+	m.altScreen = true
+	m.ownPalette()
+	final, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
 	if err != nil {
 		return SetupResult{}, err
 	}
@@ -55,18 +63,20 @@ const (
 )
 
 type setupModel struct {
-	start  SetupStart
-	probe  probeFunc
-	step   setupStep
-	url    textinput.Model
-	models []llm.ModelInfo
-	pick   int
-	found  string // the URL that answered, which may have gained /v1
-	err    string
-	width  int
-	done   bool // a server and model were chosen
-	closed bool // the screen is finished with, chosen or not; a host reads this instead of waiting for the quit
-	result SetupResult
+	start     SetupStart
+	probe     probeFunc
+	step      setupStep
+	url       textinput.Model
+	models    []llm.ModelInfo
+	pick      int
+	found     string // the URL that answered, which may have gained /v1
+	err       string
+	width     int
+	done      bool          // a server and model were chosen
+	closed    bool          // the screen is finished with, chosen or not; a host reads this instead of waiting for the quit
+	altScreen bool          // run on its own it takes the whole terminal; over a session it is only a box
+	painted   theme.Palette // run on its own, the palette it draws in and paints the terminal with
+	result    SetupResult
 }
 
 func newSetup(start SetupStart, probe probeFunc) *setupModel {
@@ -75,18 +85,31 @@ func newSetup(start SetupStart, probe probeFunc) *setupModel {
 	url.Placeholder = "http://127.0.0.1:8080/v1"
 	url.SetValue(start.BaseURL)
 	url.CharLimit = 300
-	url.Width = 56
+	url.SetWidth(56)
 	url.Focus()
 
 	return &setupModel{start: start, probe: probe, url: url, err: start.Problem, width: defaultWidth}
 }
 
-func (m *setupModel) Init() tea.Cmd { return textinput.Blink }
+// ownPalette is for the screen run on its own: over a session it draws in the session's palette instead
+func (m *setupModel) ownPalette() {
+	m.painted = paletteFor(m.start.Theme, true)
+	usePalette(m.painted)
+}
+
+// Init asks for the background as the session does, since auto can only be answered by the terminal
+func (m *setupModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tea.RequestBackgroundColor) }
 
 func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		return m, nil
+	case tea.BackgroundColorMsg:
+		if _, named := theme.Named(m.start.Theme); !named {
+			m.painted = theme.For(msg.IsDark())
+			usePalette(m.painted)
+		}
 		return m, nil
 	case probeDoneMsg:
 		if msg.err != nil {
@@ -100,14 +123,14 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
 	return m, nil
 }
 
 // onKey handles a key press for the step on screen.
-func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *setupModel) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		m.closed = true
 		return m, tea.Quit
@@ -158,16 +181,21 @@ func (m *setupModel) onKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// the colourless setup styles; the coloured ones are the palette's, rebuilt with it
 var (
-	setupBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6")).Padding(1, 2)
-	setupTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	setupLabel = lipgloss.NewStyle().Bold(true)
 	setupDim   = lipgloss.NewStyle().Faint(true)
-	setupError = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	setupPick  = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 )
 
-func (m *setupModel) View() string {
+func (m *setupModel) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = m.altScreen
+	paintTerminal(&v, m.painted)
+	return v
+}
+
+// render is the box as text, which a session draws over itself and a test reads
+func (m *setupModel) render() string {
 	var b strings.Builder
 	title := "ykode · connect to a model server"
 	if m.start.Inside {

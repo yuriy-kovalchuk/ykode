@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // typeInto presses the keys a user would, so the list is reached through the input, not set up.
 func typeInto(t *testing.T, m *model, keys string) {
 	t.Helper()
 	for _, r := range keys {
-		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.Update(typedKeys(string([]rune{r})))
 	}
 }
 
@@ -21,7 +21,7 @@ func TestTypingASlashListsWhatItCouldStillBe(t *testing.T) {
 	m.width, m.height = 90, 24
 	typeInto(t, m, "/th")
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if !strings.Contains(out, "/think [level]") || !strings.Contains(out, "how deeply the model thinks") {
 		t.Errorf("the candidates are not on the screen:\n%s", out)
 	}
@@ -35,12 +35,12 @@ func TestTabTypesWhatTheCandidatesShare(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 90, 24
 	typeInto(t, m, "/t")
-	m.Update(tea.KeyMsg{Type: tea.KeyTab}) // /think, /tools, /think... share only the slash and t
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // /think, /tools, /think... share only the slash and t
 	if m.input.Value() != "/t" {
 		t.Errorf("tab invented a command: %q", m.input.Value())
 	}
 	typeInto(t, m, "o")
-	m.Update(tea.KeyMsg{Type: tea.KeyTab}) // only /tools is left
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // only /tools is left
 	if m.input.Value() != "/tools" {
 		t.Errorf("tab completed to %q, want /tools", m.input.Value())
 	}
@@ -48,7 +48,7 @@ func TestTabTypesWhatTheCandidatesShare(t *testing.T) {
 	m2 := newTestModel()
 	m2.width, m2.height = 90, 24
 	typeInto(t, m2, "/mod")
-	m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m2.input.Value() != "/model " {
 		t.Errorf("tab completed to %q, want /model with room for the id", m2.input.Value())
 	}
@@ -60,10 +60,10 @@ func TestTypingTheOtherNameOfACommandCompletesThatName(t *testing.T) {
 	m.width, m.height = 90, 24
 	typeInto(t, m, "/q")
 
-	if shown := stripCodes(m.View()); !strings.Contains(shown, "/quit") {
+	if shown := stripCodes(m.render()); !strings.Contains(shown, "/quit") {
 		t.Fatalf("typing /q does not offer the name it is being typed as:\n%s", shown)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if got := m.input.Value(); got != "/quit" {
 		t.Errorf("tab completed to %q, want /quit", got)
 	}
@@ -74,9 +74,9 @@ func TestEscClearsTheListAndKeepsTheLine(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 90, 24
 	typeInto(t, m, "/th")
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if strings.Contains(out, "how deeply the model thinks") {
 		t.Errorf("esc left the list on the screen:\n%s", out)
 	}
@@ -84,7 +84,7 @@ func TestEscClearsTheListAndKeepsTheLine(t *testing.T) {
 		t.Errorf("esc changed the line: %q", m.input.Value())
 	}
 	typeInto(t, m, "i")
-	if !strings.Contains(stripCodes(m.View()), "how deeply the model thinks") {
+	if !strings.Contains(stripCodes(m.render()), "how deeply the model thinks") {
 		t.Error("the list did not come back on the next key")
 	}
 }
@@ -95,7 +95,7 @@ func TestTheCommandListTakesTheRoomTheScreenHas(t *testing.T) {
 	m.width, m.height = 90, 40
 	typeInto(t, m, "/")
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	if strings.Contains(out, "more, keep typing") {
 		t.Errorf("a screen this tall still hides commands:\n%s", out)
 	}
@@ -108,7 +108,7 @@ func TestTheCommandListTakesTheRoomTheScreenHas(t *testing.T) {
 	short := newTestModel()
 	short.width, short.height = 90, 14
 	typeInto(t, short, "/")
-	cut := stripCodes(short.View())
+	cut := stripCodes(short.render())
 	if !strings.Contains(cut, "more, keep typing") {
 		t.Errorf("a 14 row screen did not say it cut the list short:\n%s", cut)
 	}
@@ -125,7 +125,7 @@ func TestACommandWithTwoNamesShowsOnce(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 100, 40
 	typeInto(t, m, "/")
-	line := strings.Join(strings.Split(stripCodes(m.View()), "\n"), " ")
+	line := strings.Join(strings.Split(stripCodes(m.render()), "\n"), " ")
 	if strings.Contains(line, "/quit") {
 		t.Errorf("browsing / listed the alias as well as the command:\n%s", line)
 	}
@@ -142,7 +142,7 @@ func TestTheListSitsAboveThePromptWithoutHidingTheSession(t *testing.T) {
 	m.refresh() // what an answer event does: the session is drawn before the typing starts
 	typeInto(t, m, "/ctx")
 
-	rows := strings.Split(stripCodes(m.View()), "\n")
+	rows := strings.Split(stripCodes(m.render()), "\n")
 	list, prompt, session := -1, -1, -1
 	for i, row := range rows {
 		if strings.Contains(row, "how full the window is") {

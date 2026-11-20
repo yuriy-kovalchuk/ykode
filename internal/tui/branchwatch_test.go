@@ -52,14 +52,14 @@ func modelIn(t *testing.T, dir string) *model {
 func TestTheFooterFollowsACheckoutMadeElsewhere(t *testing.T) {
 	dir := gitProject(t)
 	m := modelIn(t, dir)
-	if out := stripCodes(m.View()); !strings.Contains(out, "(footer)") {
+	if out := stripCodes(m.render()); !strings.Contains(out, "(footer)") {
 		t.Fatalf("the footer does not name the branch it started on:\n%s", out)
 	}
 
 	git(t, dir, "checkout", "-q", "-b", "elsewhere")
 	m.Update(branchTickMsg{})
 
-	if out := stripCodes(m.View()); !strings.Contains(out, "(elsewhere)") {
+	if out := stripCodes(m.render()); !strings.Contains(out, "(elsewhere)") {
 		t.Errorf("the footer still names the old branch after a checkout elsewhere:\n%s", out)
 	}
 }
@@ -67,11 +67,11 @@ func TestTheFooterFollowsACheckoutMadeElsewhere(t *testing.T) {
 // a look that found nothing to say must not draw the session again: a reader scrolled up stays put
 func TestALookThatFoundNoChangeLeavesTheScreenAlone(t *testing.T) {
 	m := modelIn(t, gitProject(t))
-	before := stripCodes(m.View())
+	before := stripCodes(m.render())
 
 	m.Update(branchTickMsg{})
 
-	if got := stripCodes(m.View()); got != before {
+	if got := stripCodes(m.render()); got != before {
 		t.Errorf("a quiet look redrew the screen:\n%s\nwant\n%s", got, before)
 	}
 }
@@ -83,14 +83,14 @@ func TestTheFooterFollowsAWorktree(t *testing.T) {
 	git(t, dir, "worktree", "add", "-q", work, "-b", "side")
 
 	m := modelIn(t, work)
-	if out := stripCodes(m.View()); !strings.Contains(out, "(side)") {
+	if out := stripCodes(m.render()); !strings.Contains(out, "(side)") {
 		t.Fatalf("the footer does not name the worktree's branch:\n%s", out)
 	}
 
 	git(t, work, "checkout", "-q", "-b", "elsewhere")
 	m.Update(branchTickMsg{})
 
-	if out := stripCodes(m.View()); !strings.Contains(out, "(elsewhere)") {
+	if out := stripCodes(m.render()); !strings.Contains(out, "(elsewhere)") {
 		t.Errorf("the footer did not follow the worktree's checkout:\n%s", out)
 	}
 }

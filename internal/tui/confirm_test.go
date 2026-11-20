@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // /reset throws away the conversation, so one keystroke may not do it: the screen asks first
@@ -17,11 +17,11 @@ func TestResetAsksBeforeForgettingTheConversation(t *testing.T) {
 	if m.picker == nil {
 		t.Fatal("/reset went through without asking")
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "forget the conversation") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "forget the conversation") {
 		t.Errorf("the question does not say what is at stake:\n%s", view)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m.Update(typedKeys("n"))
 	if m.picker != nil {
 		t.Error("the answer left the question on the screen")
 	}

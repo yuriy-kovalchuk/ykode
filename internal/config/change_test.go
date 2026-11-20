@@ -143,6 +143,7 @@ func TestAValueThatWouldNotWorkIsRefused(t *testing.T) {
 	for _, ask := range []struct{ key, value string }{
 		{"stream_idle_sec", "soon"},
 		{"thinking_level", "sideways"},
+		{"theme", "neon"},
 		{"assume_yes", "maybe"},
 		{"max_turns", "-5"},
 		{"keep_sessions", "a week"},

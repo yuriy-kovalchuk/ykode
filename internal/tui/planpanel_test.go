@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
@@ -79,12 +79,12 @@ func TestTheActiveStepTurnsWhileATurnRuns(t *testing.T) {
 // ctrl+o folds the panel to its heading, which names the step being worked on
 func TestCtrlOFoldsThePlanToItsHeading(t *testing.T) {
 	m := planModel(t, 100, 40, steps(done, active, pending)...)
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
 	rows := m.planRows()
 	if len(rows) != 1 || !strings.Contains(stripCodes(rows[0]), "step 2") || !strings.Contains(stripCodes(rows[0]), "1/3") {
 		t.Fatalf("folded plan = %q", rows)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m.Update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
 	if len(m.planRows()) != 4 {
 		t.Error("ctrl+o again did not unfold it")
 	}
@@ -171,7 +171,7 @@ func TestAPlanCallGrowsThePanelAndShrinksTheSession(t *testing.T) {
 	if m.view.height != before-4 {
 		t.Errorf("the transcript has %d rows, was %d: a heading and three steps should have taken four", m.view.height, before)
 	}
-	if view := stripCodes(m.View()); !strings.Contains(view, "● b") || !strings.Contains(view, "plan ▰▰▱ 1/3") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "● b") || !strings.Contains(view, "plan ▰▰▱ 1/3") {
 		t.Errorf("the panel is not on the screen:\n%s", view)
 	}
 }

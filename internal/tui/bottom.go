@@ -5,28 +5,40 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 const (
 	promptMark    = "❯ "
-	maxInputLines = 10 // the input grows with what is typed, up to this
-	bottomGap     = "" // a blank row so the cursor does not sit against the bottom of the terminal
+	maxInputLines = 10   // the input grows with what is typed, up to this
+	maxInputRows  = 5000 // what the box holds at all, in wrapped rows: a pasted file still fits
+	bottomGap     = ""   // a blank row so the cursor does not sit against the bottom of the terminal
 
 	// reportRows is what the bottom holds under the box: the two report rows and the edge gap
 	reportRows = 3
 	boxEdges   = 2 // the input card's top and bottom edges
 )
 
-// keys is what ? shows, as key and what it does.
-var keys = [][2]string{
-	{"enter", "send"}, {"ctrl+j alt+enter", "newline"}, {"ctrl+p ctrl+n", "earlier prompts"},
-	{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"}, {"ctrl+w", "kill a word"},
-	{"tab", "complete a /command"},
-	{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"}, {"end", "back to the end"},
-	{"esc", "stop the run"}, {"ctrl+o", "fold the plan"},
-	{"ctrl+c", "quit, stop mid-run"}, {"ctrl+/", "this list"},
+// keyGroup is one row of what ? shows: what the keys are for, then each key and what it does
+type keyGroup struct {
+	name string
+	keys [][2]string
 }
+
+// keyGroups is what ? shows, grouped by what a reader is doing: writing, editing, reading, steering
+var keyGroups = []keyGroup{
+	{"prompt", [][2]string{{"enter", "send"}, {"ctrl+j alt/ctrl+enter", "newline"},
+		{"tab", "complete a /command"}, {"ctrl+p ctrl+n", "earlier prompts"}}},
+	{"edit", [][2]string{{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"},
+		{"ctrl+w", "kill a word"}}},
+	{"scroll", [][2]string{{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"},
+		{"end", "back to the end"}}},
+	{"session", [][2]string{{"esc", "stop the run"}, {"ctrl+c", "stop the run, or quit"},
+		{"ctrl+o", "fold the plan"}, {"ctrl+/", "this list"}}},
+}
+
+// keyLabels is the column the group names take, the longest name and a space
+const keyLabels = len("session") + 2
 
 // bottomArea is everything under the transcript: keys, queue, question, prompt card, then the report
 func (m *model) bottomArea() string {
@@ -205,7 +217,7 @@ func (m *model) promptLines() string {
 	if m.running {
 		mark = styleDim.Render(promptMark) // typing still works; it waits for the turn
 	}
-	lines := strings.Split(m.input.View(), "\n")
+	lines := strings.Split(m.boxView(), "\n")
 	for i := range lines {
 		if i == 0 {
 			lines[i] = mark + lines[i]
@@ -224,14 +236,28 @@ func (m *model) promptLines() string {
 	return strings.Join(card(title, label, lines, m.width), "\n")
 }
 
-// fitInput grows the box with the rows typed, to ten, never past the session's minimum
-func (m *model) fitInput() {
-	rows := min(inputRows(m.input.Value(), m.input.Width()), maxInputLines)
-	if room := m.height - topRows - m.otherRows() - minTranscriptRows; rows > room {
-		rows = max(room, 1)
+// boxLook is everything the typing box's drawing depends on, so an unchanged box is not drawn again
+type boxLook struct {
+	value                            string
+	width, height, line, column, top int
+	focused                          bool
+	palette                          int
+}
+
+// boxView is the box as drawn: a streamed reply redraws the session thirty times a second, not the box
+func (m *model) boxView() string {
+	look := boxLook{value: m.input.Value(), width: m.input.Width(), height: m.input.Height(), line: m.input.Line(),
+		column: m.input.Column(), top: m.input.ScrollYOffset(), focused: m.input.Focused(), palette: paletteGen}
+	if look != m.boxLook || m.boxDrawn == "" {
+		m.boxLook, m.boxDrawn = look, m.input.View()
 	}
-	if rows != m.input.Height() {
-		m.input.SetHeight(rows)
+	return m.boxDrawn
+}
+
+// fitInput keeps the box, which grows by itself to ten rows, from pushing the session past its minimum
+func (m *model) fitInput() {
+	if room := max(m.height-topRows-m.otherRows()-minTranscriptRows, 1); m.input.Height() > room {
+		m.input.SetHeight(room)
 		m.bottom = "" // the box changed, so the rows under the session changed with it
 	}
 }
@@ -241,34 +267,88 @@ func (m *model) otherRows() int {
 	return lipgloss.Height(m.screenBottom()) - m.input.Height()
 }
 
-// inputRows counts the rows the wrapped text takes: a long line without a return is not one row
-func inputRows(text string, width int) int {
-	rows := 0
-	for _, line := range strings.Split(text, "\n") {
-		rows += len(wrap(line, width))
-	}
-	return max(rows, 1)
-}
-
 // minTranscriptRows is the least the session keeps on screen however long the prompt is.
 const minTranscriptRows = 3
 
-// keysHelp lists the keys, wrapping between entries so no row is wider than the screen.
+// keysHelp lists the keys a group to a row, its name in a column; a narrow screen puts the name above
 func (m *model) keysHelp() string {
+	beside := m.width-keyLabels >= widestKey()
 	var rows []string
-	row, used := "", 0
-	for _, k := range keys {
-		desc := k[1]
-		plain := k[0] + " " + desc
-		if used > 0 && used+3+lipgloss.Width(plain) > m.width {
-			rows, row, used = append(rows, row), "", 0
+	for _, g := range keyGroups {
+		label := styleAccent.Render(g.name)
+		if !beside {
+			rows = append(rows, label)
+			rows = append(rows, keyRows(g.keys, m.width)...)
+			continue
 		}
-		if used > 0 {
-			row += styleDim.Render(" · ")
-			used += 3
+		for i, row := range keyRows(g.keys, m.width-keyLabels) {
+			lead := strings.Repeat(" ", keyLabels)
+			if i == 0 {
+				lead = label + strings.Repeat(" ", keyLabels-len(g.name))
+			}
+			rows = append(rows, lead+row)
 		}
-		row += styleKey.Render(k[0]) + " " + styleDim.Render(desc)
-		used += lipgloss.Width(plain) // the arrows take more bytes than they do columns
 	}
-	return strings.Join(append(rows, row), "\n")
+	return strings.Join(rows, "\n")
+}
+
+// keyRows lays entries in as few rows of width as they need, the same count on each, so none is a stub
+func keyRows(keys [][2]string, width int) []string {
+	lines := flowKeys(keys, width)
+	per := (len(keys) + len(lines) - 1) / len(lines)
+	var even [][][2]string
+	for at := 0; at < len(keys); at += per {
+		chunk := keys[at:min(at+per, len(keys))]
+		if keysWidth(chunk) > width {
+			even = lines // an even split would overflow a row: the plain flow stands
+			break
+		}
+		even = append(even, chunk)
+	}
+	rows := make([]string, 0, len(even))
+	for _, line := range even {
+		row := ""
+		for i, k := range line {
+			if i > 0 {
+				row += styleDim.Render(" · ")
+			}
+			row += styleKey.Render(k[0]) + " " + styleDim.Render(k[1])
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// flowKeys fills each row before starting the next, breaking between entries, never inside one
+func flowKeys(keys [][2]string, width int) [][][2]string {
+	lines := [][][2]string{nil}
+	for _, k := range keys {
+		last := len(lines) - 1
+		if len(lines[last]) > 0 && keysWidth(append(lines[last][:len(lines[last]):len(lines[last])], k)) > width {
+			lines = append(lines, nil)
+			last++
+		}
+		lines[last] = append(lines[last], k)
+	}
+	return lines
+}
+
+// keysWidth is the columns a row of entries takes, counted as shown: the arrows take more bytes
+func keysWidth(keys [][2]string) int {
+	width := 3 * max(len(keys)-1, 0)
+	for _, k := range keys {
+		width += lipgloss.Width(k[0] + " " + k[1])
+	}
+	return width
+}
+
+// widestKey is the widest single entry, which the column beside the names must hold
+func widestKey() int {
+	widest := 0
+	for _, g := range keyGroups {
+		for _, k := range g.keys {
+			widest = max(widest, lipgloss.Width(k[0]+" "+k[1]))
+		}
+	}
+	return widest
 }

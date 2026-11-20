@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // markdown is an answer laid out from nothing, as one string: what a test reads.
@@ -164,7 +164,6 @@ func TestBlocksOfAnAnswerStandApart(t *testing.T) {
 
 // a mark inside a mark does not switch off the outer one: bold around a code span stays bold
 func TestAStyleInsideAStyleLeavesTheOuterOneOn(t *testing.T) {
-	withColour(t)
 	got := markdown("**before `code` after**", 60)
 	bold := codeOf(styleBold)
 	if strings.Count(got, bold) < 2 || !strings.Contains(got, bold+" after") {
@@ -174,7 +173,6 @@ func TestAStyleInsideAStyleLeavesTheOuterOneOn(t *testing.T) {
 
 // rows draw on their own, so a style closes on its row and opens again on the next
 func TestAStyleThatWrapsIsWholeOnEveryRow(t *testing.T) {
-	withColour(t)
 	rows := strings.Split(markdown("**"+strings.TrimSpace(strings.Repeat("bold words ", 12))+"**", 40), "\n")
 	if len(rows) < 3 {
 		t.Fatalf("the text did not wrap: %q", rows)
@@ -201,7 +199,6 @@ func TestChecklistsAndStruckOutText(t *testing.T) {
 
 // an arriving answer is laid out a block at a time, matching a draw of the whole answer
 func TestAnAnswerDrawnAsItArrivesMatchesOneDrawnWhole(t *testing.T) {
-	withColour(t)
 	answer := "# What I found\n\nThe file has **three** parts and a `main` function.\n\n- the record\n- the rules\n\n" +
 		"```go\nfunc main() {\n\tcount := \"three\"\n}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\nthe end\n"
 	var arriving layout

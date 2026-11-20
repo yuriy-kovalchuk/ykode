@@ -34,7 +34,7 @@ func TestACarriedOverCallNamesItsFileFromTheProject(t *testing.T) {
 	m := newModel(context.Background(), a, NewHub(), config.Config{Session: "s20260101-120000.000"})
 
 	var row string
-	for _, line := range strings.Split(stripCodes(m.View()), "\n") {
+	for _, line := range strings.Split(stripCodes(m.render()), "\n") {
 		if strings.Contains(line, "read_file") {
 			row = line
 		}
@@ -53,7 +53,7 @@ func TestAResumedConversationIsOnTheScreen(t *testing.T) {
 	a.Resume(savedConversation())
 	m := newModel(context.Background(), a, NewHub(), config.Config{Session: "s20260101-120000.000"})
 
-	out := stripCodes(m.View())
+	out := stripCodes(m.render())
 	for _, want := range []string{"make parse skip blank lines", "done: the blank line check is in place", "read_file", "src/parser.go"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the resumed session does not show %q:\n%s", want, out)

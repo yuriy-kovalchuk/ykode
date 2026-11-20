@@ -22,7 +22,6 @@ func TestACodeBlockCarriesNothingTheReaderDidNotWrite(t *testing.T) {
 
 // colouring must not rewrite a block: a tab-indented block copies back as the same tabs
 func TestAColouredBlockKeepsTheIndentTheWriterUsed(t *testing.T) {
-	withColour(t)
 	code := "func main() {\n\tcount := 3\n}\n```\n"
 	coloured := stripCodes(markdown("```go\n"+code, 60))
 	plain := stripCodes(markdown("```no_grammar_here\n"+code, 60))
