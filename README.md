@@ -6,7 +6,9 @@ cloud integration is planned: no provider SDK, no account, no telemetry, and the
 connects to is the one you configure.
 
 The loop is pi-shaped. A model answers, asks for tools, the loop runs again, and its thinking is
-shown apart from its answer. What this repository adds is the toolchain: that shape usually ships
+shown apart from its answer. A reply that ends after its thinking, with no call and no answer, is
+not kept: the same request is sent again, at most twice per stall, because a kept one teaches the
+model that a turn may end there. What this repository adds is the toolchain: that shape usually ships
 with a Node runtime, a package manager, a bundler and a dependency tree, to move bytes between a
 socket and a terminal. ykode is one Go binary on the standard library's HTTP, JSON and SSE, and
 `make build` is the whole build. It is experimental: settings keys and the saved-conversation format

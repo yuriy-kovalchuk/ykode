@@ -28,6 +28,9 @@ has been tagged yet, so everything below describes what `main` does today.
   lists and edits every knob.
 - Permissions: a write or a command is confirmed one at a time, `assume_yes` stops asking about
   writes inside the project, and `permissions.allow` names tools or one file.
+- A reply that stops after its thinking, with no tool call and no answer, is dropped and the same
+  request is sent again, up to twice for each stall; the history never keeps one, since a model that
+  sees such a turn in its history makes more of them.
 - Pictures: `read_file` on a png, jpeg, gif or webp sizes it down and sends it to a model that takes
   images.
 - Commands: `/help`, `/usage`, `/ctx`, `/compact`, `/sessions`, `/model`, `/think`, `/plan`, `/tools`,

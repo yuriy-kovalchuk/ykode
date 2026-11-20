@@ -27,8 +27,8 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 	a.add(llm.Message{Role: "user", Content: asked})
 	a.task = asked // what the history holds, which is what compaction looks for
 
-	// a reply with no tool call ends the ask, as in pi: a nudge costs a whole round of thinking
-	textRan, overflowed, resumed := false, false, false
+	// stalls counts thinking-only replies in a row; one that is kept makes the next stall a fresh one
+	textRan, overflowed, stalls := false, false, 0
 	for turn := 1; ; turn++ {
 		a.turn.Store(int64(turn))
 		a.emit(Event{Kind: TurnStart, Turn: turn})
@@ -74,20 +74,25 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 			msg.Content = withoutCutCalls(msg.Content)
 			a.tell("the response hit max_tokens and may be incomplete")
 		}
-		a.add(msg)
-
-		if len(msg.ToolCalls) == 0 {
-			if strings.TrimSpace(msg.Content) != "" {
-				return nil
-			}
-			// a reply that thought its way to a step and then ended stopped short, so it is asked once to go on
-			if !cut && !resumed && strings.TrimSpace(msg.Reasoning) != "" && !a.outOfRounds(turn) {
-				resumed = true
-				a.tell("the model stopped after thinking, before any call or answer: asking it once to go on")
-				a.add(llm.Message{Role: "user", Content: stoppedAfterThinking})
+		if stoppedAfterThinking(msg, cut) {
+			// kept, it would teach the model that a turn may end at its thinking: the same request goes again
+			if stalls < thinkingRetries && !a.outOfRounds(turn) {
+				stalls++
+				a.tell(fmt.Sprintf("the model stopped after thinking, before any call or answer: asking again (%d of %d)",
+					stalls, thinkingRetries))
 				continue
 			}
 			a.tell("the model returned no text")
+			a.note("(the model stopped after its thinking, with no call and no answer)")
+			return nil
+		}
+		stalls = 0
+		a.add(msg)
+
+		if len(msg.ToolCalls) == 0 {
+			if strings.TrimSpace(msg.Content) == "" {
+				a.tell("the model returned no text")
+			}
 			return nil
 		}
 		if cut {
@@ -119,10 +124,14 @@ func (a *Agent) recoverFromOverflow(ctx context.Context, err error) {
 	}
 }
 
-// stoppedAfterThinking is sent in the user's place, and says who wrote it
-const stoppedAfterThinking = "[ykode, the program running this session, not the user] " +
-	"Your last reply ended after your thinking, with no tool call and no answer. " +
-	"Make the call you were about to make, or answer if the task is done."
+// thinkingRetries is how often one stall is sent again before the ask ends; each costs a round of thinking
+const thinkingRetries = 2
+
+// stoppedAfterThinking is a whole reply that thought its way to a step and then ended without taking it
+func stoppedAfterThinking(msg llm.Message, cut bool) bool {
+	return !cut && len(msg.ToolCalls) == 0 && strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.Reasoning) != ""
+}
 
 // overflowDrops is how many of the oldest calls go when a refused request could not be folded.
 const overflowDrops = 8

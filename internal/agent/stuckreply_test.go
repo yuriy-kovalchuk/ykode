@@ -96,8 +96,8 @@ func TestAnEmptyReplyEndsTheAsk(t *testing.T) {
 	}
 }
 
-// a reply that ends after its thinking is asked once to go on, and the ask ends when it answers
-func TestAReplyThatOnlyThoughtIsAskedOnceToGoOn(t *testing.T) {
+// a reply that ends after its thinking is not kept: the same request goes again and gets the answer
+func TestAReplyThatOnlyThoughtIsAskedAgainAndNotKept(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("Let me grep the lines.", "", "", nil, "stop"),
 		sse("", "done", "", nil, "stop"),
@@ -110,30 +110,78 @@ func TestAReplyThatOnlyThoughtIsAskedOnceToGoOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n := len(stub.requests); n != 2 || !sink.noticed("stopped after thinking") {
-		t.Fatalf("%d requests, want the thinking-only reply followed by one request to go on", n)
+		t.Fatalf("%d requests, want the thinking-only reply followed by the same request again", n)
 	}
-	if sent, _ := json.Marshal(stub.requests[1]); !strings.Contains(string(sent), "ended after your thinking") {
-		t.Errorf("the second request does not say why it was sent")
+	first, _ := json.Marshal(stub.requests[0]["messages"])
+	second, _ := json.Marshal(stub.requests[1]["messages"])
+	if string(first) != string(second) {
+		t.Errorf("the request sent again differs from the one that stalled:\n%s\n%s", first, second)
 	}
-	if sink.noticed("returned no text") {
-		t.Errorf("an ask that got its answer reported an empty reply")
+	for _, m := range a.history {
+		if strings.Contains(m.Reasoning, "Let me grep") {
+			t.Error("the reply that only thought was kept in the history")
+		}
+	}
+	if sink.noticed("returned no text") || sink.content.String() != "done" {
+		t.Errorf("answer = %q; an ask that got its answer reported an empty reply", sink.content.String())
 	}
 }
 
-// the request to go on is made once per ask: a second reply that only thinks ends it
-func TestAReplyThatOnlyThinksTwiceEndsTheAsk(t *testing.T) {
+// every stall gets its own retries: a stall after a call ran is not refused because an earlier one was retried
+func TestAStallAfterACallRanIsAskedAgainToo(t *testing.T) {
 	stub := &stubServer{scripts: []string{
 		sse("thinking", "", "", nil, "stop"),
+		sse("", "", "read_file", []string{`{"path":"a.go"}`}, "tool_calls"),
+		sse("thinking", "", "", nil, "stop"),
 		sse("still thinking", "", "", nil, "stop"),
+		sse("", "done", "", nil, "stop"),
 	}}
 	sink := &captureSink{}
-	a, done := newAgent(t, stub, Options{MaxTurns: 5, MaxTokens: 512, CtxSize: 8000}, sink)
+	a, done := newAgent(t, stub, Options{MaxTurns: 10, MaxTokens: 512, CtxSize: 8000}, sink)
 	defer done()
 
 	if err := a.Ask(context.Background(), "add the field"); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(stub.requests); n != 2 || !sink.noticed("returned no text") {
-		t.Fatalf("%d requests, want one request to go on and then the ask ended", n)
+	if n := len(stub.requests); n != 5 || sink.noticed("returned no text") || sink.content.String() != "done" {
+		t.Fatalf("%d requests, answer %q; want every stall asked again and the ask answered", n, sink.content.String())
+	}
+}
+
+// a stall that keeps happening ends the ask, and the history holds a note instead of a reply that only thought
+func TestAReplyThatKeepsOnlyThinkingEndsTheAsk(t *testing.T) {
+	stub := &stubServer{scripts: []string{
+		sse("thinking", "", "", nil, "stop"),
+		sse("still thinking", "", "", nil, "stop"),
+		sse("thinking yet again", "", "", nil, "stop"),
+	}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 10, MaxTokens: 512, CtxSize: 8000}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "add the field"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(stub.requests); n != 1+thinkingRetries || !sink.noticed("returned no text") {
+		t.Fatalf("%d requests, want %d tries and then the ask ended", n, 1+thinkingRetries)
+	}
+	last := a.history[len(a.history)-1]
+	if last.Role != "assistant" || last.Reasoning != "" || !strings.Contains(last.Content, "stopped after its thinking") {
+		t.Errorf("history ends with %+v; want the note, not the stalled reply", last)
+	}
+}
+
+// the last round of a limited run is not spent again on a stall
+func TestAStallOnTheLastRoundEndsTheAsk(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("thinking", "", "", nil, "stop")}}
+	sink := &captureSink{}
+	a, done := newAgent(t, stub, Options{MaxTurns: 1, MaxTokens: 512, CtxSize: 8000}, sink)
+	defer done()
+
+	if err := a.Ask(context.Background(), "add the field"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(stub.requests); n != 1 || !sink.noticed("returned no text") {
+		t.Fatalf("%d requests, want the stall on the only round to end the ask", n)
 	}
 }
