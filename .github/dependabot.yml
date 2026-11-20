@@ -1,0 +1,24 @@
+# Weekly grouped bumps for Go modules and Actions; prefixes match the commit types in AGENTS.md.
+# What Dependabot does not move: the pinned tool versions in .github/workflows/ci.yml and the go
+# directive in go.mod — those go together in a commit of their own, with go-version moved beside them.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    groups:
+      go-modules:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

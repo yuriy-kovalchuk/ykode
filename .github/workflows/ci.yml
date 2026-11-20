@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # cd.yml calls this before releasing, so a tag on a red commit never ships.
+  workflow_call:
+
+# Read-only: the gate builds and judges, it publishes nothing.
+permissions:
+  contents: read
+
+# Superseded PR runs are cancelled; a main run always finishes, so every commit on main gets judged.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Downloaded tools are pinned by version and sha256 (from each release's published checksums), so a
+  # run means the same thing next month; dependabot does not move these, a commit of its own does.
+  GOLANGCI_LINT_VERSION: "2.15.0"
+  GOLANGCI_LINT_SHA256: 9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea
+  GOVULNCHECK_VERSION: v1.10.0
+
+jobs:
+  checks:
+    name: Build, gate, scan, cross-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags are needed for git describe in `make build`
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          # Pinned to a patch, not "1.27": setup-go runs with GOTOOLCHAIN=local, so the toolchain
+          # installed here is the standard library govulncheck judges, and a floating minor is just
+          # whatever the runner image happens to carry — go1.27.3, the release before this one, still
+          # carries GO-2026-6859, the net/http header race this program's HTTP client reaches. Keep
+          # this at or above go.mod's go directive, and keep golangci-lint built with at least this
+          # Go — it refuses modules newer than its own build.
+          go-version: "1.27.4"
+          cache: true
+
+      # ykode's own lint target skips golangci-lint when it is missing, so the gate would pass
+      # silently without this step; here the tool is installed and its findings are real.
+      - name: Install golangci-lint
+        run: |
+          f="golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64"
+          curl -fsSLo "$RUNNER_TEMP/$f.tar.gz" \
+            "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/$f.tar.gz"
+          echo "${GOLANGCI_LINT_SHA256}  $RUNNER_TEMP/$f.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f.tar.gz" -C "$RUNNER_TEMP"
+          sudo install "$RUNNER_TEMP/$f/golangci-lint" /usr/local/bin/golangci-lint
+          golangci-lint version
+
+      # make check is the project's gate: vet, gofmt, tests, lint. Nothing is re-derived here.
+      - name: Build, then the gate
+        run: make build check
+
+      # A pinned version: @latest would change the result from run to run; go run verifies it against
+      # the checksum database. Unlike `make vuln`, this needs no Docker and it gates rather than reports.
+      - name: Vulnerability scan
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+      # No image is shipped: the artifacts are three binaries. A PR proves all three still cross-build
+      # for the price of one job, so `make release` cannot be the first thing to find a broken target.
+      - name: Cross-build the shipped targets
+        run: make release

@@ -1,0 +1,61 @@
+name: CD
+
+on:
+  push:
+    tags: ["v*"]
+
+# A release always runs to completion: cancelling it midway could leave the binaries uploaded
+# without their GitHub Release, which is the only thing pointing at them.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The same gate as CI: a tag pushed on a commit that failed it must not publish.
+  checks:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Publish the three binaries
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # the only job that writes: it creates the GitHub Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # First, before anything is published: an unparseable tag would build binaries named after it
+      # anyway, and .githooks/pre-push only guards the machine that pushed.
+      - name: Verify the tag is semver
+        run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag $GITHUB_REF_NAME is not semver (expected e.g. v0.1.0, or v0.1.0-rc1)"
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.4" # same pin as ci.yml
+          cache: true
+
+      # VERSION is named rather than left to git describe, so the stamp `ykode --version` prints and
+      # the file names attached below are the tag, whatever the checkout happened to be.
+      - name: Cross-build the release
+        run: make release VERSION="$GITHUB_REF_NAME"
+
+      # A tag push builds artifacts but never touches the Releases API on its own: this step is what
+      # turns the tag into a Release, with a digest so a downloaded binary can be checked.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          (cd dist && sha256sum ykode-* > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/ykode-* dist/SHA256SUMS

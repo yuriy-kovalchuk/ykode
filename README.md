@@ -27,9 +27,12 @@ ykode --version
 ```
 
 `sh scripts/install.sh` clones and installs without cloning by hand (`--add-to-path` appends the
-PATH line). `make check` is the gate (vet, gofmt, tests, lint), `make audit` reports dependency
-updates and known CVEs through Trivy in Docker, `make release` cross-builds the three shipped targets
-into `dist/`, and `make uninstall` takes `PURGE=1` to remove `~/.ykode` as well.
+PATH line). A tagged release needs no toolchain at all: it publishes the three cross-built binaries
+(`ykode-linux-amd64`, `ykode-linux-arm64`, `ykode-darwin-arm64`) and their `SHA256SUMS` on the
+Releases page, which is empty until the first `v*` tag. `make check` is the gate (vet, gofmt, tests,
+lint), `make audit` reports dependency updates and known CVEs through Trivy in Docker, `make release`
+cross-builds the three shipped targets into `dist/`, `make install-hooks` makes git check your commit
+subjects and tag names, and `make uninstall` takes `PURGE=1` to remove `~/.ykode` as well.
 
 The default server is `http://127.0.0.1:8080/v1`, which is what `llama-server --host 127.0.0.1
 --port 8080` answers. That server needs `--jinja` before it takes a tool call, and `--mmproj` with a

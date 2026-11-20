@@ -16,10 +16,17 @@ make vuln      # known CVEs in these dependencies, Trivy in Docker; says so when
 make audit     # deps + vuln
 make fmt       # gofmt -w .
 make release   # cross-builds the three shipped targets into dist/
+make install-hooks # git checks commit subjects and v* tag names, then runs the gate
 ```
 
 `make check` must be clean before work is called done. `lint` is part of `check` and succeeds when
 golangci-lint is not installed: the gate must not fail because a machine lacks a third-party tool.
+CI installs it, so the gate there is the strict one.
+
+CI (`.github/workflows/ci.yml`) runs `make build check`, then govulncheck and a cross-build of the
+three targets; `cd.yml` calls that same workflow and, on a `v*` tag, publishes the three binaries and
+their `SHA256SUMS` as a GitHub Release. The Go patch CI pins is the standard library govulncheck
+judges, so move it together with go.mod's `go` directive, not ahead of it.
 
 ## Layout
 

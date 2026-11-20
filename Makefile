@@ -11,7 +11,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 # the scanner image: no Trivy on PATH, so a scan needs no more than the Docker already here
 TRIVY_IMAGE ?= aquasec/trivy:latest
 
-.PHONY: all build vet test check cover fmt run install uninstall release clean deps vuln audit
+.PHONY: all build vet test check cover fmt run install uninstall release clean deps vuln audit install-hooks
 
 all: build check
 
@@ -90,6 +90,10 @@ release:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -ldflags '$(LDFLAGS)' -o dist/ykode-$$os-$$arch-$(VERSION) ./cmd/ykode; \
 	done
 	@ls -1 dist
+
+# Points git at .githooks/: commit-msg checks each subject, pre-push re-checks main, tag names and the gate.
+install-hooks:
+	git config core.hooksPath .githooks && chmod +x .githooks/*
 
 clean:
 	rm -rf bin dist coverage.out
