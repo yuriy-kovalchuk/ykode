@@ -20,13 +20,12 @@ PATH line). `make uninstall` takes `PURGE=1` to remove `~/.ykode` as well.
 
 A tagged release needs no toolchain at all: it publishes the three cross-built binaries —
 `ykode-linux-amd64` (Linux x86-64), `ykode-linux-arm64` (Linux ARM64) and `ykode-darwin-arm64` (Apple
-silicon) — with `SHA256SUMS` and a cosign signature per binary, on the Releases page. Checking a
-download you did not build yourself:
+silicon) — with `SHA256SUMS` and a cosign bundle per binary (`.sigstore.json`), on the Releases
+page. Checking a download you did not build yourself:
 
 ```sh
 cosign verify-blob ykode-darwin-arm64-v0.1.0 \
-  --signature ykode-darwin-arm64-v0.1.0.sig \
-  --certificate ykode-darwin-arm64-v0.1.0.pem \
+  --bundle ykode-darwin-arm64-v0.1.0.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github\.com/yuriy-kovalchuk/ykode/\.github/workflows/cd\.yml@refs/tags/v'
 ```

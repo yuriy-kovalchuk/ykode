@@ -26,9 +26,9 @@ golangci-lint is not installed: the gate must not fail because a machine lacks a
 CI installs it, so the gate there is the strict one.
 
 CI (`.github/workflows/ci.yml`) runs `make build check`, then govulncheck and a cross-build of the
-three targets; `cd.yml` calls that same workflow and, on a `v*` tag, publishes the three binaries,
-their `SHA256SUMS` and keyless cosign signatures as a GitHub Release, with the tag's `CHANGELOG.md`
-section as its notes — a tag with no section is refused. The Go patch CI pins is the standard library
+three targets; `cd.yml` calls that same workflow and, on a `v*` tag, signs the three binaries with
+keyless cosign bundles and only then publishes them, their bundles and `SHA256SUMS` as a GitHub
+Release, with the tag's `CHANGELOG.md` section as its notes — a tag with no section is refused. The Go patch CI pins is the standard library
 govulncheck judges, so move it together with go.mod's `go` directive, not ahead of it.
 
 ## Layout
