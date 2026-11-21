@@ -128,7 +128,76 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 	if len(models) == 0 {
 		return nil, errors.New("server answered /models with no models")
 	}
+	// /props describes the one model loaded, so on a router listing several it would describe the wrong one
+	if len(models) == 1 {
+		if props, err := c.props(ctx); err == nil {
+			models[0] = props.fill(models[0])
+		}
+	}
 	return models, nil
+}
+
+// SlotCount is how many slots llama.cpp shares its window between; 0 when the server does not say
+func (c *Client) SlotCount(ctx context.Context) int {
+	props, err := c.props(ctx)
+	if err != nil {
+		return 0
+	}
+	return props.Slots
+}
+
+// SaveSlot asks llama.cpp to write a slot's cache to a file of its own, under its --slot-save-path
+func (c *Client) SaveSlot(ctx context.Context, slot int, name string) error {
+	return c.slotAction(ctx, slot, "save", name)
+}
+
+// RestoreSlot loads a cache SaveSlot wrote back into a slot, so the next request reads only what is new
+func (c *Client) RestoreSlot(ctx context.Context, slot int, name string) error {
+	return c.slotAction(ctx, slot, "restore", name)
+}
+
+func (c *Client) slotAction(ctx context.Context, slot int, action, name string) error {
+	body, err := json.Marshal(map[string]string{"filename": name})
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/slots/%d?action=%s", c.serverRoot(), slot, action)
+	req, err := c.newRequest(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return statusError(resp)
+	}
+	return nil
+}
+
+// serverRoot is where llama.cpp's own endpoints live: the OpenAI ones sit under /v1, these do not
+func (c *Client) serverRoot() string { return strings.TrimSuffix(c.baseURL, "/v1") }
+
+// props reads llama.cpp's /props, which knows the slot's real window where /models gives none or the trained one
+func (c *Client) props(ctx context.Context) (serverProps, error) {
+	var props serverProps
+	req, err := c.newRequest(ctx, http.MethodGet, c.serverRoot()+"/props", nil)
+	if err != nil {
+		return props, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return props, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return props, statusError(resp)
+	}
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&props)
+	return props, err
 }
 
 // ChatStream streams a turn; onDelta sees each reasoning and answer fragment as it arrives.

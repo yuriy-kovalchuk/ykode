@@ -29,15 +29,17 @@ type fileSettings struct {
 	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
 	Theme         *string `yaml:"theme,omitempty"`
 	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
+	SaveCache     *bool   `yaml:"save_server_cache,omitempty"`
 	StreamIdle    *int    `yaml:"stream_idle_sec,omitempty"`
 	Context       struct {
 		SafetyMargin *int `yaml:"safety_margin,omitempty"`
 	} `yaml:"context,omitempty"`
 	Tools struct {
-		ReadLines       *int    `yaml:"read_lines,omitempty"`
-		ExecTimeoutSec  *int    `yaml:"exec_timeout_sec,omitempty"`
-		CommandLogDir   *string `yaml:"command_log_dir,omitempty"`
-		KeepCommandLogs *string `yaml:"keep_command_logs,omitempty"`
+		ReadLines       *int     `yaml:"read_lines,omitempty"`
+		ExecTimeoutSec  *int     `yaml:"exec_timeout_sec,omitempty"`
+		CommandLogDir   *string  `yaml:"command_log_dir,omitempty"`
+		KeepCommandLogs *string  `yaml:"keep_command_logs,omitempty"`
+		Disabled        []string `yaml:"disabled,omitempty"`
 	} `yaml:"tools,omitempty"`
 	Permissions struct {
 		Allow []string `yaml:"allow,omitempty"`
@@ -244,6 +246,9 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	if s.AssumeYes != nil {
 		c.AssumeYes = *s.AssumeYes
 	}
+	if s.SaveCache != nil {
+		c.SaveServerCache = *s.SaveCache
+	}
 	pick(s.Tools.CommandLogDir, &c.CommandLogDir)
 	if err := errors.Join(
 		keepFor(path, "keep_sessions", s.KeepSessions, "720h", &c.KeepSessions),
@@ -256,6 +261,8 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	if len(s.Permissions.Allow) > 0 {
 		c.Allow = append(c.Allow, s.Permissions.Allow...)
 	}
+	// a project can only take tools away, never give one back, so the lists add up
+	c.DisabledTools = append(c.DisabledTools, s.Tools.Disabled...)
 	for model, ms := range s.Models {
 		c.modelSampling[model] = [2]llm.Sampling{deref(ms.Thinking), deref(ms.NoThink)}
 	}

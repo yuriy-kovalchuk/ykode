@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"unicode"
 )
 
-// SystemPrompt follows pi's shape: each task-specific rule fixed one task and broke another (ideas.md, "Measured").
+// SystemPrompt follows pi's shape: each task-specific rule fixed one task and broke another (commit 2478005).
 const SystemPrompt = `You are ykode, a coding assistant working in one project. Help the user inspect files,
 run commands, and change code.
 
@@ -28,6 +30,33 @@ Guidelines:
 - Be concise in your responses.
 - Show file paths clearly when working with files.
 `
+
+// promptWithout drops the lines that name a tool not offered, with the indented lines that carry them on
+func promptWithout(prompt string, disabled []string) string {
+	if len(disabled) == 0 {
+		return prompt // the shipped bytes exactly, so the cached prefix every session shares does not move
+	}
+	lines := strings.Split(prompt, "\n")
+	kept := make([]string, 0, len(lines))
+	dropping := false
+	for _, line := range lines {
+		if dropping && strings.HasPrefix(line, "  ") {
+			continue
+		}
+		dropping = strings.HasPrefix(line, "- ") && slices.ContainsFunc(words(line), func(word string) bool {
+			return slices.Contains(disabled, word)
+		})
+		if !dropping {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+// words splits a line where a tool name could not go on, so plan does not match explain
+func words(line string) []string {
+	return strings.FieldsFunc(line, func(r rune) bool { return r != '_' && !unicode.IsLetter(r) })
+}
 
 const (
 	// defaultInstructionBytes caps the instruction files when the context window is unknown.

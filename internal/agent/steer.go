@@ -31,12 +31,12 @@ func (a *Agent) NextWaiting() (string, bool) {
 // takeWaiting is the loop's seam: everything typed since the last round-trip
 func (a *Agent) takeWaiting() []llm.Message {
 	a.waitingMu.Lock()
-	defer a.waitingMu.Unlock()
 	asks := a.waiting
 	a.waiting = nil
+	a.waitingMu.Unlock() // reading pictures says things, and a front end reads Waiting while it draws
 	messages := make([]llm.Message, 0, len(asks))
 	for _, ask := range asks {
-		messages = append(messages, llm.Message{Role: "user", Content: ask})
+		messages = append(messages, llm.Message{Role: "user", Content: ask, Attachments: a.picturesIn(ask)})
 	}
 	return messages
 }

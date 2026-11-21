@@ -30,7 +30,7 @@ var keyGroups = []keyGroup{
 	{"prompt", [][2]string{{"enter", "send"}, {"ctrl+j alt/ctrl+enter", "newline"},
 		{"tab", "complete a /command"}, {"ctrl+p ctrl+n", "earlier prompts"}}},
 	{"edit", [][2]string{{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"},
-		{"ctrl+w", "kill a word"}}},
+		{"ctrl+w", "kill a word"}, {"ctrl+v", "paste a picture"}}},
 	{"scroll", [][2]string{{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"},
 		{"end", "back to the end"}}},
 	{"session", [][2]string{{"esc", "stop the run"}, {"ctrl+c", "stop the run, or quit"},

@@ -114,3 +114,27 @@ func TestTheConversationBeingResumedIsNeverAgedOut(t *testing.T) {
 		t.Errorf("startup deleted the conversation --continue asked for: %v", err)
 	}
 }
+
+// a pasted picture's file is only needed until its ask goes, so a day later it is gone and a new one stays
+func TestAnOldPastedPictureIsCleanedAway(t *testing.T) {
+	dir := t.TempDir()
+	old, fresh := filepath.Join(dir, "paste-old.png"), filepath.Join(dir, "paste-new.png")
+	for _, path := range []string{old, fresh} {
+		if err := os.WriteFile(path, []byte("png"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	day := time.Now().Add(-25 * time.Hour)
+	if err := os.Chtimes(old, day, day); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := prunePastes(dir); n != 1 || err != nil {
+		t.Errorf("removed %d (err %v), want the one old paste", n, err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Error("today's paste went too")
+	}
+	if n, err := prunePastes(filepath.Join(dir, "never-made")); n != 0 || err != nil {
+		t.Errorf("no folder yet is not an error: %d, %v", n, err)
+	}
+}

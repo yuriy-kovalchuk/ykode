@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yuriy-kovalchuk/ykode/internal/agent"
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
 )
@@ -176,13 +177,14 @@ func TestSettingsOpensTheListOfEverySetting(t *testing.T) {
 		t.Fatal("/settings did not open the screen")
 	}
 	view := stripCodes(m.render())
-	for _, want := range []string{"ykode · settings", "server & model", "thinking_level", "max_turns", "assume_yes", "esc closes"} {
+	for _, want := range []string{"Settings", "MODEL", "Server & model", "Thinking level", "Round-trips per ask",
+		"PERMISSIONS", "Skip write confirmations", "esc closes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the list lacks %q:\n%s", want, view)
 		}
 	}
 	m.Update(esc)
-	if m.screen != nil || strings.Contains(stripCodes(m.render()), "ykode · settings") {
+	if m.screen != nil || strings.Contains(stripCodes(m.render()), "Server & model") {
 		t.Error("esc did not give the session back")
 	}
 }
@@ -244,24 +246,61 @@ func TestASwitchTurnsOverAndTheSessionFollows(t *testing.T) {
 	if !m.cfg.AssumeYes {
 		t.Error("the screen still reads the old value")
 	}
-	if got := stripCodes(m.render()); !regexp.MustCompile(`assume_yes\s+on`).MatchString(got) {
+	if got := stripCodes(m.render()); !regexp.MustCompile(`Skip write confirmations\s+● on`).MatchString(got) {
 		t.Errorf("the row does not show the new value:\n%s", got)
 	}
 }
 
-// a choice moves to the next option with enter and back with the left arrow, and a live one is applied
-func TestAChoiceCyclesAndIsAppliedAtOnce(t *testing.T) {
+// a choice steps with the arrows in place, and a live one is applied at once
+func TestAChoiceStepsWithTheArrowsAndIsAppliedAtOnce(t *testing.T) {
 	dir := settingsHome(t, "")
 	m := newTestModel()
 	openRow(t, m, "thinking_level")
 	before := m.agent.ThinkingLevel()
-	m.Update(enter)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if m.agent.ThinkingLevel() == before || !fileHas(t, dir, "thinking_level: "+m.agent.ThinkingLevel()) {
-		t.Errorf("level %q after enter, file does not say it", m.agent.ThinkingLevel())
+		t.Errorf("level %q after right, file does not say it", m.agent.ThinkingLevel())
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.agent.ThinkingLevel() != before {
 		t.Errorf("left did not go back to %q: %q", before, m.agent.ThinkingLevel())
+	}
+}
+
+// enter on a choice lists every option with the chosen one marked, and enter picks the one under the cursor
+func TestAChoiceOpensAMenuOfItsOptions(t *testing.T) {
+	dir := settingsHome(t, "")
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 44})
+	openRow(t, m, "thinking_level")
+	m.Update(enter)
+	view := stripCodes(m.render())
+	if !strings.Contains(view, "pick one") || !regexp.MustCompile(`● medium\s+8,192 tokens`).MatchString(view) {
+		t.Fatalf("no menu with the chosen level marked:\n%s", view)
+	}
+	m.Update(down)
+	m.Update(enter)
+	if m.screen.menu != nil || m.agent.ThinkingLevel() != "high" || !fileHas(t, dir, "thinking_level: high") {
+		t.Errorf("menu open %v, level %q: enter should pick high and close", m.screen.menu != nil, m.agent.ThinkingLevel())
+	}
+	m.Update(enter)
+	m.Update(down)
+	m.Update(esc)
+	if m.screen.menu != nil || m.agent.ThinkingLevel() != "high" {
+		t.Error("esc in the menu changed the level or left the menu open")
+	}
+}
+
+// the theme menu shows each theme's colours beside its name, and says which follows the terminal
+func TestTheThemeMenuShowsEachThemesColours(t *testing.T) {
+	settingsHome(t, "")
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 44})
+	openRow(t, m, "theme")
+	m.Update(enter)
+	view := stripCodes(m.render())
+	if !strings.Contains(view, "follows the terminal's background") || !strings.Contains(view, "■■■■■■■  dark") {
+		t.Errorf("the themes are not shown with their colours:\n%s", view)
 	}
 }
 
@@ -270,20 +309,20 @@ func TestATypedValueIsCheckedAndARefusalStaysInPlace(t *testing.T) {
 	dir := settingsHome(t, "")
 	m := newTestModel()
 	openRow(t, m, "max_turns")
-	m.Update(enter) // starts editing
-	if !m.screen.editing {
-		t.Fatal("enter did not start editing a count")
+	m.Update(enter) // opens the typing box
+	if m.screen.menu == nil || m.screen.menu.kind != menuInput {
+		t.Fatal("enter did not open a typing box for a count")
 	}
-	m.screen.input.SetValue("zero")
+	m.screen.menu.input.SetValue("zero")
 	m.Update(enter)
-	if !m.screen.editing || !m.screen.bad || fileHas(t, dir, "max_turns") {
-		t.Errorf("editing %v, refused %v, written %v: a bad value must stay in the box and out of the file",
-			m.screen.editing, m.screen.bad, fileHas(t, dir, "max_turns"))
+	if m.screen.menu == nil || !m.screen.bad || fileHas(t, dir, "max_turns") {
+		t.Errorf("open %v, refused %v, written %v: a bad value must stay in the box and out of the file",
+			m.screen.menu != nil, m.screen.bad, fileHas(t, dir, "max_turns"))
 	}
-	m.screen.input.SetValue("40")
+	m.screen.menu.input.SetValue("40")
 	m.Update(enter)
-	if m.screen.editing || !fileHas(t, dir, "max_turns: 40") || m.cfg.MaxTurns != 40 {
-		t.Errorf("a good value was not saved: editing %v, turns %d", m.screen.editing, m.cfg.MaxTurns)
+	if m.screen.menu != nil || !fileHas(t, dir, "max_turns: 40") || m.cfg.MaxTurns != 40 {
+		t.Errorf("a good value was not saved: open %v, turns %d", m.screen.menu != nil, m.cfg.MaxTurns)
 	}
 }
 
@@ -293,26 +332,72 @@ func TestEscapeWhileTypingChangesNothing(t *testing.T) {
 	m := newTestModel()
 	openRow(t, m, "max_turns")
 	m.Update(enter)
-	m.screen.input.SetValue("99")
+	m.screen.menu.input.SetValue("99")
 	m.Update(esc)
-	if m.screen == nil || m.screen.editing || fileHas(t, dir, "max_turns") {
+	if m.screen == nil || m.screen.menu != nil || fileHas(t, dir, "max_turns") {
 		t.Error("esc while typing wrote the value or closed the whole screen")
 	}
 }
 
-// a list takes a new entry, and a setting that is only read at startup says so
-func TestAListTakesAnEntryAndStartupSettingsSaySo(t *testing.T) {
+// r takes a setting back to its default, and says so when it already is one
+func TestASettingIsResetToItsDefault(t *testing.T) {
+	dir := settingsHome(t, "max_turns: 40\n")
+	m := newTestModel()
+	openRow(t, m, "max_turns")
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	if fileHas(t, dir, "max_turns") || m.cfg.MaxTurns != 100 {
+		t.Errorf("r left max_turns at %d:\n%s", m.cfg.MaxTurns, settingsFile(t, dir))
+	}
+	m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+	if m.screen.bad || !strings.Contains(m.screen.note, "already the default") {
+		t.Errorf("a second r said %q", m.screen.note)
+	}
+}
+
+// the tools list is a checklist of every tool: space switches one off, and again back on
+func TestTheToolsListIsAChecklistOfEveryTool(t *testing.T) {
+	dir := settingsHome(t, "")
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 110, Height: 44})
+	openRow(t, m, "tools.disabled")
+	m.Update(enter)
+	for range 3 {
+		m.Update(down) // read_file, write_file, edit_file, then exec_command
+	}
+	m.Update(space)
+	if !fileHas(t, dir, "- exec_command") {
+		t.Fatalf("exec_command was not switched off:\n%s", settingsFile(t, dir))
+	}
+	if view := stripCodes(m.render()); !regexp.MustCompile(`\[x\] exec_command\s+switched off`).MatchString(view) ||
+		!regexp.MustCompile(`\[ \] read_file\s+offered`).MatchString(view) {
+		t.Errorf("the checklist does not show what is off:\n%s", view)
+	}
+	m.Update(space)
+	if fileHas(t, dir, "exec_command") {
+		t.Errorf("switching it back on left it in the file:\n%s", settingsFile(t, dir))
+	}
+}
+
+// a typed list takes an entry from its last row and gives one up with d, and the next start is said
+func TestATypedListAddsAndRemovesEntries(t *testing.T) {
 	dir := settingsHome(t, "")
 	m := newTestModel()
 	openRow(t, m, "permissions.allow")
 	m.Update(enter)
-	m.screen.input.SetValue("exec:go test")
+	m.Update(enter) // the only row is the one that adds
+	m.screen.menu.input.SetValue("exec:go test")
 	m.Update(enter)
 	if !fileHas(t, dir, "exec:go test") {
-		t.Error("the entry was not added")
+		t.Fatal("the entry was not added")
 	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyHome})
+	m.Update(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if fileHas(t, dir, "exec:go test") || len(m.cfg.Allow) != 0 {
+		t.Errorf("d did not take the entry off:\n%s", settingsFile(t, dir))
+	}
+	m.Update(esc)
 	openRow(t, m, "stream_idle_sec")
-	if view := stripCodes(m.render()); !strings.Contains(view, "read when ykode starts") {
+	if view := stripCodes(m.render()); !strings.Contains(view, "applies at the next start") {
 		t.Errorf("a startup-only setting does not say so:\n%s", view)
 	}
 }
@@ -385,7 +470,7 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 	rows := strings.Split(stripCodes(m.render()), "\n")
 	count := 0
 	for _, row := range rows {
-		if strings.Contains(row, "command_log_dir") {
+		if strings.Contains(row, "Command log folder") {
 			count++
 		}
 		if strings.TrimSpace(strings.Trim(row, "│ ")) == "run" {
@@ -412,12 +497,12 @@ func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
 	if !strings.Contains(view, "[medium 8,192]") || !strings.Contains(view, "thinking stops at 8,192 tokens") {
 		t.Errorf("the selected level is not marked, or its meaning is not said:\n%s", view)
 	}
-	m.Update(enter) // medium -> high
+	m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) // medium -> high
 	if view := stripCodes(m.render()); !strings.Contains(view, "[high 16,384]") || strings.Contains(view, "[medium") {
 		t.Errorf("the mark did not follow the level:\n%s", view)
 	}
-	for m.cfg.ThinkingLevel != "max" {
-		m.Update(enter)
+	for i := 0; m.cfg.ThinkingLevel != "max" && i < 10; i++ {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	}
 	if view := stripCodes(m.render()); !strings.Contains(view, "[max no cap]") || !strings.Contains(view, "no cap on thinking") {
 		t.Errorf("max does not say it has no cap:\n%s", view)
@@ -499,7 +584,7 @@ func TestATypedValueGoesToTheRowItStartedOn(t *testing.T) {
 	m := newTestModel()
 	openRow(t, m, "max_turns")
 	m.Update(enter)
-	m.screen.input.SetValue("41")
+	m.screen.menu.input.SetValue("41")
 	// the cursor moves to another knob of the same kind before enter is pressed
 	for i, row := range m.screen.rows {
 		if row.Key == "context.safety_margin" {
@@ -514,5 +599,22 @@ func TestATypedValueGoesToTheRowItStartedOn(t *testing.T) {
 	}
 	if fileHas(t, dir, "safety_margin: 41") {
 		t.Errorf("the value went to the row the cursor had reached:\n%s", settingsFile(t, dir))
+	}
+}
+
+// on a window with little left the table shows what the server gets, so xhigh does not promise 32,768
+func TestTheThinkingBudgetsShowTheCutTheWindowMakes(t *testing.T) {
+	settingsHome(t, "")
+	m := newTestModel()
+	m.agent = agent.New(nil, nil, "test-model", agent.Options{CtxSize: 3000, SafetyMargin: 256}, nil)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	openRow(t, m, "thinking_level")
+	view := stripCodes(m.render())
+	cut := groupDigits(m.agent.ThinkingBudget("xhigh"))
+	if strings.Contains(view, "32,768") || !strings.Contains(view, "xhigh "+cut) {
+		t.Errorf("xhigh should show the %s it would be sent with:\n%s", cut, view)
+	}
+	if !strings.Contains(view, "minimal 1,024") || !strings.Contains(view, "thinking stops at "+cut+" tokens") || !strings.Contains(view, "so they are cut to what the reply can spare") {
+		t.Errorf("an uncut level changed, or the cut is not explained:\n%s", view)
 	}
 }

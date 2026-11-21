@@ -47,6 +47,7 @@ var (
 	enter = tea.KeyPressMsg{Code: tea.KeyEnter}
 	down  = tea.KeyPressMsg{Code: tea.KeyDown}
 	esc   = tea.KeyPressMsg{Code: tea.KeyEscape}
+	space = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 )
 
 func typed(s string) tea.KeyPressMsg { return typedKeys(s) }

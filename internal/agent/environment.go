@@ -9,7 +9,10 @@ import (
 )
 
 // withEnvironment ends a prompt with where the session runs, last so the fixed rules stay cached
-func withEnvironment(prompt, root string) string {
+func withEnvironment(prompt, root string, runs bool) string {
+	if !runs { // with no exec_command the lines about where it starts and what shell it gets point at nothing
+		return prompt + "\n<environment>\nproject root: " + root + "\nos: " + runtime.GOOS + "/" + runtime.GOARCH + "\n</environment>\n"
+	}
 	return prompt + "\n<environment>\nproject root: " + root +
 		"\nworking directory: " + root + " (exec_command starts here, so a command needs no cd, and a relative path is from here)" +
 		"\nos: " + runtime.GOOS + "/" + runtime.GOARCH +

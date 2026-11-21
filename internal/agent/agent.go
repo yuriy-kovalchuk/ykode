@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,15 +54,19 @@ func New(client *llm.Client, registry *tools.Registry, model string, opts Option
 	if registry == nil {
 		registry = tools.NewRegistry() // a run with no tools still answers questions about the names it met
 	}
-	a := &Agent{client: client, tools: registry, model: model, opts: opts, sink: sink}
+	a := &Agent{client: client, model: model, opts: opts, sink: sink}
 	if _, canAnswer := sink.(Asker); canAnswer {
 		// the ask tool is offered only when there is somebody at the other end to answer it
 		registry.Add(tools.NewAskUser(asksTo{a}))
 	}
+	// taken out once, here: a tool that leaves mid-session would cost the cache everything after it
+	a.tools = registry.Without(opts.Disabled...)
 	a.meter = newMeter()
 	a.publishUsage()
 	a.perms = newPermissions(opts.Allow)
-	a.prompt, a.branch = withInstructions(withEnvironment(SystemPrompt, opts.Root), opts.Instructions), GitBranch(opts.Root)
+	runs := !slices.Contains(opts.Disabled, "exec_command")
+	a.prompt = withInstructions(withEnvironment(promptWithout(SystemPrompt, opts.Disabled), opts.Root, runs), opts.Instructions)
+	a.branch = GitBranch(opts.Root)
 	a.Reset()
 	return a
 }

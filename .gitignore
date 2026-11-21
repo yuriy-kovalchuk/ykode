@@ -1,5 +1,7 @@
 # build output
 /bin/
+# a built eval harness, not source
+/eval
 /dist/
 
 # test and profiling output

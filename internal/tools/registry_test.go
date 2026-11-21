@@ -62,3 +62,24 @@ func TestNoOverlappingToolRemembersItsLastCall(t *testing.T) {
 		}
 	}
 }
+
+// a tool taken out leaves the rest in the order the model already saw them in
+func TestARegistryWithoutAToolKeepsTheOthersInOrder(t *testing.T) {
+	root, dir := setup(t)
+	left := BuiltIn(root, dir, Options{}).Without("exec_command", "no_such_tool")
+	if got := strings.Join(left.Names(), ","); got != "read_file,write_file,edit_file,plan" {
+		t.Errorf("left %s", got)
+	}
+	if _, ok := left.Get("exec_command"); ok {
+		t.Error("a tool taken out can still be called")
+	}
+}
+
+// the names a setting may switch off are every tool a run can offer, ask_user included
+func TestTheToolNamesAreEveryToolOnOffer(t *testing.T) {
+	root, dir := setup(t)
+	offered := append(BuiltIn(root, dir, Options{}).Names(), NewAskUser(nil).Name())
+	if got, want := strings.Join(Names(), ","), strings.Join(offered, ","); got != want {
+		t.Errorf("Names() = %s, but the tools are %s", got, want)
+	}
+}

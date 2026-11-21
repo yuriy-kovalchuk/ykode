@@ -24,7 +24,7 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 	a.opts.Plan.DropIfSettled() // the steps belonged to the prompt that finished them
 	a.work.started()            // what the last ask had to do says nothing about this one
 	asked := a.withEnvironment(prompt)
-	a.add(llm.Message{Role: "user", Content: asked})
+	a.add(llm.Message{Role: "user", Content: asked, Attachments: a.picturesIn(prompt)})
 	a.task = asked // what the history holds, which is what compaction looks for
 
 	// stalls counts thinking-only replies in a row; one that is kept makes the next stall a fresh one
@@ -156,7 +156,8 @@ func (a *Agent) prepareTurn(ctx context.Context, turn int) {
 	}
 	// a fold reads results at their full length so it goes first; what it cannot fold is shed whole
 	if a.underPressure() && a.canCompact() && a.foldOverdue() {
-		a.tell("the conversation is out of room: asking the model to summarise the older turns")
+		a.tell(fmt.Sprintf("the conversation is out of room, about %d of %d tokens with %d held back for the answer: "+
+			"asking the model to summarise the older turns", a.estimateTokens(), a.opts.CtxSize, a.reserve()))
 		a.work.made(roomFolding) // the clock is about to wait on a whole extra request: say what it waits on
 		a.Compact(ctx)
 	}
@@ -182,6 +183,9 @@ func (a *Agent) chat(ctx context.Context, req llm.ChatRequest) (llm.Message, str
 		}
 		if d.Call != nil {
 			a.emit(Event{Kind: ToolDraft, Tool: d.Call.Name, Text: d.Call.Args, Call: d.Call.Index})
+		}
+		if p := d.Progress; p != nil && p.Total > 0 {
+			a.emit(Event{Kind: Progress, Stats: Stats{ReadTokens: p.Processed, ReadTotal: p.Total}})
 		}
 		if d.Timings != nil {
 			stopwatch.exact = true // the server reports its own speeds as it goes

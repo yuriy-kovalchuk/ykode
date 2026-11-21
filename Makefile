@@ -11,7 +11,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 # the scanner image: no Trivy on PATH, so a scan needs no more than the Docker already here
 TRIVY_IMAGE ?= aquasec/trivy:latest
 
-.PHONY: all build vet test check cover fmt run install uninstall release clean deps vuln audit install-hooks
+.PHONY: all build vet test check cover fmt run eval install uninstall release clean deps vuln audit install-hooks
 
 all: build check
 
@@ -70,6 +70,10 @@ audit: deps vuln
 
 run: build
 	./$(BINARY) $(ARGS)
+
+# eval runs the scripted tasks against a real server; ARGS takes the eval's flags and ykode's
+eval:
+	$(GO) run ./cmd/eval $(ARGS)
 
 install: build
 	install -d $(INSTALL_DIR)

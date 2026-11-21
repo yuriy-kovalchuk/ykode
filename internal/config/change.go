@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +24,10 @@ func Set(root, key, value string) (string, bool, error) {
 	}
 	top := doc.Content[0]
 	switch {
-	case k.kind == kindList && isUnset(value):
-		return path, local, fmt.Errorf("%s is a list: remove an entry by deleting its line in %s", k.key, path)
-	case k.kind == kindList:
-		if err := addToList(top, path, k.key, value); err != nil {
+	case k.kind == kindList && len(k.options) > 0 && !isUnset(value) && !slices.Contains(k.options, strings.TrimSpace(value)):
+		return path, local, fmt.Errorf("%s cannot go on %s; want any of %s", value, k.key, strings.Join(k.options, ", "))
+	case k.kind == kindList && !isUnset(value):
+		if err := addToList(top, path, k.key, strings.TrimSpace(value)); err != nil {
 			return path, local, err
 		}
 	case isUnset(value):
@@ -40,6 +41,38 @@ func Set(root, key, value string) (string, bool, error) {
 			return path, local, err
 		}
 		setPath(top, k.key, scalar)
+	}
+	if err := writeSettingsDoc(path, doc); err != nil {
+		return path, local, err
+	}
+	if local {
+		if err := trustWritten(root, wasAccepted, k.key); err != nil {
+			return path, local, err
+		}
+	}
+	return path, local, nil
+}
+
+// Remove takes one entry off a list setting, in the file this project writes; another file's entry stays
+func Remove(root, key, value string) (string, bool, error) {
+	k, ok := knobFor(key)
+	if !ok || k.kind != kindList {
+		return "", false, fmt.Errorf("%s is not a list setting", key)
+	}
+	path, local := SettingsTarget(root)
+	wasAccepted := local && localAccepted(root)
+	doc, err := readSettingsDoc(path)
+	if err != nil {
+		return path, local, err
+	}
+	list := listNode(doc.Content[0], k.key)
+	at := slices.IndexFunc(list.Content, func(item *yaml.Node) bool { return item.Value == value })
+	if at < 0 {
+		return path, local, fmt.Errorf("%s is not on %s in %s; another settings file adds it", value, k.key, path)
+	}
+	list.Content = slices.Delete(list.Content, at, at+1)
+	if len(list.Content) == 0 {
+		unsetPath(doc.Content[0], k.key) // an empty list left behind would read as a choice
 	}
 	if err := writeSettingsDoc(path, doc); err != nil {
 		return path, local, err

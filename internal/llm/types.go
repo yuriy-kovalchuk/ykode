@@ -76,6 +76,7 @@ type ChatRequest struct {
 	ThinkingBudget     int            `json:"thinking_budget_tokens,omitempty"` // llama.cpp: caps the thinking phase inside MaxTokens
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	TimingsPerToken    bool           `json:"timings_per_token,omitempty"` // llama.cpp: speeds in every chunk, not only the last
+	ReturnProgress     bool           `json:"return_progress,omitempty"`   // llama.cpp: how far it has read a long prompt, while it reads
 	Stream             bool           `json:"stream"`
 	StreamOptions      *StreamOptions `json:"stream_options,omitempty"`
 	Sampling
@@ -119,6 +120,14 @@ type Delta struct {
 	Content   string
 	Call      *CallDelta // a piece of a tool call, so a screen can show a long one being written
 	Timings   *Timings   // the server's speeds so far, on servers that send them while streaming
+	Progress  *PromptProgress
+}
+
+// PromptProgress is llama.cpp's count of a prompt being read: of Total, Cache came from its cache
+type PromptProgress struct {
+	Total     int `json:"total"`
+	Cache     int `json:"cache"`
+	Processed int `json:"processed"` // the cached share included, so Processed == Total is all read
 }
 
 // CallDelta is one fragment of a tool call's arguments; Name is known from the first fragment on.
@@ -157,6 +166,26 @@ type ModelInfo struct {
 	ID      string
 	CtxSize int  // 0 when the server does not report it
 	Vision  bool // it takes images as input, so an image part of a message means something to it
+}
+
+// serverProps is the part of llama.cpp's GET /props a session is shaped by.
+type serverProps struct {
+	Defaults struct {
+		CtxSize int `json:"n_ctx"` // one slot's window, which is what a request gets
+	} `json:"default_generation_settings"`
+	Modalities struct {
+		Vision bool `json:"vision"`
+	} `json:"modalities"`
+	Slots int `json:"total_slots"`
+}
+
+// fill takes the window and the eyes from /props: a slot's window is never more than the model's
+func (p serverProps) fill(m ModelInfo) ModelInfo {
+	if n := p.Defaults.CtxSize; n > 0 && (m.CtxSize == 0 || n < m.CtxSize) {
+		m.CtxSize = n
+	}
+	m.Vision = m.Vision || p.Modalities.Vision
+	return m
 }
 
 // modelsResponse is the GET /models body.
@@ -206,9 +235,10 @@ type chatChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
-	Timings *Timings  `json:"timings"`
-	Usage   *usage    `json:"usage"`
-	Error   *apiError `json:"error"`
+	Timings  *Timings        `json:"timings"`
+	Progress *PromptProgress `json:"prompt_progress"`
+	Usage    *usage          `json:"usage"`
+	Error    *apiError       `json:"error"`
 }
 
 // usage is the OpenAI-style count of a request, sent in the last chunk of a stream.

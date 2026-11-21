@@ -177,6 +177,9 @@ func TestARunOutOfRoomFoldsTheOlderTurnsIntoASummary(t *testing.T) {
 	if !sink.noticed("summarise the older turns") {
 		t.Error("the run paid for a summary without telling the user")
 	}
+	if !sink.noticed(fmt.Sprintf("with %d held back for the answer", a.reserve())) {
+		t.Error("the fold did not name the room held back for the answer, so the window reads as part empty")
+	}
 	if !paired(a.history) {
 		t.Errorf("auto-compaction left the history unpaired:\n%s", dump(a.history))
 	}

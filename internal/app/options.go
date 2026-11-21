@@ -32,6 +32,7 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 		NoThink:          noThink,
 		MaxResult:        resultBytes,
 		Allow:            cfg.Allow,
+		Disabled:         cfg.DisabledTools,
 		Root:             cfg.Root,
 		Plan:             plan,
 		Cards:            cfg.Cards(),

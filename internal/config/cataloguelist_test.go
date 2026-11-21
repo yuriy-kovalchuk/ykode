@@ -71,6 +71,9 @@ func sampleFor(k knob) string {
 	case kindHours:
 		return "5h"
 	case kindList:
+		if len(k.options) > 0 {
+			return k.options[0]
+		}
 		return "exec:go test"
 	}
 	return ""

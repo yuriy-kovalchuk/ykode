@@ -173,6 +173,7 @@ func (m *model) handle(ev agent.Event) {
 		return
 	case agent.TurnEnd:
 		m.decode, m.prefill, m.estimated = ev.Stats.DecodeTokSec, ev.Stats.PrefillTokSec, ev.Stats.Estimated
+		m.read, m.readTotal = 0, 0
 		m.log.dropDrafts()
 	case agent.ToolDraft:
 		m.log.draft(ev.Call, ev.Tool, ev.Text)
@@ -185,6 +186,9 @@ func (m *model) handle(ev agent.Event) {
 		}
 		if ev.Stats.PrefillTokSec > 0 {
 			m.prefill = ev.Stats.PrefillTokSec
+		}
+		if ev.Stats.ReadTotal > 0 {
+			m.read, m.readTotal = ev.Stats.ReadTokens, ev.Stats.ReadTotal
 		}
 		// a timings chunk moves only the footer, built from what is here now, so no transcript redraw
 		return

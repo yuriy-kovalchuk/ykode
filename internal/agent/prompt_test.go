@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -290,7 +291,7 @@ func TestThePromptDoesNotCastToolOutputAsAnAttack(t *testing.T) {
 	}
 }
 
-// each fixed one benchmark task and broke another (ideas.md, "Measured")
+// each fixed one benchmark task and broke another (commit 2478005)
 func TestTheTaskRulesStayOut(t *testing.T) {
 	for _, rule := range []string{
 		"throwaway",                                     // verify once: task 03 got faster, checks got rarer
@@ -300,5 +301,43 @@ func TestTheTaskRulesStayOut(t *testing.T) {
 		if strings.Contains(SystemPrompt, rule) {
 			t.Errorf("SystemPrompt carries the task rule %q again", rule)
 		}
+	}
+}
+
+// a tool switched off leaves the list and the prompt alike, so the model is never pointed at it
+func TestASwitchedOffToolIsNeitherOfferedNorNamed(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	a := New(nil, tools.BuiltIn(root, dir, tools.Options{}), "test-model",
+		Options{Disabled: []string{"exec_command", "edit_file"}}, &asksBack{})
+	for _, s := range a.Specs() {
+		if s.Name == "exec_command" || s.Name == "edit_file" {
+			t.Errorf("%s is still offered", s.Name)
+		}
+	}
+	prompt := a.history[0].Content
+	if strings.Contains(prompt, "exec_command") || strings.Contains(prompt, "edit_file") || strings.Contains(prompt, "occur once") {
+		t.Errorf("the prompt still points at a tool that is off:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "- read_file:") || !strings.Contains(prompt, "- plan:") || !strings.Contains(prompt, "- Use write_file") {
+		t.Errorf("a line about a tool still on went with them:\n%s", prompt)
+	}
+	call := llm.ToolCall{ID: "c1", Function: llm.FunctionCall{Name: "exec_command", Arguments: []byte(`{"command":"ls"}`)}}
+	if got := a.runTool(t.Context(), call, "c1"); !strings.Contains(got.Text, "unknown tool") {
+		t.Errorf("a call to a tool that is off was not refused: %q", got.Text)
+	}
+}
+
+// with nothing switched off the prompt is the shipped one, byte for byte, so its cache prefix holds
+func TestNoToolSwitchedOffLeavesThePromptAsShipped(t *testing.T) {
+	if promptWithout(SystemPrompt, nil) != SystemPrompt {
+		t.Error("an empty list changed the prompt")
+	}
+	if got := promptWithout("- explain the change\n- plan: steps\n  carried on", []string{"plan"}); got != "- explain the change" {
+		t.Errorf("switching plan off left %q: a line with its letters inside a word went, or its carried-on line stayed", got)
 	}
 }

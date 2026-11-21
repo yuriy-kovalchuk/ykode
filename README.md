@@ -47,9 +47,18 @@ CVEs through Trivy in Docker, `make release` cross-builds the three shipped targ
 `make install-hooks` makes git check your commit subjects and tag names, and `make uninstall` takes
 `PURGE=1` to remove `~/.ykode` as well.
 
+`make eval` runs scripted tasks against a real server, three runs each, and saves the result under
+`~/.ykode/evals`: pass rate, median turns, prompt and generated tokens and seconds per task, and how often
+a run stalled, folded, dropped or repeated itself. `ARGS` takes its own flags (`--only NAME`, `--repeat N`,
+`--baseline last` to compare with the previous run, `--keep`, `--verbose`, `--use-settings`) and ykode's,
+so `make eval ARGS="--thinking xhigh --baseline last"` measures one level against another. It reads an
+empty home unless told `--use-settings`, so your settings and `AGENTS.md` change nothing it measures.
+
 The default server is `http://127.0.0.1:8080/v1`, which is what `llama-server --host 127.0.0.1
 --port 8080` answers. That server needs `--jinja` before it takes a tool call, and `--mmproj` with a
-vision encoder before it can see a picture. A small window is the one hard limit, because everything
+vision encoder before it can see a picture. ykode reads the window from `/models`, and from llama.cpp's
+`/props` when the server lists one model, so a slot's real share is what it budgets for and `--ctx` is
+only for a server that says neither. A small window is the one hard limit, because everything
 ykode budgets (the room for a reply, the tool-result cut, folding and compaction) is measured against
 it: 16k tokens is the practical floor for a coding session, 32k or more is comfortable.
 
@@ -58,8 +67,12 @@ it: 16k tokens is the practical floor for a coding session, 32k or more is comfo
 Precedence, lowest first: built-in defaults, `~/.ykode/settings.yaml`, the project's
 `.ykode/settings.yaml` (`/create-local-setting` makes one, and it then wins for that project), the
 variables `$LOCAL_LLM_URL` and `$LOCAL_LLM_MODEL`, then flags. A key nothing reads is refused by name
-and line at startup, so a typo fails loudly instead of being ignored. `/settings` lists every knob and
-edits it on screen.
+and line at startup, so a typo fails loudly instead of being ignored. `/settings` lists every knob,
+grouped (model, context, tools, permissions, sessions, appearance) with whether it applies now or at the
+next start, and opens the editor its kind wants: a switch turns over on enter, a choice lists its options
+(the thinking levels with their budgets, the themes with their colours) and `←`/`→` steps through them,
+the tools list is a checklist, a typed list adds entries and takes one off with `d`, and a number or a
+length of time is typed and checked before it is written. `r` takes any setting back to its default.
 
 | setting | default | what it does |
 |---|---|---|
@@ -73,6 +86,8 @@ edits it on screen.
 | `stream_idle_sec` | `120` | silence before a stream counts as dead; a cold prompt wants more |
 | `assume_yes` | `false` | do not ask about writes inside the project |
 | `permissions.allow` | empty | never ask about these: a tool name, or `exec:go test` |
+| `save_server_cache` | `false` | llama.cpp writes this conversation's cache to its disk on leaving and loads it on `--continue`; see below |
+| `tools.disabled` | empty | tools the model is not offered, e.g. `exec_command` for a read-only project |
 | `keep_sessions` | `720h` | how long a saved conversation survives |
 
 The same knobs from the command line: `--base-url`, `--model`, `--root`, `--max-turns`,
@@ -83,6 +98,16 @@ Everything ykode keeps lives under `$YKODE_HOME`, default `~/.ykode`.
 
 Requests stay byte-stable: the system prompt and the tool list never change mid-session, and news
 about the date or the git state travels on the newest ask, so the server's prompt cache keeps hitting.
+
+### The server's cache across runs
+
+A llama.cpp server keeps the conversation it last read, so the next request reads only what is new.
+`--continue` after a restart of either side reads the whole conversation again, which takes minutes on
+a long one. With `save_server_cache: true`, leaving ykode asks the server to save its slot as
+`ykode-<session>.bin`, and `--continue` loads it back before the first request. The server must run with
+`--slot-save-path DIR`, and with a single slot, since ykode cannot tell which of several holds the
+conversation; a long conversation's file is gigabytes. A refusal is said and costs nothing but the
+cold read.
 
 ### Themes
 
@@ -117,6 +142,16 @@ window (4.8 KB at a 4k context, 51.2 KB at 128k, 12 KB when the window is unknow
 kept, with the whole of it saved under `$YKODE_HOME/logs` for 24 h (`tools.command_log_dir`,
 `tools.keep_command_logs`) and its path handed to the model.
 
+## Pictures
+
+A vision model sees a picture three ways: `read_file` on one, `@path` in an ask (`@shot.png`,
+`@~/Desktop/shot.png`, `@"a name with spaces.png"`), and `ctrl+v` with a picture on the clipboard, which
+saves it under `~/.ykode/pastes` for a day and types its `@path` into the box, where it can be read and
+taken out before the ask goes. A path in an ask is yours, so it may lie outside `--root`, unlike one the
+model names. `ctrl+v` reads the clipboard with `osascript` on macOS, `wl-paste` on Wayland and `xclip`
+elsewhere; with text there, it pastes the text. A model that reads no pictures is sent none, and the
+screen says so.
+
 ## Commands
 
 | command | what it does |
@@ -143,6 +178,7 @@ kept, with the whole of it saved under `$YKODE_HOME/logs` for 24 h (`tools.comma
 | `ctrl+j`, `alt+enter` | start a new line, in every terminal. `ctrl+enter` and `shift+enter` too where the terminal speaks the kitty keyboard protocol or xterm's modifyOtherKeys (kitty, Ghostty, WezTerm, foot, iTerm2, recent xterm); elsewhere they arrive as a plain `enter` and send |
 | `ctrl+p`, `ctrl+n` | walk earlier prompts, so a wrong ask is edited rather than repeated |
 | `tab` | complete a command |
+| `ctrl+v` | paste the clipboard's picture as an `@path`, or its text |
 | `esc`, `ctrl+c` | stop a run; at an idle prompt `ctrl+c` quits |
 | `pgup`, `pgdown`, `ctrl+u`, `ctrl+d`, `up`, `down` | scroll the transcript, by a page or half a page; the arrows are the cursor while the box holds more than one line |
 | `end` | return to the live end |
@@ -155,8 +191,8 @@ kept, with the whole of it saved under `$YKODE_HOME/logs` for 24 h (`tools.comma
   key is read from a flag, a variable or a file.
 - **No plugins and no MCP**: the callable tools are the six above.
 - **No OS sandbox**: the confinement is the project root plus the confirmation, and a command reaches
-  whatever your permissions reach, including the network. A jailed `exec_command` is on the ideas
-  list, not in the code.
+  whatever your permissions reach, including the network. To fence commands in, run ykode inside a
+  container with only the project mounted.
 - **No pointer grabbing**: the screen never takes the mouse and always leaves the terminal clean.
 
 ## Releasing

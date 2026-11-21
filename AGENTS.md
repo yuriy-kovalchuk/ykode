@@ -17,6 +17,7 @@ make audit     # deps + vuln
 make fmt       # gofmt -w .
 make release   # cross-builds the three shipped targets into dist/
 make install-hooks # git checks commit subjects and v* tag names, then runs the gate
+make eval      # the scripted tasks against a real server, saved under ~/.ykode/evals; reaches the network
 ```
 
 `make check` must be clean before work is called done. `lint` is part of `check` and succeeds when
@@ -34,6 +35,7 @@ govulncheck judges, so move it together with go.mod's `go` directive, not ahead 
 | package | job |
 |---|---|
 | `cmd/ykode` | flags in, exit code out; nothing else |
+| `cmd/eval` | scripted tasks against a real server, judged and counted, built from `app.Options` like a run |
 | `internal/app` | one invocation end to end: settings → server → tools → agent → front end |
 | `internal/config` | settings resolution and `settings.yaml`: built-ins, then file, then env, then flags |
 | `internal/agent` | the loop between model and tools: turns, budget, folding, permissions, commands |
@@ -76,7 +78,8 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
   result must not be a reading one (`tools.Detailed`).
 - **File access is one `*os.Root`** (`tools/paths.go`): no path walks out, no symlink lands
   outside. `exec_command` is deliberately outside that boundary; its environment stays scrubbed
-  (`PATH`, `HOME`, `TERM`, `LANG`) so secrets never reach a model-run command.
+  (`PATH`, `HOME`, `TERM`, `LANG`) so secrets never reach a model-run command. A picture the *user*
+  names with `@path` in an ask is read wherever it is (`agent/pictures.go`): the path is theirs.
 - **The screen never takes the pointer** and always leaves the terminal with pointer tracking off
   and the keyboard protocols v2 asks for popped, before it draws and on the way out — the server
   screen run on its own wears the same belt (`tui/scroll.go`, `tui/tui.go`: `writeModesOff`).
@@ -87,7 +90,7 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
 
 - **Comments: one line, maximum.** No block of consecutive `//` lines, no paragraph comments: the
   codebase is one-line-only today, keep it that way. Say why, not what, in a single line — if the
-  reasoning will not fit, the line is the conclusion and the detail goes in `README.md`, `ideas.md`
+  reasoning will not fit, the line is the conclusion and the detail goes in `README.md`, `TODO.md`
   or the commit message. No `/* */` comments.
 - One component per file, named after what it holds; tests mirror the source file.
 - gofmt-clean (enforced by `make check`), comments wrapped to about 110 columns.

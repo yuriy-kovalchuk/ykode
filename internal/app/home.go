@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/home"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
 
@@ -31,6 +32,30 @@ func PrepareHome(cfg config.Config) {
 	removed("command log(s)", n, err)
 	n, err = pruneSessions(cfg)
 	removed("conversation(s)", n, err)
+	n, err = prunePastes(filepath.Join(home.Dir(), "pastes"))
+	removed("pasted picture(s)", n, err)
+}
+
+// pasteKeep is how long a pasted picture's file stays: the ask that named it carries its own copy
+const pasteKeep = 24 * time.Hour
+
+// prunePastes drops pictures pasted into earlier asks; the conversation holds what it was sent
+func prunePastes(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("clean old pasted pictures in %s: %w", dir, err)
+	}
+	removed := 0
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || !strings.HasPrefix(e.Name(), "paste-") || time.Since(info.ModTime()) < pasteKeep {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.Name())) == nil {
+			removed++
+		}
+	}
+	return removed, nil
 }
 
 // pruneSessions drops old conversations, passing over an entry it cannot remove instead of stopping

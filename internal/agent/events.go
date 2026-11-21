@@ -108,4 +108,6 @@ type Stats struct {
 	DraftN         int // tokens a draft model proposed, when the server has one
 	DraftNAccepted int
 	Estimated      bool // the speeds were measured by the client, not reported by the server
+	ReadTokens     int  // how much of the prompt the server has read so far, while it reads
+	ReadTotal      int  // what it has to read; 0 when the server does not say
 }

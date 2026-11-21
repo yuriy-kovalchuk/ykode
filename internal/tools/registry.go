@@ -1,5 +1,7 @@
 package tools
 
+import "slices"
+
 // Registry keeps tools in registration order so the list the model sees stays stable.
 type Registry struct {
 	byName  map[string]Tool
@@ -33,6 +35,17 @@ func (r *Registry) Add(t Tool) {
 }
 
 func (r *Registry) All() []Tool { return r.ordered }
+
+// Without is the registry less the tools named, in the same order; names it does not hold are passed over
+func (r *Registry) Without(names ...string) *Registry {
+	keep := make([]Tool, 0, len(r.ordered))
+	for _, t := range r.ordered {
+		if !slices.Contains(names, t.Name()) {
+			keep = append(keep, t)
+		}
+	}
+	return NewRegistry(keep...)
+}
 
 func (r *Registry) Names() []string {
 	names := make([]string, 0, len(r.ordered))

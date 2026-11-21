@@ -167,6 +167,9 @@ func newerSpeeds(before, next agent.Stats) agent.Stats {
 	if next.PrefillTokSec > 0 {
 		before.PrefillTokSec = next.PrefillTokSec
 	}
+	if next.ReadTotal > 0 {
+		before.ReadTokens, before.ReadTotal = next.ReadTokens, next.ReadTotal
+	}
 	return before
 }
 

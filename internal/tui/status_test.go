@@ -209,3 +209,28 @@ func TestTheFullnessBarFillsInProportion(t *testing.T) {
 		}
 	}
 }
+
+// while a long prompt is read the footer says how far, and says nothing once it is all read
+func TestTheStatusLineSaysHowFarAPromptHasBeenRead(t *testing.T) {
+	line := stripCodes(statusLine(status{running: true, read: 45000, readTotal: 100000}))
+	if !strings.Contains(line, "reading 45k/100k 45%") {
+		t.Errorf("no reading progress in %q", line)
+	}
+	if line := stripCodes(statusLine(status{running: true, read: 100000, readTotal: 100000})); strings.Contains(line, "reading") {
+		t.Errorf("a prompt read in full still shows as reading: %q", line)
+	}
+}
+
+// the reading count comes from the run's progress reports and is gone once the reply ends
+func TestTheReadingCountFollowsTheRunAndEndsWithTheReply(t *testing.T) {
+	m := newTestModel()
+	m.running = true
+	m.Update(eventMsg{ev: agent.Event{Kind: agent.Progress, Stats: agent.Stats{ReadTokens: 2000, ReadTotal: 8000}}})
+	if s := m.status(); s.read != 2000 || s.readTotal != 8000 {
+		t.Errorf("the footer has read %d of %d, want 2000 of 8000", s.read, s.readTotal)
+	}
+	m.Update(eventMsg{ev: agent.Event{Kind: agent.TurnEnd}})
+	if s := m.status(); s.readTotal != 0 {
+		t.Errorf("a finished reply still reports reading %d of %d", s.read, s.readTotal)
+	}
+}

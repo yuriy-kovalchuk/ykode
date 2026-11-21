@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/session"
+	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 	"strings"
 	"time"
 
@@ -31,6 +33,11 @@ func (c *Config) normalize() error {
 	}
 	if err := theme.Check(c.Theme); err != nil {
 		return err
+	}
+	for _, name := range c.DisabledTools {
+		if !slices.Contains(tools.Names(), name) {
+			return fmt.Errorf("tools.disabled: %q is not a tool; want any of %s", name, strings.Join(tools.Names(), ", "))
+		}
 	}
 	if c.CtxSize < 0 {
 		return fmt.Errorf("--ctx must be 0 (auto) or a positive token count, got %d", c.CtxSize)

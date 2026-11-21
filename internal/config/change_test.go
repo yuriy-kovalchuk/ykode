@@ -202,3 +202,45 @@ func TestAnEmptyEntryIsNotAddedToTheList(t *testing.T) {
 		t.Error("an empty name was accepted for permissions.allow")
 	}
 }
+
+// an entry comes off a list one at a time, and the last one going takes the key with it
+func TestAListEntryComesOffAndTheLastTakesTheKey(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	for _, tool := range []string{"plan", "exec_command"} {
+		if _, _, err := Set(root, "tools.disabled", tool); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path, _, err := Remove(root, "tools.disabled", "plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := Load(nil); strings.Join(cfg.DisabledTools, ",") != "exec_command" {
+		t.Errorf("left %v, want exec_command alone", cfg.DisabledTools)
+	}
+	if _, _, err := Remove(root, "tools.disabled", "plan"); err == nil {
+		t.Error("an entry that is not there was taken off")
+	}
+	if _, _, err := Remove(root, "tools.disabled", "exec_command"); err != nil {
+		t.Fatal(err)
+	}
+	if saved, _ := os.ReadFile(path); strings.Contains(string(saved), "disabled") {
+		t.Errorf("an empty list stayed behind:\n%s", saved)
+	}
+}
+
+// a whole list goes back to its default in one step, as any other setting does
+func TestAWholeListIsTakenBack(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	if _, _, err := Set(root, "permissions.allow", "exec:go test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Set(root, "permissions.allow", "unset"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := Load(nil); len(cfg.Allow) != 0 {
+		t.Errorf("allow = %v after taking the list back", cfg.Allow)
+	}
+}

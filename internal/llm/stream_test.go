@@ -293,3 +293,25 @@ func TestAStreamErrorWrittenAsAStringStillReachesTheUser(t *testing.T) {
 		t.Errorf("%v: want a loading server to be recognised as one worth asking again", err)
 	}
 }
+
+// a server reading a long prompt says how far it is, and each report reaches the caller as it comes
+func TestChatStreamPassesOnHowFarThePromptHasBeenRead(t *testing.T) {
+	sse := frame(`{"choices":[],"prompt_progress":{"total":9000,"cache":1000,"processed":4000,"time_ms":800}}`) +
+		frame(`{"choices":[],"prompt_progress":{"total":9000,"cache":1000,"processed":9000,"time_ms":2100}}`) +
+		frame(`{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`) +
+		"data: [DONE]\n\n"
+	c, _ := streamServer(t, sse)
+	turn, deltas, err := collect(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read []int
+	for _, d := range deltas {
+		if d.Progress != nil {
+			read = append(read, d.Progress.Processed)
+		}
+	}
+	if fmt.Sprint(read) != "[4000 9000]" || turn.Message.Content != "ok" {
+		t.Errorf("read %v, answer %q: want both reports in order and the answer untouched", read, turn.Message.Content)
+	}
+}

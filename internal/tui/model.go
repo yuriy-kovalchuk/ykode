@@ -34,6 +34,8 @@ type model struct {
 	decode    float64 // tokens per second of the last answer
 	prefill   float64 // tokens per second the last prompt was read at
 	estimated bool    // the speeds above were measured here while the reply streamed, not reported by the server
+	read      int     // how much of the prompt the server has read, while a long one is read
+	readTotal int     // what it has to read; 0 when it is not reading or never said
 	started   time.Time
 	took      time.Duration // how long the last prompt took
 	spin      spinner.Model
@@ -60,10 +62,11 @@ type model struct {
 	drawn    time.Time
 	frameDue bool
 
-	probe  probeFunc       // how the modal asks a server for its models; tests put a fake here
-	screen *settingsScreen // the list of every setting /settings opens over the session; nil when closed
-	picker overlay         // the conversations /sessions opens over the session, to continue one; nil when closed
-	modal  *setupModel     // the server and model screen /settings opens over the session; nil when closed
+	probe     probeFunc                             // how the modal asks a server for its models; tests put a fake here
+	clipboard func(context.Context) ([]byte, error) // the picture on the clipboard, as png; a test hands in its own
+	screen    *settingsScreen                       // the list of every setting /settings opens over the session; nil when closed
+	picker    overlay                               // the conversations /sessions opens over the session, to continue one; nil when closed
+	modal     *setupModel                           // the server and model screen /settings opens over the session; nil when closed
 
 	altScreen bool // the frame takes the whole terminal; a test's fake terminal draws inline
 
@@ -92,19 +95,20 @@ func newModel(ctx context.Context, a *agent.Agent, hub *Hub, cfg config.Config) 
 
 	// a terminal that will not say its size still gets a screen
 	m := &model{
-		spin:   spin,
-		ctx:    ctx,
-		hub:    hub,
-		agent:  a,
-		cfg:    cfg,
-		root:   a.Root(),
-		branch: a.Branch(), // the branch the prompt was built on; the next ask refreshes it
-		head:   watchHead(a.Root()),
-		input:  input,
-		probe:  probeServer,
-		view:   window{height: defaultHeight},
-		width:  defaultWidth,
-		height: defaultHeight,
+		spin:      spin,
+		ctx:       ctx,
+		hub:       hub,
+		agent:     a,
+		cfg:       cfg,
+		root:      a.Root(),
+		branch:    a.Branch(), // the branch the prompt was built on; the next ask refreshes it
+		head:      watchHead(a.Root()),
+		input:     input,
+		probe:     probeServer,
+		clipboard: clipboardPicture,
+		view:      window{height: defaultHeight},
+		width:     defaultWidth,
+		height:    defaultHeight,
 	}
 	m.theme, m.dark = cfg.Theme, true
 	m.setPalette()        // before anything is drawn, so even the first rows carry the chosen colours
@@ -241,6 +245,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refresh()
 		return m, cmd
+	case pastedMsg:
+		return m, m.pasted(msg)
 	case tea.PasteMsg:
 		return m.handleKey(msg)
 	case tea.KeyPressMsg:

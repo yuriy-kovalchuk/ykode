@@ -69,6 +69,9 @@ func (a *streamAccumulator) absorb(chunk chatChunk, onDelta func(Delta)) {
 		a.timings = mergeTimings(a.timings, *chunk.Timings)
 		onDelta(Delta{Timings: chunk.Timings})
 	}
+	if chunk.Progress != nil {
+		onDelta(Delta{Progress: chunk.Progress})
+	}
 	if u := chunk.Usage; u != nil {
 		a.applyUsage(u)
 	}

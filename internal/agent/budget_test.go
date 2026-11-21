@@ -1,6 +1,11 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
+)
 
 // a reply with no cap of its own is still bounded by the room the context window has left
 func TestANoCapReplyGetsTheRoomTheWindowHasLeft(t *testing.T) {
@@ -118,6 +123,9 @@ func TestEveryRequestAsksForLiveTimings(t *testing.T) {
 	if got := stub.lastRequest(t)["timings_per_token"]; got != true {
 		t.Errorf("timings_per_token = %v, want true", got)
 	}
+	if got := stub.lastRequest(t)["return_progress"]; got != true {
+		t.Errorf("return_progress = %v, want true, so a long prompt says how far it has been read", got)
+	}
 }
 
 // the fold mark is the last moment a fold still fits, not a share of the window
@@ -135,5 +143,37 @@ func TestTheFoldMarkIsTheLastMomentAFoldFits(t *testing.T) {
 			t.Errorf("at a %d window the fold asks at %d, no later than the old three quarters of the window",
 				tc.ctx, a.pressureMark())
 		}
+	}
+}
+
+// a request refused for room names the share held for the answer, or a part-empty window reads as a miscount
+func TestAConversationOutOfRoomNamesTheRoomHeldForTheAnswer(t *testing.T) {
+	a := newForHistory(Options{CtxSize: 2000, SafetyMargin: 400})
+	a.add(llm.Message{Role: "user", Content: strings.Repeat("word ", 1600)})
+	_, err := a.request()
+	if err == nil {
+		t.Fatal("a conversation past the window was sent")
+	}
+	if !strings.Contains(err.Error(), "400 of it held back for the answer") || !strings.Contains(err.Error(), "safety_margin") {
+		t.Errorf("the refusal does not name the reserve: %v", err)
+	}
+}
+
+// what the settings show for a level is what the request carries, cut to the room the window has left
+func TestTheBudgetShownForALevelIsTheOneTheServerGets(t *testing.T) {
+	a := newForHistory(Options{ThinkingLevel: "xhigh", CtxSize: 3000, SafetyMargin: 256})
+	a.add(llm.Message{Role: "user", Content: "say something"})
+	req, err := a.request()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown := a.ThinkingBudget("xhigh"); req.ThinkingBudget != shown {
+		t.Errorf("the request asked for %d but %d was shown", req.ThinkingBudget, shown)
+	}
+	if low, xhigh := a.ThinkingBudget("low"), a.ThinkingBudget("xhigh"); xhigh >= 32768 || low != xhigh {
+		t.Errorf("a 3000 token window gave xhigh %d and low %d: both should be cut to the same room", xhigh, low)
+	}
+	if got := a.ThinkingBudget("minimal"); got != 1024 {
+		t.Errorf("minimal fits the window whole, yet shows %d", got)
 	}
 }

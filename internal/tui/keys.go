@@ -25,6 +25,9 @@ func (m *model) handleKey(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.submit()
 	}
+	if key == "ctrl+v" && len(m.pending) == 0 {
+		return m, m.pastePicture() // a picture on the clipboard is saved and named; text falls through to a paste
+	}
 	if cmd, ok := m.sessionKey(key); ok {
 		return m, cmd
 	}

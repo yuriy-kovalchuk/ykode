@@ -40,7 +40,8 @@ type Config struct {
 	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
 	Theme           string // the palette the screen draws with; auto follows the terminal's background
 	AssumeYes       bool
-	ReadLines       int // read_file window when the model does not ask for one
+	SaveServerCache bool // llama.cpp keeps a conversation's cache on its disk between runs, for --continue
+	ReadLines       int  // read_file window when the model does not ask for one
 	ExecTimeout     time.Duration
 	StreamIdle      time.Duration // how long a stream may stay silent
 	CommandLogDir   string        // where a cut command's full output is saved
@@ -50,6 +51,7 @@ type Config struct {
 	Prompt          string                     // one task to answer and exit; empty runs the screen
 	TUI             bool                       // full-screen session instead of one task on stdout
 	Allow           []string                   // never ask about these: a tool name, or "exec:go test"
+	DisabledTools   []string                   // tools the model is not offered, decided when a session starts
 	Continue        string                     // resume a saved conversation: "last" or its id
 	SessionDir      string                     // where conversations are saved
 	ProjectSettings string                     // <root>/.ykode/settings.yaml, when the project ships one

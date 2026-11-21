@@ -43,6 +43,15 @@ has been tagged yet, so everything below describes what `main` does today.
   `SHA256SUMS` and keyless cosign signatures as a GitHub Release. Dependabot bumps modules and
   Actions weekly, and `make install-hooks` makes git check commit subjects and tag names.
 
+- Pictures in an ask: `@path` attaches a png, jpeg, gif or webp from anywhere the user names, and
+  `ctrl+v` saves the clipboard's picture under `~/.ykode/pastes` and types its `@path` into the box.
+- The footer shows how far the server has read a long prompt (`reading 45k/100k 45%`), from llama.cpp's
+  `return_progress`; its reports also keep a cold read from counting as a silent stream.
+- `save_server_cache` setting: llama.cpp saves the conversation's slot on leaving and loads it on
+  `--continue`, on a server with `--slot-save-path` and one slot.
+- `make eval` is back: scripted tasks against a real server, with a picture task for vision models and
+  counters for stalls, folds, drops, repeats and cut replies, compared with `--baseline last`.
+
 ### Changed
 
 - The screen runs on Bubble Tea v2, Lip Gloss v2 and Bubbles v2. Colours live in one palette, a dark
@@ -52,12 +61,26 @@ has been tagged yet, so everything below describes what `main` does today.
 - `ctrl+enter` starts a new line, as `shift+enter` does, where the terminal speaks the kitty keyboard
   protocol or modifyOtherKeys; elsewhere it still arrives as `enter`. The screen and the server
   screen switch those protocols off before they draw and on the way out, as they do pointer tracking.
+- `/settings` is grouped under headings with plain names, values in their units, and a live or restart
+  column, and each setting opens the editor its kind wants: a menu of choices (thinking levels with their
+  budgets, themes with their colours), a checklist for `tools.disabled`, add and remove for
+  `permissions.allow`, a checked field for numbers and lengths of time; `r` resets any setting, and a
+  list can now lose an entry from the screen.
 - The key list `?` and `ctrl+/` open is grouped — prompt, edit, scroll, session — one row per group
   with its name in a column, wrapped into even rows when the screen is narrower.
 - `theme` setting, applied at once: `auto` (the default), `ykode-dark`, `ykode-light`, `terminal`
   (the terminal's sixteen colours), and `dracula`, `nord`, `solarized-dark`, `solarized-light`,
   `gruvbox-dark`, `gruvbox-light`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `one-dark`,
   `monokai`, which repaint the terminal's background while the screen is up.
+- `tools.disabled` setting: tools the model is not offered, decided when a session starts, with the
+  prompt's lines about them left out. A project's file adds to the user's and cannot switch one back on.
+- `/settings` shows each thinking level's budget as the next request would send it: when the window
+  has little left, the deeper levels are cut to the same number, and the pane says so.
+- A request refused for room, and the fold that makes room, name the tokens held back for the answer
+  (`context.safety_margin`), so a window that looks part empty no longer reads as a miscount.
+- A thinking budget is cut to fit `max_tokens` even when the server reports no window.
+- The window and vision come from llama.cpp's `/props` as well as `/models` when the server lists one
+  model, so stock `llama-server` needs no `--ctx`, and a slot's share wins over the model's window.
 
 ### Removed
 

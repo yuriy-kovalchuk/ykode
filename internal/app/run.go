@@ -84,11 +84,17 @@ func Run(args []string, version string) error {
 		a.Learned(saved.BytesPerToken) // before the conversation is measured, so it is measured as it was
 		a.Resume(messages)
 		fmt.Fprintf(os.Stderr, "ykode: resumed %s (%d messages)\n", cfg.Session, len(messages))
+		if cfg.SaveServerCache {
+			restoreCache(client, cfg.SessionFile, os.Stderr)
+		}
 	}
 	// what actually goes out each turn: a tool that is not offered yet is not paid for
 	fmt.Fprintf(os.Stderr, "ykode: %d tool specs, %d bytes in every request\n", len(a.Specs()), a.SpecBytes())
 	if err := front.Run(a, cfg, ctxSize); err != nil {
 		return err
+	}
+	if cfg.SaveServerCache && a.SavedMessages() > 0 && a.SessionFile() != "" {
+		saveCache(client, a.SessionFile(), os.Stderr)
 	}
 	fmt.Fprint(os.Stderr, resumeNote(a.SessionFile(), cfg.Root, a.SavedMessages()))
 	return nil

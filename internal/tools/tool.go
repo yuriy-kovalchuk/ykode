@@ -41,6 +41,11 @@ func CallOf(tool Tool, ctx context.Context, args json.RawMessage) (Result, error
 	return Result{Text: text}, err
 }
 
+// Names are every tool ykode can offer, ask_user included, so a setting naming one can be checked
+func Names() []string {
+	return []string{"read_file", "write_file", "edit_file", "exec_command", "plan", "ask_user"}
+}
+
 // BuiltIn is the shipped tool set in locate, read, change, run order, with the tools' settings
 type Options struct {
 	ReadLines      int

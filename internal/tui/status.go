@@ -32,7 +32,9 @@ type status struct {
 	estimated bool    // both were measured on this side while the reply streamed, so they carry a ~
 	running   bool
 	waiting   int
-	room      string        // what this ask had to do to fit the conversation in; "" when nothing did
+	room      string // what this ask had to do to fit the conversation in; "" when nothing did
+	read      int    // prompt tokens the server has read of readTotal, while it reads
+	readTotal int
 	elapsed   time.Duration // how long the running prompt has been working
 	took      time.Duration // how long the last prompt took, once it finished
 	spinner   string
@@ -127,6 +129,10 @@ func statusActivity(s status) []string {
 		if s.room != "" {
 			now = append(now, styleDim.Render(s.room)) // the clock is long because of this, not because of the model
 		}
+		if s.readTotal > 0 && s.read < s.readTotal {
+			now = append(now, styleDim.Render(fmt.Sprintf("reading %s/%s %d%%", tokCount(s.read), tokCount(s.readTotal),
+				s.read*100/s.readTotal)))
+		}
 	case s.waiting > 0:
 		now = append(now, fmt.Sprintf("%d waiting", s.waiting))
 	case s.took > 0:
@@ -202,7 +208,7 @@ func tokCount(n int) string {
 func (m *model) status() status {
 	s := status{root: m.root, branch: m.branch, model: m.agent.Model(), thinking: m.agent.ThinkingLevel(),
 		usage: m.agent.Usage(), ctxSize: m.agent.CtxSize(), prefill: m.prefill,
-		room:   m.agent.RoomMade(),
+		room: m.agent.RoomMade(), read: m.read, readTotal: m.readTotal,
 		decode: m.decode, estimated: m.estimated, running: m.running, waiting: len(m.agent.Waiting()), took: m.took, spinner: m.spin.View(),
 		keysHint: !m.showKeys, width: m.width}
 	if m.running {

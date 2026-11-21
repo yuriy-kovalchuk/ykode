@@ -26,6 +26,7 @@ type Options struct {
 	Root             string       // the project root, recorded with every call
 	Vision           bool         // the model in use reads images, so a picture read from a file is worth sending
 	Allow            []string     // what never to ask about: a tool name, or "exec:go test"
+	Disabled         []string     // tools the model is never offered, taken out before the first request
 	Plan             *tools.Plan  // the steps of a long task: the model writes them, a front end shows them
 	// Cards are the per-model sampling a settings file gave, so a switch does not keep old numbers
 	Cards map[string]llm.ModelCard

@@ -35,37 +35,61 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 		Modalities: a.inputModes(),
 		// the screen shows the speed while the reply streams; servers that do not know the field ignore it
 		TimingsPerToken: true,
+		// a cold prompt of a long conversation reads for minutes: this says how far, and keeps the stream awake
+		ReturnProgress: true,
 	}
 	req.Sampling = a.opts.Thinking
-	if level := a.ThinkingLevel(); level == llm.ThinkingOff {
+	level := a.ThinkingLevel()
+	if level == llm.ThinkingOff {
 		req.Sampling = a.opts.NoThink
 		// llama.cpp honours "enable_thinking" and silently ignores "thinking_enabled"
 		req.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
-	} else if budget, known := llm.ThinkingBudgetTokens(level); known {
-		req.ThinkingBudget = budget
 	}
 	if a.opts.CtxSize > 0 {
-		used := a.estimateTokens()
-		room := a.usable() - used
-		if room < minResponseTok {
-			return llm.ChatRequest{}, fmt.Errorf(
-				"conversation is about %d tokens but the server context is %d; use /reset or raise --ctx", used, a.opts.CtxSize)
+		if used := a.estimateTokens(); a.usable()-used < minResponseTok {
+			// the reserve is named: without it a window that is part empty reads as a miscount
+			return llm.ChatRequest{}, fmt.Errorf("conversation is about %d tokens but the server context is %d, "+
+				"%d of it held back for the answer (context.safety_margin); use /reset, /compact or raise --ctx",
+				used, a.opts.CtxSize, a.reserve())
 		}
-		// no cap asked for: the room the window has left is the cap, so a reply cannot run past the prompt
-		if req.MaxTokens == 0 || room < req.MaxTokens {
-			req.MaxTokens = room
-		}
-		// thinking is billed inside the reply, so it never takes more than the reply can spare
-		if req.ThinkingBudget > 0 {
-			req.ThinkingBudget = min(req.ThinkingBudget, req.MaxTokens-minAnswerTok)
-			if req.ThinkingBudget <= 0 {
-				// a budget of 0 is omitted on the wire, and an omitted budget means no limit at all
-				req.ThinkingBudget = max(req.MaxTokens/2, 1)
-			}
-		}
+	}
+	req.MaxTokens = a.replyRoom()
+	if level != llm.ThinkingOff {
+		req.ThinkingBudget = thinkingWithin(level, req.MaxTokens)
 	}
 	return req, nil
 }
+
+// replyRoom is the cap a reply gets: the one asked for, or less when the window has less left; 0 is none
+func (a *Agent) replyRoom() int {
+	if a.opts.CtxSize <= 0 {
+		return a.opts.MaxTokens
+	}
+	// no cap asked for: the room the window has left is the cap, so a reply cannot run past the prompt
+	room := a.usable() - a.estimateTokens()
+	if a.opts.MaxTokens == 0 || room < a.opts.MaxTokens {
+		return room
+	}
+	return a.opts.MaxTokens
+}
+
+// thinkingWithin is a level's budget cut to what a reply of reply tokens can spare; 0 asks for no cap
+func thinkingWithin(level string, reply int) int {
+	budget, _ := llm.ThinkingBudgetTokens(level)
+	if budget <= 0 || reply <= 0 {
+		return budget
+	}
+	// thinking is billed inside the reply, so it never takes more than the reply can spare
+	budget = min(budget, reply-minAnswerTok)
+	if budget <= 0 {
+		// a budget of 0 is omitted on the wire, and an omitted budget means no limit at all
+		budget = max(reply/2, 1)
+	}
+	return budget
+}
+
+// ThinkingBudget is what the next request would ask a level to think within, after the window's cut
+func (a *Agent) ThinkingBudget(level string) int { return thinkingWithin(level, a.replyRoom()) }
 
 // reserve is the room held for the reply and template, never over a quarter of the window
 func (a *Agent) reserve() int {

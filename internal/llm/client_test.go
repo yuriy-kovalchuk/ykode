@@ -449,8 +449,12 @@ func TestEveryRequestNamesTheRunItBelongsTo(t *testing.T) {
 	if _, err := c.ChatStream(context.Background(), ChatRequest{Model: "m"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(seen) != 2 || seen[0] != c.Session || seen[1] != c.Session {
-		t.Errorf("requests carried %v, want the run on both", seen)
+	named := len(seen) >= 2
+	for _, got := range seen {
+		named = named && got == c.Session
+	}
+	if !named {
+		t.Errorf("requests carried %v, want the run on every one", seen)
 	}
 }
 
@@ -466,5 +470,76 @@ func TestARetriedFailureKeepsTheFirstReason(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "model is loading") {
 		t.Errorf("%v: want the first failure's reason kept beside the second", err)
+	}
+}
+
+// propsServer answers /v1/models with the given list and /props with the given body, or 404 when it is empty
+func propsServer(t *testing.T, models, props string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			fmt.Fprint(w, models)
+		case "/props":
+			if props == "" {
+				http.NotFound(w, r)
+				return
+			}
+			fmt.Fprint(w, props)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return NewClient(srv.URL + "/v1")
+}
+
+// stock llama-server lists no window in /models: /props gives the slot's, so no --ctx is needed
+func TestAWindowTheModelListLacksIsReadFromProps(t *testing.T) {
+	c := propsServer(t, `{"data":[{"id":"qwen","meta":{"n_ctx_train":262144}}]}`,
+		`{"default_generation_settings":{"n_ctx":65536},"modalities":{"vision":true}}`)
+	models, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models[0].CtxSize != 65536 || !models[0].Vision {
+		t.Errorf("got %+v, want the 65536 window and the eyes /props reports", models[0])
+	}
+}
+
+// several slots share one model's window, and a request only ever gets one slot's share
+func TestASlotsSmallerWindowWinsOverTheModels(t *testing.T) {
+	c := propsServer(t, `{"data":[{"id":"qwen","meta":{"n_ctx":131072}}]}`, `{"default_generation_settings":{"n_ctx":32768}}`)
+	models, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models[0].CtxSize != 32768 {
+		t.Errorf("window %d, want the slot's 32768", models[0].CtxSize)
+	}
+}
+
+// a router's /props is about whichever model it loaded, so a list of several is left as it came
+func TestPropsIsNotAskedAboutARoutersSeveralModels(t *testing.T) {
+	c := propsServer(t, `{"data":[{"id":"a","meta":{"n_ctx":8192}},{"id":"b","meta":{"n_ctx":131072}}]}`,
+		`{"default_generation_settings":{"n_ctx":4096}}`)
+	models, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models[0].CtxSize != 8192 || models[1].CtxSize != 131072 {
+		t.Errorf("got %+v, want each model's own window", models)
+	}
+}
+
+// a server with no /props is an OpenAI-compatible one like any other: the list stands
+func TestAServerWithoutPropsKeepsWhatItsListSaid(t *testing.T) {
+	c := propsServer(t, `{"data":[{"id":"qwen","meta":{"n_ctx":16384}}]}`, "")
+	models, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models[0].CtxSize != 16384 {
+		t.Errorf("window %d, want the 16384 the list said", models[0].CtxSize)
 	}
 }

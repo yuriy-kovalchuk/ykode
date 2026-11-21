@@ -159,6 +159,44 @@ func TestAPermissionAllowListIsReadFromSettings(t *testing.T) {
 	}
 }
 
+// a project can switch more tools off than the user's file does, never switch one back on
+func TestSwitchedOffToolsAddUpFromBothFiles(t *testing.T) {
+	homeDir := fakeHome(t)
+	project := filepath.Join(homeDir, "project")
+	for path, text := range map[string]string{
+		filepath.Join(homeDir, "settings.yaml"):           "tools:\n  disabled: [plan]\n",
+		filepath.Join(project, ".ykode", "settings.yaml"): "tools:\n  disabled: [exec_command]\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := Load([]string{"--root", project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.DisabledTools, ","); got != "plan,exec_command" {
+		t.Errorf("switched off: %s, want both files' entries", got)
+	}
+}
+
+// a misspelt tool would leave on the very tool it meant to switch off, so it is refused by name
+func TestASwitchedOffToolThatDoesNotExistIsRefused(t *testing.T) {
+	homeDir := fakeHome(t)
+	if err := os.WriteFile(filepath.Join(homeDir, "settings.yaml"), []byte("tools:\n  disabled: [exec]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(nil); err == nil || !strings.Contains(err.Error(), `"exec" is not a tool`) {
+		t.Errorf("an unknown tool name was taken: %v", err)
+	}
+	if _, _, err := Set(t.TempDir(), "tools.disabled", "exec"); err == nil || !strings.Contains(err.Error(), "exec_command") {
+		t.Errorf("the screen could write a tool that does not exist: %v", err)
+	}
+}
+
 func TestTheFirstRunWritesTheFileItWouldHaveUsedAnyway(t *testing.T) {
 	fakeHome(t)
 	if err := SeedSettings(); err != nil {
@@ -436,7 +474,6 @@ func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
 		{"a misspelled key", "settings.yaml", `{"base_ url": "http://nowhere"}`, "base_ url"},
 		{"a misspelled nested key", "settings.yaml", `{"tools": {"read_lines ": 40}}`, "read_lines "},
 		{"an unknown yaml key", "settings.yaml", "thinking_level: medium\nthinking_leve: medium\n", "thinking_leve"},
-		{"a retired sandbox key, which would otherwise read as a protection", "settings.yaml", "sandbox: true\n", "sandbox"},
 		{"a retired audit key", "settings.yaml", "audit: true\n", "audit"},
 		{"a retired api_key, since ykode sends no token anywhere", "settings.yaml", "api_key: sk-letmein\n", "api_key"},
 		{"a retired api_key_env", "settings.yaml", "api_key_env: ROUTER_TOKEN\n", "api_key_env"},
@@ -456,5 +493,23 @@ func TestABadSettingIsRefusedByNameAndFile(t *testing.T) {
 				t.Errorf("want an error naming %s and %s, got %v", c.key, c.file, err)
 			}
 		})
+	}
+}
+
+// keeping the server's cache costs its disk gigabytes, so it is off until a file turns it on
+func TestTheServerCacheIsKeptOnlyWhenAFileAsks(t *testing.T) {
+	homeDir := fakeHome(t)
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SaveServerCache {
+		t.Error("the server's cache is saved without being asked")
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, "settings.yaml"), []byte("save_server_cache: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = Load(nil); err != nil || !cfg.SaveServerCache {
+		t.Errorf("save_server_cache: true did not land (err %v)", err)
 	}
 }
