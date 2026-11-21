@@ -2,7 +2,8 @@
 
 A terminal coding agent that talks to an OpenAI-compatible chat server (normally a local
 `llama-server`). One streaming path, no provider SDK, file tools confined to one project root.
-`README.md` is the user-facing specification: anything a user would notice belongs there too.
+`README.md` and the pages under `docs/` it links are the user-facing specification: anything a user
+would notice belongs there too, in the page that covers it (settings, tools, commands and keys, …).
 
 ## Commands
 
@@ -90,7 +91,7 @@ nothing above them. `agent`, `tools`, `llm`, `session` and `config` never import
 
 - **Comments: one line, maximum.** No block of consecutive `//` lines, no paragraph comments: the
   codebase is one-line-only today, keep it that way. Say why, not what, in a single line — if the
-  reasoning will not fit, the line is the conclusion and the detail goes in `README.md`, `TODO.md`
+  reasoning will not fit, the line is the conclusion and the detail goes in `docs/`, `TODO.md`
   or the commit message. No `/* */` comments.
 - One component per file, named after what it holds; tests mirror the source file.
 - gofmt-clean (enforced by `make check`), comments wrapped to about 110 columns.

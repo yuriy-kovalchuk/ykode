@@ -48,7 +48,7 @@ jobs:
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
             echo "::error::CHANGELOG.md has no '## [$ver]' section; move the [Unreleased] entries" \
-              "under it, with today's date, before tagging (README 'Releasing')"
+              "under it, with today's date, before tagging (docs/development.md, 'Releasing')"
             exit 1
           fi
           cat "$RUNNER_TEMP/notes.md"
