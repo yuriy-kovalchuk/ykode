@@ -44,19 +44,19 @@ func TestAnUnknownWindowAsksForNoCap(t *testing.T) {
 	}
 }
 
-// thinking is billed inside the reply, so its budget is capped to leave the answer room of its own
-func TestAThinkingBudgetNeverEatsTheAnswer(t *testing.T) {
+// thinking is billed inside the reply, so its cap is cut to leave the answer room of its own
+func TestAThinkingCapNeverEatsTheAnswer(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{ThinkingLevel: "xhigh", CtxSize: 4000, SafetyMargin: 256}, &captureSink{})
+	a, done := newAgent(t, stub, Options{ThinkingBudget: 32768, CtxSize: 4000, SafetyMargin: 256}, &captureSink{})
 	defer done()
 	if err := a.Ask(t.Context(), "say something"); err != nil {
 		t.Fatal(err)
 	}
 
 	body := stub.lastRequest(t)
-	budget, ok := body["thinking_budget_tokens"].(float64)
-	if !ok {
-		t.Fatal("a deep level must ask the server to cap the thinking phase")
+	budget, ok := body["reasoning_budget_tokens"].(float64)
+	if !ok || body["thinking_budget_tokens"] != budget {
+		t.Fatalf("the cap must go under both names: %v and %v", body["reasoning_budget_tokens"], body["thinking_budget_tokens"])
 	}
 	cap, ok := body["max_tokens"].(float64)
 	if !ok {
@@ -67,22 +67,55 @@ func TestAThinkingBudgetNeverEatsTheAnswer(t *testing.T) {
 	}
 }
 
-func TestAMediumThinkingBudgetReachesTheServer(t *testing.T) {
+// the cap is a setting of its own: the level says how deeply, the cap how many tokens
+func TestTheThinkingCapIsNotTheLevel(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{ThinkingLevel: "medium", CtxSize: 16000, SafetyMargin: 256}, &captureSink{})
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "low", ThinkingBudget: 6000, CtxSize: 16000, SafetyMargin: 256},
+		&captureSink{})
 	defer done()
 	if err := a.Ask(t.Context(), "say something"); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := stub.lastRequest(t)["thinking_budget_tokens"]; got != float64(8192) {
-		t.Errorf("thinking_budget_tokens = %v, want the 8192 a medium level asks for", got)
+	body := stub.lastRequest(t)
+	if body["reasoning_effort"] != "low" || body["reasoning_budget_tokens"] != float64(6000) {
+		t.Errorf("reasoning_effort = %v, cap = %v: want low and the 6000 asked for",
+			body["reasoning_effort"], body["reasoning_budget_tokens"])
+	}
+}
+
+// no cap of its own still leaves the answer its room, or thinking can eat the reply and return nothing
+func TestNoThinkingCapStillLeavesTheAnswerRoom(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "max", MaxTokens: 8000, CtxSize: 32000}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+	if got := stub.lastRequest(t)["reasoning_budget_tokens"]; got != float64(8000-1024) {
+		t.Errorf("reasoning_budget_tokens = %v, want the 8000 token reply less the answer's 1024", got)
+	}
+}
+
+// with no reply size known there is nothing to cut against, so no cap is sent at all
+func TestNoThinkingCapAndNoWindowSendsNone(t *testing.T) {
+	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "high"}, &captureSink{})
+	defer done()
+	if err := a.Ask(t.Context(), "say something"); err != nil {
+		t.Fatal(err)
+	}
+	body := stub.lastRequest(t)
+	for _, field := range []string{"reasoning_budget_tokens", "thinking_budget_tokens"} {
+		if got, present := body[field]; present {
+			t.Errorf("%s = %v with no window and no cap: the field must be left out", field, got)
+		}
 	}
 }
 
 func TestThinkingOffTurnsThePhaseOffWithoutNamingABudget(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{ThinkingLevel: "off", CtxSize: 8000}, &captureSink{})
+	a, done := newAgent(t, stub, Options{ThinkingLevel: "off", ThinkingBudget: 4096, CtxSize: 8000}, &captureSink{})
 	defer done()
 	if err := a.Ask(t.Context(), "say something"); err != nil {
 		t.Fatal(err)
@@ -93,22 +126,27 @@ func TestThinkingOffTurnsThePhaseOffWithoutNamingABudget(t *testing.T) {
 	if !ok || kwargs["enable_thinking"] != false {
 		t.Errorf("chat_template_kwargs = %v, want enable_thinking false", body["chat_template_kwargs"])
 	}
-	if got, present := body["thinking_budget_tokens"]; present {
-		t.Errorf("thinking_budget_tokens = %v with thinking off: the field must be left out", got)
+	if body["reasoning_effort"] != "none" {
+		t.Errorf("reasoning_effort = %v, want none, which every engine reads as no thinking", body["reasoning_effort"])
+	}
+	for _, field := range []string{"reasoning_budget_tokens", "thinking_budget_tokens"} {
+		if got, present := body[field]; present {
+			t.Errorf("%s = %v with thinking off: the field must be left out", field, got)
+		}
 	}
 }
 
 // an omitted budget would let thinking eat the whole reply
 func TestASmallReplyStillCapsTheThinking(t *testing.T) {
 	stub := &stubServer{scripts: []string{sse("", "done", "", nil, "stop")}}
-	a, done := newAgent(t, stub, Options{ThinkingLevel: "medium", MaxTokens: 512, CtxSize: 16000}, &captureSink{})
+	a, done := newAgent(t, stub, Options{ThinkingBudget: 8192, MaxTokens: 512, CtxSize: 16000}, &captureSink{})
 	defer done()
 	if err := a.Ask(t.Context(), "say something"); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := stub.lastRequest(t)["thinking_budget_tokens"]; got != float64(256) {
-		t.Errorf("thinking_budget_tokens = %v, want half of the 512 token reply", got)
+	if got := stub.lastRequest(t)["reasoning_budget_tokens"]; got != float64(256) {
+		t.Errorf("reasoning_budget_tokens = %v, want half of the 512 token reply", got)
 	}
 }
 
@@ -159,21 +197,16 @@ func TestAConversationOutOfRoomNamesTheRoomHeldForTheAnswer(t *testing.T) {
 	}
 }
 
-// what the settings show for a level is what the request carries, cut to the room the window has left
-func TestTheBudgetShownForALevelIsTheOneTheServerGets(t *testing.T) {
-	a := newForHistory(Options{ThinkingLevel: "xhigh", CtxSize: 3000, SafetyMargin: 256})
+// what the settings show for the cap is what the request carries, cut to the room the window has left
+func TestTheCapShownIsTheOneTheServerGets(t *testing.T) {
+	a := newForHistory(Options{ThinkingBudget: 32768, CtxSize: 3000, SafetyMargin: 256})
 	a.add(llm.Message{Role: "user", Content: "say something"})
 	req, err := a.request()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shown := a.ThinkingBudget("xhigh"); req.ThinkingBudget != shown {
-		t.Errorf("the request asked for %d but %d was shown", req.ThinkingBudget, shown)
-	}
-	if low, xhigh := a.ThinkingBudget("low"), a.ThinkingBudget("xhigh"); xhigh >= 32768 || low != xhigh {
-		t.Errorf("a 3000 token window gave xhigh %d and low %d: both should be cut to the same room", xhigh, low)
-	}
-	if got := a.ThinkingBudget("minimal"); got != 1024 {
-		t.Errorf("minimal fits the window whole, yet shows %d", got)
+	if shown := a.ThinkingBudget(); req.ReasoningBudget != shown || shown >= 32768 {
+		t.Errorf("the request asked for %d but %d was shown, from a 32768 cap in a 3000 token window",
+			req.ReasoningBudget, shown)
 	}
 }

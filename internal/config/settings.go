@@ -27,6 +27,7 @@ type fileSettings struct {
 	MaxTurns      *int    `yaml:"max_turns,omitempty"`
 	MaxTokens     *int    `yaml:"max_tokens,omitempty"`
 	ThinkingLevel *string `yaml:"thinking_level,omitempty"`
+	ThinkingCap   *int    `yaml:"thinking_budget,omitempty"`
 	Theme         *string `yaml:"theme,omitempty"`
 	AssumeYes     *bool   `yaml:"assume_yes,omitempty"`
 	SaveCache     *bool   `yaml:"save_server_cache,omitempty"`
@@ -242,6 +243,7 @@ func (c *Config) applySettings(s fileSettings, path string) error {
 	pick(s.Context.SafetyMargin, &c.SafetyMargin)
 	pick(s.Tools.ReadLines, &c.ReadLines)
 	pick(s.ThinkingLevel, &c.ThinkingLevel)
+	pick(s.ThinkingCap, &c.ThinkingBudget)
 	pick(s.Theme, &c.Theme)
 	if s.AssumeYes != nil {
 		c.AssumeYes = *s.AssumeYes

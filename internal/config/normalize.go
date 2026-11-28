@@ -28,8 +28,11 @@ func (c *Config) normalize() error {
 	if c.Prompt != "" {
 		c.TUI = false // -p writes the answer to stdout; a screen would be drawn over it
 	}
-	if _, known := llm.ThinkingBudgetTokens(c.ThinkingLevel); !known {
-		return fmt.Errorf("thinking level %q: want one of %s", c.ThinkingLevel, strings.Join(llm.ThinkingLevels(), ", "))
+	if _, err := llm.ThinkingLevelValue(c.ThinkingLevel); err != nil {
+		return fmt.Errorf("thinking level %q: %w", c.ThinkingLevel, err)
+	}
+	if c.ThinkingBudget < 0 {
+		return fmt.Errorf("--thinking-budget must be 0 (no cap) or a positive token count, got %d", c.ThinkingBudget)
 	}
 	if err := theme.Check(c.Theme); err != nil {
 		return err

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -144,4 +145,48 @@ func itoa(n int) string {
 		b = append([]byte{byte('0' + n%10)}, b...)
 	}
 	return string(b)
+}
+
+// a long command is cut to its row, and ctrl+r shows it whole under the row, then folds it back
+func TestALongCommandIsShownWholeOnlyWhenAsked(t *testing.T) {
+	var log transcript
+	log.root = "/work"
+	command := "go test ./internal/agent/ -count=1 -run 'TheFoldAsks|Refused|Ladder' -v " + strings.Repeat("-args x ", 20) + "&& echo tail-end"
+	args, _ := json.Marshal(map[string]string{"command": command})
+	log.toolStart("exec_command", string(args))
+	log.toolEnd("exec_command", string(args), "ok\n[exit status 0]")
+
+	if view := stripCodes(strings.Join(log.rows(100), "\n")); strings.Contains(view, "tail-end") {
+		t.Fatalf("the command is whole before anyone asked:\n%s", view)
+	}
+	log.showWhole(true)
+	view := stripCodes(strings.Join(log.rows(100), "\n"))
+	if !strings.Contains(view, "tail-end") || !strings.Contains(view, "-run 'TheFoldAsks|Refused|Ladder'") {
+		t.Errorf("the whole command is not under its row:\n%s", view)
+	}
+	log.showWhole(false)
+	if view := stripCodes(strings.Join(log.rows(100), "\n")); strings.Contains(view, "tail-end") {
+		t.Errorf("folding back left the command whole:\n%s", view)
+	}
+}
+
+// a command the row already shows whole is not repeated, and a multi-line one keeps its line breaks
+func TestAWholeCommandRepeatsNothingAndKeepsItsLines(t *testing.T) {
+	var log transcript
+	log.toolStart("exec_command", `{"command":"go vet ./..."}`)
+	log.toolEnd("exec_command", `{"command":"go vet ./..."}`, "exit 0, no output")
+	script := `{"command":"cat <<'EOF' > notes.txt\nfirst line\nsecond line\nEOF"}`
+	log.toolStart("exec_command", script)
+	log.toolEnd("exec_command", script, "exit 0, no output")
+	log.showWhole(true)
+
+	view := stripCodes(strings.Join(log.rows(100), "\n"))
+	if strings.Count(view, "go vet ./...") != 1 {
+		t.Errorf("a command that fits its row was shown twice:\n%s", view)
+	}
+	for _, line := range []string{"│ cat <<'EOF' > notes.txt", "│ first line", "│ second line", "│ EOF"} {
+		if !strings.Contains(view, line) {
+			t.Errorf("the heredoc lost the line %q:\n%s", line, view)
+		}
+	}
 }

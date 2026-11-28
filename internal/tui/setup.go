@@ -123,6 +123,13 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case tea.PasteMsg:
+		if m.step == stepServer {
+			var cmd tea.Cmd
+			m.url, cmd = m.url.Update(msg) // a URL is often pasted rather than typed
+			return m, cmd
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}

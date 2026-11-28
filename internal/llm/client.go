@@ -3,6 +3,7 @@ package llm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,8 @@ const (
 	firstByteWait = 10 * time.Minute
 
 	maxResponseBytes  = 8 << 20 // refuse a runaway server
-	maxErrorBodyBytes = 512     // how much of an error body to quote
+	maxErrorBodyBytes = 2048    // how much of an error body to keep: radiance names the words it takes at the end
+	maxErrorQuote     = 512     // how much of it an error message quotes
 	maxLineBytes      = 1 << 20 // one SSE line can hold a whole message
 )
 
@@ -118,7 +120,11 @@ func (c *Client) Models(ctx context.Context) ([]ModelInfo, error) {
 		}
 		info := ModelInfo{ID: m.ID, CtxSize: m.Meta.CtxSize}
 		if info.CtxSize == 0 {
-			info.CtxSize, _ = flagValue(m.Status.Args, "--ctx-size")
+			info.CtxSize, _ = flagValue(m.Status.Args, "--ctx-size", "-c")
+		}
+		if info.CtxSize == 0 {
+			// what the server runs with comes first; the model's own limit is the last thing to go by
+			info.CtxSize = cmp.Or(m.ContextLength, m.MaxContextLength, m.MaxModelLen)
 		}
 		// a server that thought about what it feeds the model says so; llama.cpp says only that it has a projector
 		info.Vision = takesImages(m.Meta.InputModality) || takesImages(m.Architecture.InputModality) ||
@@ -296,7 +302,7 @@ type chatFailure struct {
 func (f chatFailure) Error() string {
 	msg := "HTTP " + f.status
 	if f.detail != "" {
-		msg += ": " + f.detail
+		msg += ": " + cutBytes(f.detail, maxErrorQuote)
 	}
 	if modelIsLoading(f.detail) {
 		msg += " (a router like this one loads models on demand, so the model may still be starting)"
@@ -314,6 +320,24 @@ func IsOverflow(err error) bool {
 		return false
 	}
 	return (failure.code == http.StatusBadRequest || failure.code == http.StatusRequestEntityTooLarge) && overflowWords.MatchString(failure.detail)
+}
+
+// RejectedEffort says the server refused the reasoning_effort word, with the words it named instead if any
+func RejectedEffort(err error) (supported []string, rejected bool) {
+	var failure chatFailure
+	if !errors.As(err, &failure) || failure.code < 400 || !strings.Contains(failure.detail, "reasoning_effort") {
+		return nil, false
+	}
+	var body struct {
+		Error struct {
+			Supported []string `json:"supported"`
+		} `json:"error"`
+	}
+	// radiance lists the words in error.supported; llama.cpp says only that the template refused it
+	if json.Unmarshal([]byte(failure.detail), &body) == nil {
+		supported = body.Error.Supported
+	}
+	return supported, true
 }
 
 // statedTokens is where a server names the size of the request it refused, next to the size it has

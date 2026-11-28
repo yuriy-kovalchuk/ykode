@@ -171,3 +171,14 @@ func TestTheServerScreenRunOnItsOwnTakesTheTheme(t *testing.T) {
 		t.Errorf("auto on a light terminal drew %s", auto.painted.Name)
 	}
 }
+
+// a URL pasted on the server step lands in the URL box, so it can be connected to
+func TestSetupTakesAPastedURL(t *testing.T) {
+	server := &fakeServer{}
+	m := newSetup(SetupStart{}, server.probe)
+	m.Update(tea.PasteMsg{Content: "http://gpu.local:8080/v1"})
+	press(m, enter)
+	if len(server.asked) != 1 || server.asked[0] != "http://gpu.local:8080/v1" {
+		t.Errorf("the server was asked at %v, want the pasted URL", server.asked)
+	}
+}

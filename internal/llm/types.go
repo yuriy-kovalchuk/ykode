@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Message is one chat entry; reasoning goes back to the server, since Qwen templates re-read their thinking
@@ -73,7 +75,9 @@ type ChatRequest struct {
 	Tools              []ToolSpec     `json:"tools,omitempty"`
 	ToolChoice         string         `json:"tool_choice,omitempty"`
 	MaxTokens          int            `json:"max_tokens,omitempty"`
-	ThinkingBudget     int            `json:"thinking_budget_tokens,omitempty"` // llama.cpp: caps the thinking phase inside MaxTokens
+	ReasoningEffort    string         `json:"reasoning_effort,omitempty"`        // how deeply to think: the level's word
+	ThinkingBudget     int            `json:"thinking_budget_tokens,omitempty"`  // radiance's cap on the thinking phase, inside MaxTokens
+	ReasoningBudget    int            `json:"reasoning_budget_tokens,omitempty"` // the same cap as strata and llama.cpp spell it
 	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 	TimingsPerToken    bool           `json:"timings_per_token,omitempty"` // llama.cpp: speeds in every chunk, not only the last
 	ReturnProgress     bool           `json:"return_progress,omitempty"`   // llama.cpp: how far it has read a long prompt, while it reads
@@ -81,6 +85,9 @@ type ChatRequest struct {
 	StreamOptions      *StreamOptions `json:"stream_options,omitempty"`
 	Sampling
 }
+
+// CapThinking sets the thinking cap under both names engines read it by; 0 sends neither
+func (r *ChatRequest) CapThinking(tokens int) { r.ThinkingBudget, r.ReasoningBudget = tokens, tokens }
 
 // StreamOptions asks for the request count in the last chunk: without it the screen has no prompt size
 type StreamOptions struct {
@@ -191,8 +198,12 @@ func (p serverProps) fill(m ModelInfo) ModelInfo {
 // modelsResponse is the GET /models body.
 type modelsResponse struct {
 	Data []struct {
-		ID   string `json:"id"`
-		Meta struct {
+		ID string `json:"id"`
+		// the model's own limit, as OpenRouter and Strata (context_length), Baseten and vLLM name it
+		ContextLength    int `json:"context_length"`
+		MaxContextLength int `json:"max_context_length"`
+		MaxModelLen      int `json:"max_model_len"`
+		Meta             struct {
 			CtxSize       int      `json:"n_ctx"`
 			InputModality []string `json:"input_modalities"` // some servers put the modalities here
 		} `json:"meta"`
@@ -205,12 +216,20 @@ type modelsResponse struct {
 	} `json:"data"`
 }
 
-// flagValue reads the value after --name in a llama.cpp argument list.
-func flagValue(args []string, name string) (int, bool) {
+// flagValue reads a count from a llama.cpp argument list, under any of its names, spaced or with =
+func flagValue(args []string, names ...string) (int, bool) {
 	for i, a := range args {
-		if a == name && i+1 < len(args) {
-			var n int
-			if _, err := fmt.Sscanf(args[i+1], "%d", &n); err == nil && n > 0 {
+		for _, name := range names {
+			value := ""
+			switch {
+			case a == name && i+1 < len(args):
+				value = args[i+1]
+			case strings.HasPrefix(a, name+"="):
+				value = strings.TrimPrefix(a, name+"=")
+			default:
+				continue
+			}
+			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				return n, true
 			}
 		}
@@ -288,9 +307,20 @@ func (e *apiError) UnmarshalJSON(raw []byte) error {
 func preview(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 120 {
-		return s[:120] + "..."
+		return cutBytes(s, 120) + "..."
 	}
 	return s
+}
+
+// cutBytes keeps at most n bytes of s, ending on a whole character so the quote stays valid UTF-8
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // wireMessage is one message as the chat API takes it: a string, or parts once an attachment is in it

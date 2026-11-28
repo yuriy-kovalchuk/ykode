@@ -11,14 +11,16 @@ import (
 )
 
 func (m *model) submit() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.input.Value())
+	shown := strings.TrimSpace(m.input.Value())
 
-	if text == "" {
+	if shown == "" {
 		return m, nil
 	}
 	m.input.Reset()
-	m.history = append(m.history, text)
+	// history keeps the tokens, which still stand for their pastes when an old ask is sent again
+	m.history = append(m.history, shown)
 	m.histIdx, m.unsent = len(m.history), ""
+	text := m.pastes.expand(shown)
 
 	if strings.HasPrefix(text, "/") {
 		name, _, _ := strings.Cut(text, " ")
@@ -113,12 +115,15 @@ func (m *model) submit() (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	}
-	return m, m.start(text)
+	return m, m.startShown(shown, text)
 }
 
 // start runs one turn on its own goroutine, which always reports back, good or bad
-func (m *model) start(prompt string) tea.Cmd {
-	m.log.user(prompt, time.Now())
+func (m *model) start(prompt string) tea.Cmd { return m.startShown(prompt, prompt) }
+
+// startShown is start with the ask's card showing a paste as its token, not as every line of it
+func (m *model) startShown(shown, prompt string) tea.Cmd {
+	m.log.user(shown, time.Now())
 	turnCtx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
 	m.begin()

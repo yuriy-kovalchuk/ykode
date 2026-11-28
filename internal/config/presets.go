@@ -30,7 +30,7 @@ func builtinSettings() fileSettings {
 	var s fileSettings
 	// left out, so the first full-screen run asks which server to use
 	s.MaxTurns, s.MaxTokens = p(d.MaxTurns), p(d.MaxTokens)
-	s.ThinkingLevel, s.AssumeYes = p(d.ThinkingLevel), p(d.AssumeYes)
+	s.ThinkingLevel, s.ThinkingCap, s.AssumeYes = p(d.ThinkingLevel), p(d.ThinkingBudget), p(d.AssumeYes)
 	s.Theme, s.SaveCache = p(d.Theme), p(d.SaveServerCache)
 	s.Context.SafetyMargin = p(d.SafetyMargin)
 	s.Tools.ReadLines = p(d.ReadLines)

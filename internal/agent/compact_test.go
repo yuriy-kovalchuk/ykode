@@ -702,3 +702,34 @@ func TestASmallWindowFoldsRatherThanDeleteTheOlderCall(t *testing.T) {
 		t.Errorf("the fold left %d whole calls, want the newest one at least", kept)
 	}
 }
+
+// a template may write the effort word into the prompt, so the fold sends the turns' word to keep the cache
+func TestTheFoldAsksWithTheTurnsOwnEffortWord(t *testing.T) {
+	dir := t.TempDir()
+	names := make([]string, 3)
+	for i := range names {
+		names[i] = writeLines(t, dir, fmt.Sprintf("file%d.txt", i), 20)
+	}
+	read := func(i int) string {
+		return sse("", "", "read_file", []string{`{"path":"` + names[i] + `"}`}, "tool_calls")
+	}
+	stub := &stubServer{scripts: []string{
+		read(0), read(1), read(2),
+		sse("", "all read", "", nil, "stop"),
+		sse("", "Goal: read them. Files: file0.txt. Decisions: none. Next: nothing", "", nil, "stop"),
+	}}
+	a, done := newAgentIn(t, stub, Options{MaxTurns: 6, MaxTokens: 64, CtxSize: 40000, ThinkingLevel: "xhigh"},
+		&captureSink{decision: Allow}, dir)
+	defer done()
+	if err := a.Ask(context.Background(), "read them all"); err != nil {
+		t.Fatal(err)
+	}
+	if freed := a.Compact(context.Background()); freed <= 0 {
+		t.Fatalf("compaction freed %d tokens", freed)
+	}
+	fold := stub.lastRequest(t)
+	if fold["reasoning_effort"] != "xhigh" || stub.requests[0]["reasoning_effort"] != "xhigh" {
+		t.Errorf("the turns sent %v and the fold %v: want the same word", stub.requests[0]["reasoning_effort"],
+			fold["reasoning_effort"])
+	}
+}

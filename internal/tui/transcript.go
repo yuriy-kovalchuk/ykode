@@ -38,7 +38,7 @@ type entry struct {
 	// what a block still arriving keeps between draws, since it grows a token at a time
 	arriving *strings.Builder // the text or the arguments, while more is on its way
 	laid     layout           // an answer's blocks, laid out once each
-	thought  flow             // thinking's paragraphs, wrapped once each
+	thought  thought          // thinking's paragraphs wrapped once each, its fenced code laid out as code
 }
 
 // write adds a piece to arriving text; the pieces gather in one buffer, so joining never copies
@@ -58,6 +58,7 @@ type transcript struct {
 	width   int    // the screen the rows were drawn for
 	gen     int    // the palette they were drawn in
 	root    string // the project the session runs in, so a path reads from there
+	whole   bool   // ctrl+r: commands are shown whole under the rows that cut them
 
 	rowsCache []string // the rows the screen reads, one per row on the terminal
 	rowStart  []int    // the row each entry already in rowsCache starts at
@@ -86,14 +87,28 @@ func (t *transcript) notice(text string) {
 	t.entries = append(t.entries, entry{who: whoNotice, text: text})
 }
 
+// showWhole shows commands whole or cut to their rows, redrawing from the first that has one
+func (t *transcript) showWhole(whole bool) {
+	t.whole = whole
+	for i := range t.entries {
+		if t.entries[i].call.full != "" {
+			t.mark(i)
+			return
+		}
+	}
+}
+
 // failed ends a call that did not run, landing the failure on the row already waiting
 func (t *transcript) failed(name, args, why string) {
-	c := call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept)}
+	c := call{note: oneLine(why, noticeChars), tail: lastLines(why, tailKept), full: fullCommand(name, args)}
 	for i := len(t.entries) - 1; i >= 0; i-- {
 		e := &t.entries[i]
 		if e.who == whoTool && e.asked && e.tool == name && (args == "" || e.args == args) {
 			if shown := noteFor(name, e.args, why, true, t.root); shown != "" {
 				c.note = shown
+			}
+			if c.full == "" {
+				c.full = fullCommand(name, e.args) // the refusal may not name the arguments; the row has them
 			}
 			e.call, e.failed, e.asked, e.args = c, true, false, ""
 			t.mark(i)
@@ -172,7 +187,7 @@ func (t *transcript) dropDrafts() {
 func (t *transcript) toolStart(name, args string) {
 	// the row is worded when the call begins and when it answers, not once per redraw
 	t.entries = append(t.entries, entry{who: whoTool, tool: name, args: args, asked: true,
-		call: call{note: noteFor(name, args, "", false, t.root)}})
+		call: call{note: noteFor(name, args, "", false, t.root), full: fullCommand(name, args)}})
 }
 
 // toolEnd fills its call: parallel reads mean it may not be the newest row added

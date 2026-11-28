@@ -160,6 +160,7 @@ func TestLoadRejectsBadSettings(t *testing.T) {
 	}{
 		{"negative turns", []string{"--max-turns", "-1"}, "--max-turns must be 0 (no limit)"},
 		{"negative cap", []string{"--max-tokens", "-1"}, "--max-tokens must be 0 (no cap)"},
+		{"negative thinking cap", []string{"--thinking-budget", "-1"}, "--thinking-budget must be 0 (no cap)"},
 		{"negative ctx", []string{"--ctx", "-5"}, "--ctx must be 0 (auto) or a positive token count"},
 		{"invented thinking level", []string{"--thinking", "enormous"}, "want one of off, minimal, low, medium, high, xhigh, max"},
 		{"missing root", []string{"--root", filepath.Join(t.TempDir(), "nope")}, "nope"},
@@ -394,5 +395,17 @@ func TestTheDefaultsKeepThinkingOn(t *testing.T) {
 	}
 	if cfg.ThinkingLevel != "off" {
 		t.Errorf("a file turning thinking off did not take: %q", cfg.ThinkingLevel)
+	}
+}
+
+// the cap is a setting of its own, so a flag moves it without touching the level
+func TestTheThinkingCapFlagLeavesTheLevelAlone(t *testing.T) {
+	fakeHome(t)
+	cfg, err := Load([]string{"--root", t.TempDir(), "--thinking", "high", "--thinking-budget", "4096"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ThinkingLevel != "high" || cfg.ThinkingBudget != 4096 {
+		t.Errorf("level %q, cap %d: want high and 4096", cfg.ThinkingLevel, cfg.ThinkingBudget)
 	}
 }

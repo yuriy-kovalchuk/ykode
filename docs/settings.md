@@ -10,7 +10,7 @@ and line at startup, so a typo fails loudly instead of being ignored. Everything
 
 `/settings` lists every knob, grouped (model, context, tools, permissions, sessions, appearance) with
 whether it applies now or at the next start, and opens the editor its kind wants: a switch turns over on
-enter, a choice lists its options (the thinking levels with their budgets, the themes with their colours)
+enter, a choice lists its options (the thinking levels, the themes with their colours)
 and `←`/`→` steps through them, the tools list is a checklist, a typed list adds entries and takes one
 off with `d`, and a number or a length of time is typed and checked before it is written. `r` takes any
 setting back to its default.
@@ -21,7 +21,8 @@ setting back to its default.
 |---|---|---|
 | `base_url` | `http://127.0.0.1:8080/v1` | the server ykode asks; a first session asks for it |
 | `model` | the first one the server lists | model id |
-| `thinking_level` | `medium` | `off` `minimal` `low` `medium` `high` `xhigh` `max` |
+| `thinking_level` | `medium` | `off` `minimal` `low` `medium` `high` `xhigh` `max`: how deeply; see [thinking](#thinking) |
+| `thinking_budget` | none | tokens the thinking phase may take; unset leaves it what the reply can spare |
 | `theme` | `auto` | the screen's colours; see [themes](#themes) |
 | `max_turns` | `100` | round-trips one ask may take before it is stopped as runaway |
 | `max_tokens` | none | a cap on one reply; unset leaves it the room the window has left |
@@ -36,9 +37,26 @@ setting back to its default.
 ## Flags
 
 The same knobs from the command line: `--base-url`, `--model`, `--root`, `--max-turns`,
-`--max-tokens`, `--ctx` (a window that overrides what the server reports), `--thinking`, `--no-think`,
+`--max-tokens`, `--ctx` (a window that overrides what the server reports), `--thinking`, `--thinking-budget`, `--no-think`,
 `--yes`. Two that are not knobs: `-p TASK` answers one task on stdout and exits, which is what makes
 it scriptable, and `--continue ID` resumes a saved conversation (`last`, or enough of its id).
+
+## Thinking
+
+Depth and length are two settings. `thinking_level` is how deeply the model thinks: every request
+carries it as `reasoning_effort`, the word the level spells, and `off` goes as `none` together with
+`chat_template_kwargs.enable_thinking: false`, since Qwen3.6's template reads only the switch.
+`thinking_budget` is how many tokens that thinking may take, sent as both `reasoning_budget_tokens`
+(strata, llama.cpp) and `thinking_budget_tokens` (radiance). Thinking is billed inside the reply, so
+the cap is cut to leave the answer 1,024 tokens of it, or half when the reply has no more than that;
+unset, the cap is just that room.
+
+Each template takes its own words: Inkling 2 Mini all seven, Qwen3.8 27B and Flash-Next `low`,
+`medium` and `xhigh`. When a server refuses a word, ykode asks again with the nearest one the model
+takes (from the list the server names, as radiance does, or else along the levels), the deeper one when two are as near,
+says so, and keeps that choice for the model for the rest of the run. A level never falls back to `none`,
+and a model that takes no word at all is asked without the field. A fold sends the turns' own word:
+a template may write it into the prompt, and a different word would miss the server's cache.
 
 ## The server's cache across runs
 

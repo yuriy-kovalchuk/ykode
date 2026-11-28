@@ -7,6 +7,44 @@ refuses a tag with no section or an empty one rather than publishing notes nobod
 
 ## [Unreleased]
 
+### Changed
+
+- **The thinking level sets the depth, and the cap is its own setting.** A level now reaches the server
+  as `reasoning_effort` (`off` as `none`, still with `enable_thinking: false`), where before it only set a
+  token budget and the depth stayed at the server's default. The token cap is the new `thinking_budget`
+  (`--thinking-budget`), sent as `reasoning_budget_tokens` and `thinking_budget_tokens`; unset, thinking
+  gets what the reply can spare after 1,024 tokens for the answer, where `medium` used to cap it at 8,192.
+  A word a model's template refuses is asked again with the nearest one it takes.
+- **The context window is read from more servers**: a model list that gives it as `-c N`,
+  `--ctx-size=N`, `context_length`, `max_context_length` or `max_model_len` now sets the window, so the
+  footer's fullness bar and the folding budget work on routers that list several models.
+- **Leaving prints the resume command alone on its last line**, so the whole line can be copied; a project
+  path that needs quoting gets single quotes, which keep a `$` or a backtick literal.
+
+### Removed
+
+- **`/settings KEY VALUE`**: a setting is changed on the screen a bare `/settings` opens, which applies it
+  to the running session where it can. `/settings list` and `/settings KEY` still print the knobs.
+
+### Fixed
+
+- **A paste goes where the screen shows it**: with a settings, server or list screen open, a paste no longer
+  lands in the hidden prompt box; it types into the value, URL or filter being edited instead.
+- **The thinking cap does not promise a cap while thinking is off**: the `thinking_budget` row says no cap
+  is sent, rather than naming one the request never carries.
+- **A server error quoted in full stays readable**: the quote is cut on a whole character, so it can no
+  longer end in a broken one.
+
+### Added
+
+- **`ctrl+r` shows commands whole**: a command cut to its row is shown in full under it, line breaks
+  kept, until `ctrl+r` folds them back.
+- **Code in thinking keeps its shape**: a fenced block the model writes while thinking is drawn line for
+  line, indented and with its language named, instead of being run into the prose around it. It stays
+  in thinking's colours: coloured code belongs to the answer.
+- **A long paste is one token in the box**: past 10 lines or 1,000 bytes a paste becomes
+  `[Pasted text #1 +42 lines]`, so the box stays quick; the model receives the whole text.
+
 ## [0.1.0] - 2026-11-21
 
 The first release of ykode, an experimental terminal coding agent for local inference engines,

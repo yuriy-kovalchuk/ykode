@@ -73,6 +73,12 @@ func (c *chooser) load(rows []listRow) {
 
 // keys answers every list alike: esc closes, arrows move, typing narrows, enter chooses
 func (c *chooser) keys(msg tea.Msg, choose func(id string) (tea.Cmd, overlayNext)) (tea.Cmd, overlayNext, bool) {
+	if _, pasted := msg.(tea.PasteMsg); pasted && !c.expanded {
+		var cmd tea.Cmd
+		c.filter, cmd = c.filter.Update(msg) // a paste narrows the list as typing it would
+		c.filterRows()
+		return cmd, stayOpen, true
+	}
 	key, isKey := msg.(tea.KeyMsg)
 	if !isKey {
 		return nil, stayOpen, false

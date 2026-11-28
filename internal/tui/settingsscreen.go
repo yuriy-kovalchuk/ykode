@@ -16,12 +16,13 @@ import (
 
 // settingsScreen is /settings: every knob grouped, each changed through the menu that suits its kind
 type settingsScreen struct {
-	rows   []config.Setting       // the knobs after the server row, in the order their groups are shown
-	at     int                    // the row under the cursor; 0 is the server row
-	menu   *settingMenu           // the editor open on the row under the cursor; nil while browsing
-	note   string                 // what the last change did, or why it did not happen
-	bad    bool                   // the note is a refusal
-	budget func(level string) int // what a level gets after the window's cut; nil shows the full table
+	rows   []config.Setting // the knobs after the server row, in the order their groups are shown
+	at     int              // the row under the cursor; 0 is the server row
+	menu   *settingMenu     // the editor open on the row under the cursor; nil while browsing
+	note   string           // what the last change did, or why it did not happen
+	bad    bool             // the note is a refusal
+	budget func() int       // the thinking cap the next request carries, after the window's cut
+	level  func() string    // the thinking level the next request carries, which /think may have moved
 }
 
 // settingsEditor is what the screen changes settings through: the session writes, reloads and applies
@@ -314,10 +315,9 @@ func (s *settingsScreen) detail(width int) []string {
 		lines = append(lines, styleWarn.Render(cutToWidth("a "+set.From+" sets this for the run: the file is changed, the "+
 			set.From+" still wins", width)))
 	}
-	if set.Key == "thinking_level" {
-		// the budget table is one styled row cut to the box: a break would leak its colour
-		lines = append(lines, "", cutToWidth(s.budgetLine(set.Value), width))
-		for _, row := range wrap(s.budgetNote(set.Value), width) {
+	if note := s.thinkingNote(set); note != "" {
+		lines = append(lines, "")
+		for _, row := range wrap(note, width) {
 			lines = append(lines, setupDim.Render(row))
 		}
 	}
@@ -376,7 +376,8 @@ func (m *model) openSettings() {
 		return
 	}
 	m.screen = newSettingsScreen(m.cfg)
-	m.screen.budget = m.agent.ThinkingBudget // the table says what the server gets, not what the level asks
+	m.screen.budget = m.agent.ThinkingBudget // the screen says what the server gets, not only what was asked
+	m.screen.level = m.agent.ThinkingLevel
 }
 
 // openServer is the first row: the screen a first run starts with, over this one.
@@ -387,6 +388,9 @@ func (m *model) openServer() {
 
 // screenMsg gives the settings screen its keys. The server screen, when it is open, has them first.
 func (m *model) screenMsg(msg tea.Msg) (tea.Cmd, bool) {
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		return m.screen.paste(paste), true
+	}
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return nil, false
@@ -461,6 +465,7 @@ func (m *model) applyLive(before, now config.Config) {
 	m.agent.Tune(func(o *agent.Options) {
 		o.AssumeYes = now.AssumeYes
 		o.MaxTurns, o.MaxTokens, o.SafetyMargin = now.MaxTurns, now.MaxTokens, now.SafetyMargin
+		o.ThinkingBudget = now.ThinkingBudget
 		// the model cards travel with the run, so a later /model takes the model it switches to
 		o.Cards = now.Cards()
 		if card, known := o.Cards[m.agent.Model()]; known {
@@ -469,65 +474,47 @@ func (m *model) applyLive(before, now config.Config) {
 	})
 }
 
-// budgetLine is every level with its token budget, the selected one marked, as the server gets them
-func (s *settingsScreen) budgetLine(selected string) string {
-	parts := make([]string, 0, 7)
-	for _, level := range llm.ThinkingLevels() {
-		text := strings.TrimSpace(level + " " + budgetText(level, s.budgetOf(level)))
-		if level == selected {
-			text = settingsKey.Render("[" + text + "]")
+// thinkingNote says what the two thinking settings put on the wire, as the next request would carry them
+func (s *settingsScreen) thinkingNote(set config.Setting) string {
+	switch set.Key {
+	case "thinking_level":
+		if set.Value == llm.ThinkingOff {
+			return "the model answers straight away: sent as reasoning_effort none, and as enable_thinking false " +
+				"for a template that reads only that"
 		}
-		parts = append(parts, text)
+		return "sent as reasoning_effort " + set.Value + "; how many tokens it may spend is the thinking cap"
+	case "thinking_budget":
+		if s.budget == nil {
+			return ""
+		}
+		if s.level != nil && s.level() == llm.ThinkingOff {
+			return "thinking is off, so no cap is sent: this one applies once thinking_level is on again"
+		}
+		asked, sent := s.asked(), s.budget()
+		switch {
+		case sent <= 0:
+			return "no cap: the reply has no known size, so thinking may take all of it"
+		case asked <= 0:
+			return fmt.Sprintf("no cap of its own: thinking may take %s tokens now, what the reply spares "+
+				"after the answer's room", groupDigits(sent))
+		case sent < asked:
+			return fmt.Sprintf("thinking stops at %s tokens now: the window has too little left for %s "+
+				"(/compact or /reset gives the room back)", groupDigits(sent), groupDigits(asked))
+		}
+		return fmt.Sprintf("thinking stops at %s tokens and the answer takes the rest of the reply", groupDigits(sent))
 	}
-	return strings.Join(parts, " · ")
+	return ""
 }
 
-// budgetOf is what a level is sent with: its full budget, or less when the window has less to give
-func (s *settingsScreen) budgetOf(level string) int {
-	if s.budget == nil {
-		budget, _ := llm.ThinkingBudgetTokens(level)
-		return budget
-	}
-	return s.budget(level)
-}
-
-// cut says whether the window holds any level below its full budget right now
-func (s *settingsScreen) cut() bool {
-	for _, level := range llm.ThinkingLevels() {
-		if full, _ := llm.ThinkingBudgetTokens(level); full > 0 && s.budgetOf(level) < full {
-			return true
+// asked is the thinking cap the settings name, before the window cuts it; 0 is none
+func (s *settingsScreen) asked() int {
+	for _, row := range s.rows {
+		if row.Key == "thinking_budget" {
+			n, _ := strconv.Atoi(row.Value)
+			return n
 		}
 	}
-	return false
-}
-
-// budgetText is a level's thinking budget in words; off has none to give and max has no cap.
-func budgetText(level string, budget int) string {
-	switch {
-	case level == llm.ThinkingOff:
-		return "" // nothing to think for: the level's name says it
-	case budget <= 0:
-		return "no cap"
-	}
-	return groupDigits(budget)
-}
-
-// budgetNote says what the selected level's budget does to the reply, and why it is less when it is
-func (s *settingsScreen) budgetNote(level string) string {
-	note := ""
-	switch budget := s.budgetOf(level); {
-	case level == llm.ThinkingOff:
-		note = "the model answers straight away, with no thinking phase"
-	case budget <= 0:
-		note = "no cap on thinking: it shares the whole reply with the answer, so a long thought can leave none"
-	default:
-		note = fmt.Sprintf("thinking stops at %s tokens and the answer takes the rest of the reply", groupDigits(budget))
-	}
-	if s.cut() {
-		note += "; the window has too little left for the full budgets, so they are cut to what the reply can spare " +
-			"(/compact or /reset gives the room back)"
-	}
-	return note
+	return 0
 }
 
 // groupDigits writes 16384 as 16,384.

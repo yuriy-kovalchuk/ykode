@@ -18,13 +18,16 @@ about the date or the git state travels on the newest ask, so the server's promp
 | `/compact` | fold the older turns into a summary the model writes |
 | `/sessions` | the conversations saved for this project; pick one and this run continues it |
 | `/model [id]` | list this server's models, or switch to one |
-| `/think [level]` | how deeply the model thinks |
+| `/think [level]` | how deeply the model thinks, sent as `reasoning_effort`; the token cap is `thinking_budget` |
 | `/plan` | the checklist as the model last wrote it |
 | `/tools` | what the model may call, and what each description costs |
-| `/settings [list \| key] [value]` | the knobs: `list` shows every one, a key explains it, a key and a value change it |
+| `/settings [list \| key]` | the settings screen, where every knob is changed; `list` prints every one, a key explains it |
 | `/create-local-setting` | make `.ykode/settings.yaml` for this project |
 | `/reset` | forget the conversation; the screen asks first |
 | `/exit`, `/quit` | quit |
+
+Leaving a session that saved anything ends with the command that resumes it, alone on the last line,
+so the whole line can be copied: `ykode --continue s20261127-101010 --root /path/to/project`.
 
 ## Keys
 
@@ -35,8 +38,10 @@ about the date or the git state travels on the newest ask, so the server's promp
 | `ctrl+p`, `ctrl+n` | walk earlier prompts, so a wrong ask is edited rather than repeated |
 | `tab` | complete a command |
 | `ctrl+v` | paste the clipboard's picture as an `@path`, or its text |
+| a paste | goes in as typed when the box can show it; past 10 lines or 1,000 bytes it is one token, `[Pasted text #1 +42 lines]`, which the model receives as the whole text while the box and the ask's card keep the token. Delete the token to drop the paste; `ctrl+p` sends an old one again |
 | `esc`, `ctrl+c` | stop a run; at an idle prompt `ctrl+c` quits |
 | `pgup`, `pgdown`, `ctrl+u`, `ctrl+d`, `up`, `down` | scroll the transcript, by a page or half a page; the arrows are the cursor while the box holds more than one line |
 | `end` | return to the live end |
 | `ctrl+o` | fold the plan |
+| `ctrl+r` | show every command whole under the row that cut it, line breaks kept; again to fold them back |
 | `?`, `ctrl+/` | list the keys |

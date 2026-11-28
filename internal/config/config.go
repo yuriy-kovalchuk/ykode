@@ -37,7 +37,8 @@ type Config struct {
 	MaxTokens       int    // tokens per model response; 0 asks for no cap and leaves it to the window
 	CtxSize         int    // server context window; 0 = read it from the server
 	SafetyMargin    int    // tokens kept free for the reply
-	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max
+	ThinkingLevel   string // off, minimal, low, medium, high, xhigh, max: how deeply, sent as reasoning_effort
+	ThinkingBudget  int    // tokens the thinking phase may take; 0 leaves it what the reply can spare
 	Theme           string // the palette the screen draws with; auto follows the terminal's background
 	AssumeYes       bool
 	SaveServerCache bool // llama.cpp keeps a conversation's cache on its disk between runs, for --continue
@@ -70,7 +71,7 @@ func Load(args []string) (Config, error) {
 	fs := flag.NewFlagSet("ykode", flag.ContinueOnError)
 	fs.Usage = func() {
 		// a help text that cannot be written has nowhere to go and no result to change
-		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--no-think] [--yes] [-p TASK] [--continue ID] [--version]")
+		_, _ = fmt.Fprintln(fs.Output(), "usage: ykode [--base-url URL] [--model ID] [--root DIR] [--max-turns N] [--max-tokens N] [--ctx N] [--thinking LEVEL] [--thinking-budget N] [--no-think] [--yes] [-p TASK] [--continue ID] [--version]")
 		fs.PrintDefaults()
 	}
 	fs.StringVar(&f.BaseURL, "base-url", "", "base URL of an OpenAI-compatible server ($LOCAL_LLM_URL, default "+defaultBaseURL+")")
@@ -80,6 +81,7 @@ func Load(args []string) (Config, error) {
 	fs.IntVar(&f.MaxTokens, "max-tokens", 0, "tokens per model response; 0 leaves the reply the room the window has left (default)")
 	fs.IntVar(&f.CtxSize, "ctx", 0, "server context window in tokens; 0 reads it from the server")
 	fs.StringVar(&f.ThinkingLevel, "thinking", "", "how deeply the model thinks: off, minimal, low, medium, high, xhigh, max")
+	fs.IntVar(&f.ThinkingCap, "thinking-budget", 0, "tokens the thinking phase may take; 0 leaves it what the reply can spare (default)")
 	fs.BoolVar(&f.NoThink, "no-think", false, "shorthand for --thinking off")
 	fs.BoolVar(&f.Yes, "yes", false, "skip in-project confirmations (paths outside --root are always asked about)")
 	fs.StringVar(&f.Prompt, "p", "", "answer one task and exit instead of opening a session")
@@ -116,6 +118,7 @@ func defaults() Config {
 		MaxTokens:       0, // no cap: the context window decides
 		SafetyMargin:    defaultSafety,
 		ThinkingLevel:   defaultThinkingLevel,
+		ThinkingBudget:  0, // no cap of its own: the level decides the depth
 		Theme:           theme.Auto,
 		ReadLines:       defaultReadLines,
 		ExecTimeout:     defaultExecTimeout,

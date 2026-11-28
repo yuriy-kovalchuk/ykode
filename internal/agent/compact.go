@@ -197,6 +197,8 @@ func (a *Agent) summarise(ctx context.Context, start int) (string, error) {
 			MaxTokens: a.compactRoom(), Sampling: a.opts.NoThink,
 			// a summary needs no thinking phase, and its sampling comes from the model's own card
 			ChatTemplateKwargs: map[string]any{"enable_thinking": false},
+			// the turns' own word, since a template may write it into the prompt the cache matches on
+			ReasoningEffort: a.effort(a.ThinkingLevel()),
 		}, nil)
 		if err != nil {
 			return "", err

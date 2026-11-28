@@ -34,6 +34,9 @@ func (m *model) handleKey(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.scrollKey(key) {
 		return m, nil
 	}
+	if m.holdPaste(msg) {
+		return m, nil // a long paste is one token in the box: its lines would slow every key after it
+	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.trackSuggestions()
@@ -79,6 +82,10 @@ func (m *model) sessionKey(key string) (tea.Cmd, bool) {
 		m.toggleKeys()
 	case "ctrl+o":
 		m.planFolded = !m.planFolded
+		m.refresh()
+	case "ctrl+r":
+		m.log.showWhole(!m.log.whole) // a command cut to its row is read whole, then folded back
+		m.log.rows(m.width)           // drawn now, so a reader scrolled up is not told of new output
 		m.refresh()
 	case "tab":
 		m.completeCommand()

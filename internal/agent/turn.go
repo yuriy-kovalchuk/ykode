@@ -51,6 +51,9 @@ func (a *Agent) ask(ctx context.Context, prompt string) error {
 				a.note("(the user cancelled this request)")
 				return nil
 			}
+			if a.learnEffort(err, req.ReasoningEffort) {
+				continue // the same request with a word this model takes; each refusal rules one word out
+			}
 			if llm.IsOverflow(err) && !overflowed {
 				overflowed = true
 				a.recoverFromOverflow(ctx, err)

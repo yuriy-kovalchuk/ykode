@@ -85,7 +85,7 @@ func TestOneKnobIsExplainedRatherThanListed(t *testing.T) {
 	out := stripCodes(m.settings("/settings thinking_level"))
 	for _, want := range []string{
 		"how deeply the model thinks", "now medium · default medium · from default",
-		"choices: off, minimal, low, medium, high, xhigh, max", "change it: /settings thinking_level VALUE",
+		"choices: off, minimal, low, medium, high, xhigh, max", "change it: on the screen a bare /settings opens",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
@@ -93,33 +93,14 @@ func TestOneKnobIsExplainedRatherThanListed(t *testing.T) {
 	}
 }
 
-// a change from the screen reaches the file, and the screen says which way it moved
-func TestAChangeFromTheScreenLandsInTheFile(t *testing.T) {
-	dir := settingsHome(t, "# keep me\nmodel: qwen3-coder\n")
-	m := settingsModel(t)
-
-	out := stripCodes(m.settings("/settings tools.read_lines 40"))
-	if !strings.Contains(out, "read_lines: 150 → 40") {
-		t.Errorf("the change was not reported as a move:\n%s", out)
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "settings.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(raw)
-	if !strings.Contains(body, "read_lines: 40") || !strings.Contains(body, "# keep me") || !strings.Contains(body, "model: qwen3-coder") {
-		t.Errorf("the file after the change:\n%s", body)
-	}
-}
-
-// a value the knob cannot take is refused and the file is left as it was
-func TestABadValueIsRefusedWithoutTouchingTheFile(t *testing.T) {
+// a value after the key changes nothing: knobs are changed on the screen, so the file is left as it was
+func TestAValueAfterTheKeyIsRefusedForTheScreen(t *testing.T) {
 	dir := settingsHome(t, "stream_idle_sec: 120\n")
 	m := settingsModel(t)
 
-	out := stripCodes(m.settings("/settings stream_idle_sec soon"))
-	if !strings.Contains(out, "not changed") {
-		t.Errorf("a bad value was accepted:\n%s", out)
+	out := stripCodes(m.settings("/settings stream_idle_sec 60"))
+	if !strings.Contains(out, "not changed") || !strings.Contains(out, "screen") {
+		t.Errorf("a value typed after the key was not sent to the screen:\n%s", out)
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "settings.yaml"))
 	if err != nil {
@@ -275,7 +256,7 @@ func TestAChoiceOpensAMenuOfItsOptions(t *testing.T) {
 	openRow(t, m, "thinking_level")
 	m.Update(enter)
 	view := stripCodes(m.render())
-	if !strings.Contains(view, "pick one") || !regexp.MustCompile(`● medium\s+8,192 tokens`).MatchString(view) {
+	if !strings.Contains(view, "pick one") || !regexp.MustCompile(`● medium`).MatchString(view) {
 		t.Fatalf("no menu with the chosen level marked:\n%s", view)
 	}
 	m.Update(down)
@@ -482,30 +463,24 @@ func TestNoRowOfTheListWraps(t *testing.T) {
 	}
 }
 
-// the thinking level shows every level's budget, the selected one marked, following the cursor
-func TestTheThinkingLevelShowsItsBudgets(t *testing.T) {
+// the thinking level says the effort word it sends, following the choice
+func TestTheThinkingLevelSaysTheEffortWordItSends(t *testing.T) {
 	settingsHome(t, "")
 	m := newTestModel()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	openRow(t, m, "thinking_level")
-	view := stripCodes(m.render())
-	for _, want := range []string{"off · minimal 1,024", "low 2,048", "medium 8,192", "high 16,384", "xhigh 32,768", "max no cap"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("the budgets lack %q:\n%s", want, view)
-		}
-	}
-	if !strings.Contains(view, "[medium 8,192]") || !strings.Contains(view, "thinking stops at 8,192 tokens") {
-		t.Errorf("the selected level is not marked, or its meaning is not said:\n%s", view)
+	if view := stripCodes(m.render()); !strings.Contains(view, "sent as reasoning_effort medium") {
+		t.Errorf("the level does not say what it sends:\n%s", view)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) // medium -> high
-	if view := stripCodes(m.render()); !strings.Contains(view, "[high 16,384]") || strings.Contains(view, "[medium") {
-		t.Errorf("the mark did not follow the level:\n%s", view)
+	if view := stripCodes(m.render()); !strings.Contains(view, "sent as reasoning_effort high") {
+		t.Errorf("the word did not follow the level:\n%s", view)
 	}
-	for i := 0; m.cfg.ThinkingLevel != "max" && i < 10; i++ {
-		m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	for i := 0; m.cfg.ThinkingLevel != "off" && i < 10; i++ {
+		m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	}
-	if view := stripCodes(m.render()); !strings.Contains(view, "[max no cap]") || !strings.Contains(view, "no cap on thinking") {
-		t.Errorf("max does not say it has no cap:\n%s", view)
+	if view := stripCodes(m.render()); !strings.Contains(view, "reasoning_effort none") || !strings.Contains(view, "enable_thinking false") {
+		t.Errorf("off does not say both ways it turns thinking off:\n%s", view)
 	}
 }
 
@@ -602,19 +577,31 @@ func TestATypedValueGoesToTheRowItStartedOn(t *testing.T) {
 	}
 }
 
-// on a window with little left the table shows what the server gets, so xhigh does not promise 32,768
-func TestTheThinkingBudgetsShowTheCutTheWindowMakes(t *testing.T) {
-	settingsHome(t, "")
+// on a window with little left the cap shows what the server gets, so 32,768 is not promised
+func TestTheThinkingCapShowsTheCutTheWindowMakes(t *testing.T) {
+	settingsHome(t, "thinking_budget: 32768\n")
 	m := newTestModel()
-	m.agent = agent.New(nil, nil, "test-model", agent.Options{CtxSize: 3000, SafetyMargin: 256}, nil)
+	m.cfg.ThinkingBudget = 32768
+	m.agent = agent.New(nil, nil, "test-model", agent.Options{CtxSize: 3000, SafetyMargin: 256, ThinkingBudget: 32768}, nil)
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	openRow(t, m, "thinking_level")
+	openRow(t, m, "thinking_budget")
 	view := stripCodes(m.render())
-	cut := groupDigits(m.agent.ThinkingBudget("xhigh"))
-	if strings.Contains(view, "32,768") || !strings.Contains(view, "xhigh "+cut) {
-		t.Errorf("xhigh should show the %s it would be sent with:\n%s", cut, view)
+	cut := groupDigits(m.agent.ThinkingBudget())
+	if !strings.Contains(view, "thinking stops at "+cut+" tokens now") || !strings.Contains(view, "too little left for 32,768") {
+		t.Errorf("the cap should show the %s it would be sent with, and why:\n%s", cut, view)
 	}
-	if !strings.Contains(view, "minimal 1,024") || !strings.Contains(view, "thinking stops at "+cut+" tokens") || !strings.Contains(view, "so they are cut to what the reply can spare") {
-		t.Errorf("an uncut level changed, or the cut is not explained:\n%s", view)
+}
+
+// with thinking off no cap goes out, so the screen does not name one the request never carries
+func TestTheThinkingCapNamesNoCapWhileThinkingIsOff(t *testing.T) {
+	settingsHome(t, "thinking_level: off\nthinking_budget: 32768\n")
+	m := newTestModel()
+	m.cfg.ThinkingLevel, m.cfg.ThinkingBudget = "off", 32768
+	m.agent = agent.New(nil, nil, "test-model", agent.Options{CtxSize: 3000, SafetyMargin: 256, ThinkingBudget: 32768, ThinkingLevel: "off"}, nil)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	openRow(t, m, "thinking_budget")
+	view := stripCodes(m.render())
+	if strings.Contains(view, "thinking stops at") || !strings.Contains(view, "thinking is off, so no cap is sent") {
+		t.Errorf("the cap row should say no cap goes out while thinking is off:\n%s", view)
 	}
 }

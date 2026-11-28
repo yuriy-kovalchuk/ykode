@@ -58,7 +58,7 @@ func (t *transcript) draw(e *entry, width int) []string {
 		return append(append(rows, e.laid.draw(e.text, inner, messageLead)...), "")
 	case whoThink:
 		// the gutter is laid on after the wrap, so the wrap keeps room for it on any screen
-		return append(e.thought.wrap(e.text, max(inner-4, 1), thinkingRow), "")
+		return append(e.thought.draw(e.text, max(inner-4, 1), thinkingRow), "")
 	}
 	var rows []string
 	switch e.who {
@@ -72,6 +72,9 @@ func (t *transcript) draw(e *entry, width int) []string {
 		}
 	case whoTool:
 		rows = append(rows, toolRow(*e, inner))
+		if t.whole {
+			rows = append(rows, fullRows(e.call, t.root, inner)...)
+		}
 		rows = append(rows, changeRows(e.call.change, 0, inner)...)
 		rows = append(rows, tailRows(e.call.tail, e.call.note, inner)...)
 	case whoDraft:

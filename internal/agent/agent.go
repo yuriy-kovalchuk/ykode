@@ -45,6 +45,7 @@ type Agent struct {
 	work            contextWork // what this ask had to do to fit the conversation in, for a front end to say so
 	waitingMu       sync.Mutex  // asks typed while a turn ran, taken between round-trips
 	waiting         []string    // what the user typed into a run that is still going
+	efforts         efforts     // the effort words each model was refused, learned as the turns run
 }
 
 func New(client *llm.Client, registry *tools.Registry, model string, opts Options, sink Sink) *Agent {

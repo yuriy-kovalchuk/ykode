@@ -17,6 +17,7 @@ type Options struct {
 	CtxPinned        bool         // --ctx fixed the window: a model switch keeps it
 	CtxSize          int          // server context window; 0 = unknown, no budgeting
 	ThinkingLevel    string       // off, minimal, low, medium, high, xhigh, max; empty is medium
+	ThinkingBudget   int          // tokens the thinking phase may take; 0 leaves it what the reply can spare
 	Thinking         llm.Sampling // sent while the model thinks
 	NoThink          llm.Sampling // sent with thinking off; Qwen's cards recommend different values
 	AssumeYes        bool
@@ -70,7 +71,7 @@ func (a *Agent) SetModel(id string) bool {
 	return true
 }
 
-// SetThink decides whether the model gets a thinking phase on the turns that follow.
+// SetThinkingLevel sets how deeply the model thinks on the turns that follow.
 func (a *Agent) SetThinkingLevel(level string) bool {
 	if a.refuseDuringATurn("changing the thinking level") {
 		return false
@@ -79,7 +80,7 @@ func (a *Agent) SetThinkingLevel(level string) bool {
 	return true
 }
 
-// ThinkingLevel is how deeply the model is allowed to think before it answers.
+// ThinkingLevel is how deeply the model thinks before it answers, sent as reasoning_effort.
 func (a *Agent) ThinkingLevel() string { return cmp.Or(a.opts.ThinkingLevel, llm.DefaultThinkingLevel) }
 
 // CtxSize is the context window the budget is measured against; 0 when the server never reported one.

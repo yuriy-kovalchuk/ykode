@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/config"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 )
 
@@ -180,6 +181,16 @@ func (s *settingsScreen) typingKey(msg tea.KeyMsg, set config.Setting, ed settin
 	return cmd
 }
 
+// paste types into the value being edited; with no typing box open there is nowhere for it to go
+func (s *settingsScreen) paste(msg tea.PasteMsg) tea.Cmd {
+	if s.menu == nil || (s.menu.kind != menuInput && !s.menu.typing) {
+		return nil
+	}
+	var cmd tea.Cmd
+	s.menu.input, cmd = s.menu.input.Update(msg)
+	return cmd
+}
+
 // view draws the menu in the pane: a title naming what it does, then its rows around the cursor
 func (m *settingMenu) view(width int, s *settingsScreen) []string {
 	set := s.setting(m.key)
@@ -250,18 +261,14 @@ func (m *settingMenu) choiceRow(i int, choice string, set config.Setting, width 
 	return cutToWidth(row, width)
 }
 
-// choiceAbout is what a choice means, where the screen can say: a level's budget, a theme's colours
+// choiceAbout is what a choice means, where the screen can say: off's lack of thinking, a theme's colours
 func choiceAbout(key, choice string, s *settingsScreen) string {
 	switch key {
 	case "thinking_level":
-		switch text := budgetText(choice, s.budgetOf(choice)); text {
-		case "":
-			return setupDim.Render("no thinking")
-		case "no cap":
-			return setupDim.Render("no cap: thinking shares the whole reply")
-		default:
-			return setupDim.Render(text + " tokens")
+		if choice != llm.ThinkingOff {
+			return "" // the others are sent as the word they spell, which the row already shows
 		}
+		return setupDim.Render("no thinking")
 	case "theme":
 		palette, named := theme.Named(choice)
 		if !named {

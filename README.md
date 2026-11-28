@@ -21,8 +21,8 @@ Node runtime, a package manager, a bundler and a dependency tree, all to move by
 and a terminal. ykode is one static binary:
 
 - HTTP, JSON and SSE come from the standard library;
-- the screen is Bubble Tea, Bubbles and Lip Gloss, code colouring is chroma, markdown is goldmark, and
-  settings are yaml.v3, and that is the whole dependency list;
+- the screen is Bubble Tea, Bubbles and Lip Gloss, code colouring is chroma, markdown is goldmark,
+  settings are yaml.v3, and diffs and picture scaling use two small libraries;
 - `make build` is the whole build, with CGO off, and the result runs with nothing installed beside it.
 
 Most of what is worth learning lives in the parts a local model makes hard: fitting a conversation into

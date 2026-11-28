@@ -37,7 +37,7 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 		"base_url": "http://from-settings:8080/v1",
 		"model": "settings-model",
 		"max_turns": 7,
-		"thinking_level": "off",
+		"thinking_level": "off", "thinking_budget": 3000,
 		"max_tokens": 2048, "context": {"safety_margin": 512},
 		"tools": {"read_lines": 120, "exec_timeout_sec": 300, "keep_command_logs": "2h"},
 		"models": {"qwen": {"thinking": {"temperature": 0.6}}}
@@ -53,8 +53,8 @@ func TestSettingsSupplyWhatNoFlagSays(t *testing.T) {
 	if cfg.MaxTurns != 7 || cfg.MaxTokens != 2048 || cfg.SafetyMargin != 512 {
 		t.Fatalf("turns/max tokens/margin = %d/%d/%d", cfg.MaxTurns, cfg.MaxTokens, cfg.SafetyMargin)
 	}
-	if cfg.ThinkingLevel != "off" {
-		t.Fatalf("thinking=%q, want the settings honoured", cfg.ThinkingLevel)
+	if cfg.ThinkingLevel != "off" || cfg.ThinkingBudget != 3000 {
+		t.Fatalf("thinking=%q, cap %d, want the settings honoured", cfg.ThinkingLevel, cfg.ThinkingBudget)
 	}
 	if cfg.ReadLines != 120 || cfg.ExecTimeout != 300*time.Second || cfg.KeepCommandLogs != 2*time.Hour {
 		t.Fatalf("tool settings = %+v", cfg)

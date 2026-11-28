@@ -12,17 +12,17 @@ import (
 	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 )
 
-// settings answers /settings: what this run reads, one knob explained, or a change written out
+// settings answers /settings list and /settings KEY; a value is changed only on the screen a bare /settings opens
 func (m *model) settings(line string) string {
 	_, rest, _ := strings.Cut(line, " ")
-	key, value, hasValue := strings.Cut(strings.TrimSpace(rest), " ")
+	key, _, hasValue := strings.Cut(strings.TrimSpace(rest), " ")
 	switch {
+	case hasValue:
+		return "not changed: a setting is changed on the screen a bare /settings opens"
 	case key == "" || key == "list":
 		return m.settingsTable()
-	case !hasValue:
-		return m.settingsOne(key)
 	default:
-		return m.settingsChange(key, value)
+		return m.settingsOne(key)
 	}
 }
 
@@ -33,7 +33,7 @@ func (m *model) settingsTable() string {
 	for _, s := range list {
 		width = max(width, len(s.Key))
 	}
-	rows := []string{fmt.Sprintf("what this run reads · change one with: /settings KEY VALUE · the file is %s",
+	rows := []string{fmt.Sprintf("what this run reads · change one on the /settings screen · the file is %s",
 		shortenHome(home.Settings()))}
 	for _, s := range list {
 		row := fmt.Sprintf("  %-*s  %s", width, s.Key, orUnset(s.Value))
@@ -56,25 +56,7 @@ func (m *model) settingsOne(key string) string {
 	if len(s.Options) > 0 {
 		rows = append(rows, "  choices: "+strings.Join(s.Options, ", "))
 	}
-	return strings.Join(append(rows, fmt.Sprintf("  change it: /settings %s VALUE", s.Key)), "\n")
-}
-
-// settingsChange writes one knob, naming the file; a bad value leaves the file untouched
-func (m *model) settingsChange(key, value string) string {
-	before, known := find(m.cfg.Catalogue(), key)
-	path, local, err := config.Set(m.cfg.Root, key, value)
-	if err != nil {
-		return "not changed: " + err.Error()
-	}
-	if !known {
-		return savedTo(key, path, local) + " · the next run reads it"
-	}
-	line := fmt.Sprintf("%s: %s → %s\n  %s · the next run reads it",
-		key, orUnset(before.Value), orUnset(value), savedTo(key, path, local))
-	if !local {
-		line = noLocalFile + "\n  " + line
-	}
-	return line
+	return strings.Join(append(rows, "  change it: on the screen a bare /settings opens"), "\n")
 }
 
 // noLocalFile warns that a project without its own file is changing everyone's file
@@ -92,14 +74,6 @@ func (m *model) createLocal() {
 	}
 	m.log.notice("created " + shortenHome(path) + ": /settings now changes this project only. " +
 		"Add .ykode/ to the project's .gitignore if it holds a key.")
-}
-
-// savedTo names the file a change landed in: the project's own, or the global one by its full path.
-func savedTo(key, path string, local bool) string {
-	if local {
-		return key + " saved to .ykode/settings.yaml (this project)"
-	}
-	return key + " saved globally to " + shortenHome(path)
 }
 
 // noSuchSetting names the key that was asked for and lists the ones there are.
@@ -130,7 +104,7 @@ func orUnset(value string) string {
 // modalMsg gives the overlay its message; keys go to the modal, the rest to the session below
 func (m *model) modalMsg(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
-	case tea.KeyMsg, probeDoneMsg:
+	case tea.KeyMsg, tea.PasteMsg, probeDoneMsg:
 	default:
 		return nil, false
 	}

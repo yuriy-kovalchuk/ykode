@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/yuriy-kovalchuk/ykode/internal/home"
+	"github.com/yuriy-kovalchuk/ykode/internal/llm"
 	"github.com/yuriy-kovalchuk/ykode/internal/theme"
 	"github.com/yuriy-kovalchuk/ykode/internal/tools"
 )
@@ -64,9 +65,12 @@ func knobs() []knob {
 		{key: "model", label: "Model", group: GroupModel, kind: kindText,
 			note: "model id; empty takes the first one the server lists", value: func(c Config) string { return c.Model }},
 		{key: "thinking_level", label: "Thinking level", group: GroupModel, kind: kindText, live: true,
-			note:    "how deeply the model thinks before answering",
+			note:    "how deeply the model thinks before answering, sent as reasoning_effort; a word the model does not take goes as the nearest it does",
 			options: []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"},
 			value:   func(c Config) string { return c.ThinkingLevel }},
+		{key: "thinking_budget", label: "Thinking cap", group: GroupModel, unit: "tokens", kind: kindCount, live: true,
+			note:  fmt.Sprintf("tokens the thinking phase may take; empty leaves it what the reply can spare, %d kept for the answer", llm.MinAnswerTokens),
+			value: func(c Config) string { return count(c.ThinkingBudget) }},
 		{key: "max_tokens", label: "Reply cap", group: GroupModel, unit: "tokens", kind: kindCount, live: true,
 			note:  "tokens per answer; empty leaves the answer the room the window has left",
 			value: func(c Config) string { return count(c.MaxTokens) }},
@@ -199,11 +203,12 @@ func (c Config) where(key string, global, project map[string]bool) string {
 
 // the flags that set a knob, and the variables that do.
 var flagFor = map[string]string{
-	"base_url":       "base-url",
-	"model":          "model",
-	"max_turns":      "max-turns",
-	"max_tokens":     "max-tokens",
-	"thinking_level": "thinking",
+	"base_url":        "base-url",
+	"model":           "model",
+	"max_turns":       "max-turns",
+	"max_tokens":      "max-tokens",
+	"thinking_level":  "thinking",
+	"thinking_budget": "thinking-budget",
 }
 var envFor = map[string]string{
 	"base_url": "LOCAL_LLM_URL",

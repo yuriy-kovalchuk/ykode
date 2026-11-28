@@ -100,17 +100,22 @@ func Run(args []string, version string) error {
 	return nil
 }
 
-// resumeNote tells a leaving session where the conversation went, spelled out to be pasted as it stands
+// resumeNote tells a leaving session where the conversation went, the command alone on its line to be copied
 func resumeNote(file, root string, saved int) string {
 	if saved == 0 || file == "" {
 		return ""
 	}
 	// --root belongs in the line: a saved conversation is read back only by the project it was written in
-	if strings.ContainsAny(root, ` "'`) {
-		root = strconv.Quote(root) // a pasted command breaks on a path with a space
+	return fmt.Sprintf("ykode: %d messages saved in %s; come back with:\nykode --continue %s --root %s\n",
+		saved, file, session.ID(file), shellQuoted(root))
+}
+
+// shellQuoted is a path as a shell reads it back whole: single quotes, unless it needs none
+func shellQuoted(path string) string {
+	if path != "" && strings.Trim(path, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-+,:@%=") == "" {
+		return path
 	}
-	return fmt.Sprintf("ykode: %d messages saved in %s\nykode: come back with: ykode --continue %s --root %s\n",
-		saved, file, session.ID(file), root)
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
 }
 
 // startupConfig resolves the settings and asks about an untrusted project's file; done means nothing is left to run.

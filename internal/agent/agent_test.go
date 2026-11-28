@@ -22,6 +22,7 @@ import (
 type stubServer struct {
 	requests []map[string]any
 	scripts  []string
+	refuse   func(req map[string]any) string // a body to answer 400 with, or "" to play the script
 }
 
 func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +38,13 @@ func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic(fmt.Sprintf("server got unmarshalable request: %v", err))
 	}
 	s.requests = append(s.requests, req)
+	if s.refuse != nil {
+		if body := s.refuse(req); body != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, body)
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	index := min(len(s.requests)-1, len(s.scripts)-1)
 	fmt.Fprint(w, s.scripts[index])

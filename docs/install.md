@@ -34,8 +34,10 @@ cosign verify-blob ykode-darwin-arm64-v0.1.0 \
 
 The default server is `http://127.0.0.1:8080/v1`, which is what `llama-server --host 127.0.0.1
 --port 8080` answers. That server needs `--jinja` before it takes a tool call, and `--mmproj` with a
-vision encoder before it can see a picture. ykode reads the window from `/models`, and from llama.cpp's
-`/props` when the server lists one model, so a slot's real share is what it budgets for. `--ctx` overrides
+vision encoder before it can see a picture. ykode reads the window from `/models` (llama.cpp's
+`meta.n_ctx` or its `--ctx-size`/`-c` argument, else the model's own `context_length`,
+`max_context_length` or `max_model_len`), and from llama.cpp's `/props` when the server lists one model,
+so a slot's real share is what it budgets for. Without a window the footer shows only `ctx` and a count. `--ctx` overrides
 both, for a server that reports no window or one that reports it wrong. A small window is the one hard limit, because everything
 ykode budgets (the room for a reply, the tool-result cut, folding and compaction) is measured against
 it: 16k tokens is the practical floor for a coding session, 32k or more is comfortable.

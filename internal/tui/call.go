@@ -24,11 +24,12 @@ type call struct {
 	note   string // one line: what the call touched, and what came back
 	change string // a change's hunks, as the tool handed them over; empty when the call changed nothing
 	tail   string // a failure's last lines, capped; empty when nothing failed
+	full   string // a command as the model wrote it, for ctrl+r to show when the row cuts it
 }
 
 // readCall is a finished call's row, then the change it made or the lines saying why it failed
 func readCall(tool, args, result string, failed bool, root string) call {
-	c := call{note: noteFor(tool, args, result, failed, root)}
+	c := call{note: noteFor(tool, args, result, failed, root), full: fullCommand(tool, args)}
 	if holdsDiff(result) {
 		_, body, _ := strings.Cut(result, "\n")
 		c.holds(body)
@@ -81,6 +82,36 @@ func described(tool, args, root string) string {
 		return ""
 	}
 	return shorten(oneLine(tools.Describe(tool, args), execNoteRun), root)
+}
+
+// fullCommand is what a command call ran, whole and with its own line breaks; "" for any other call
+func fullCommand(tool, args string) string {
+	var in struct {
+		Command string `json:"command"`
+	}
+	if tool != "exec_command" || args == "" || json.Unmarshal([]byte(args), &in) != nil {
+		return ""
+	}
+	return strings.TrimSpace(in.Command)
+}
+
+// fullRows is a command the row had to cut, whole under it; nil when the row already shows all of it
+func fullRows(c call, root string, width int) []string {
+	if c.full == "" {
+		return nil
+	}
+	room := max(width-toolRowMark-toolNameWidth, toolRowArgs)
+	if !strings.Contains(c.full, "\n") && strings.Contains(cutToWidth(oneLine(c.note, noticeChars), room), shorten(c.full, root)) {
+		return nil
+	}
+	lead := lipgloss.Width(tailLead)
+	var rows []string
+	for _, line := range strings.Split(c.full, "\n") {
+		for _, row := range wrapKept(line, max(width-lead, 1)) {
+			rows = append(rows, styleDim.Render(tailLead+row))
+		}
+	}
+	return rows
 }
 
 // namedFile is the file a call names, written from where the project starts.
@@ -179,4 +210,4 @@ func tailRows(tail, note string, width int) []string {
 }
 
 // heldCall is what a finished call still costs the run, in bytes.
-func heldCall(c call) int { return len(c.note) + len(c.change) + len(c.tail) }
+func heldCall(c call) int { return len(c.note) + len(c.change) + len(c.tail) + len(c.full) }

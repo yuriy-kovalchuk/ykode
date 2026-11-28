@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // sentMessages is the conversation as the server would read it, in the shape it arrived in.
@@ -161,5 +162,13 @@ func TestARunThatReadNothingIsNotGivenAnEmptyMessage(t *testing.T) {
 	}})
 	if len(said) != 2 {
 		t.Fatalf("the request carried %d messages: %v", len(said), said)
+	}
+}
+
+// a preview cut inside a character backs off to the last whole one, so the quote stays valid UTF-8
+func TestAPreviewNeverSplitsACharacter(t *testing.T) {
+	got := preview(strings.Repeat("a", 119) + strings.Repeat("é", 10))
+	if !utf8.ValidString(got) || got != strings.Repeat("a", 119)+"..." {
+		t.Errorf("preview = %q", got)
 	}
 }

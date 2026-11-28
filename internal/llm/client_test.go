@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func frame(payload string) string { return "data: " + payload + "\n\n" }
@@ -128,6 +129,32 @@ func TestModelsReadsContextSize(t *testing.T) {
 	for i := range want {
 		if models[i] != want[i] {
 			t.Errorf("model %d = %+v, want %+v", i, models[i], want[i])
+		}
+	}
+}
+
+// a router's list names the window in many shapes, and /props is not asked once it lists several
+func TestModelsReadTheWindowInEveryShapeAServerWritesIt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[
+		  {"id":"short-flag","status":{"args":["llama-server","-c","100000","-m","x.gguf"]}},
+		  {"id":"equals","status":{"args":["llama-server","--ctx-size=65536"]}},
+		  {"id":"openrouter","context_length":131072},
+		  {"id":"baseten","max_context_length":32768},
+		  {"id":"vllm","max_model_len":40960},
+		  {"id":"slot-wins","meta":{"n_ctx":16384},"context_length":262144}]}`)
+	}))
+	defer srv.Close()
+
+	models, err := NewClient(srv.URL + "/v1").Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"short-flag": 100000, "equals": 65536, "openrouter": 131072, "baseten": 32768,
+		"vllm": 40960, "slot-wins": 16384}
+	for _, m := range models {
+		if m.CtxSize != want[m.ID] {
+			t.Errorf("%s: window %d, want %d", m.ID, m.CtxSize, want[m.ID])
 		}
 	}
 }
@@ -541,5 +568,87 @@ func TestAServerWithoutPropsKeepsWhatItsListSaid(t *testing.T) {
 	}
 	if models[0].CtxSize != 16384 {
 		t.Errorf("window %d, want the 16384 the list said", models[0].CtxSize)
+	}
+}
+
+// radiance names the words a template takes at the end of a long body, so the list survives the read
+func TestARefusedEffortCarriesTheWordsTheServerNamed(t *testing.T) {
+	message := strings.Repeat("this template takes other levels. ", 20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":{"message":"reasoning_effort: 'max' is not a level. %s","param":"reasoning_effort",`+
+			`"code":"unsupported_value","supported":["none","minimal","low","medium","xhigh"]}}`, message)
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{ReasoningEffort: "max"}, nil)
+	supported, rejected := RejectedEffort(err)
+	if !rejected || strings.Join(supported, ",") != "none,minimal,low,medium,xhigh" {
+		t.Fatalf("rejected = %v, supported = %v from %v", rejected, supported, err)
+	}
+	if len(err.Error()) > maxErrorQuote+64 {
+		t.Errorf("the error quotes %d bytes of the body, want at most %d", len(err.Error()), maxErrorQuote)
+	}
+}
+
+// llama.cpp says the template refused the word without listing others: still a refusal, with no list
+func TestARefusalThatNamesNoWordsIsStillARefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"code":400,"message":"reasoning_effort \"max\" is not supported by the chat template"}}`)
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{ReasoningEffort: "max"}, nil)
+	if supported, rejected := RejectedEffort(err); !rejected || len(supported) != 0 {
+		t.Errorf("rejected = %v, supported = %v from %v", rejected, supported, err)
+	}
+}
+
+// any other refusal is not about the effort word, so it is not answered by changing it
+func TestAnUnrelatedRefusalIsNotAnEffortRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":"the request exceeds the available context size"}`)
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.URL+"/v1").ChatStream(context.Background(), ChatRequest{}, nil)
+	if _, rejected := RejectedEffort(err); rejected {
+		t.Errorf("an overflow was read as a refused effort: %v", err)
+	}
+	if _, rejected := RejectedEffort(errors.New("reasoning_effort")); rejected {
+		t.Error("an error that is not a server's answer was read as a refused effort")
+	}
+}
+
+// the thinking cap goes under both names: strata and llama.cpp read one, radiance the other
+func TestTheThinkingCapIsSentUnderBothNames(t *testing.T) {
+	req := ChatRequest{Model: "m", ReasoningEffort: "high"}
+	req.CapThinking(4096)
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"reasoning_effort":"high"`, `"thinking_budget_tokens":4096`, `"reasoning_budget_tokens":4096`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("the request lacks %s: %s", want, raw)
+		}
+	}
+	req.CapThinking(0)
+	req.ReasoningEffort = ""
+	raw, _ = json.Marshal(req)
+	for _, absent := range []string{"reasoning_effort", "budget_tokens"} {
+		if strings.Contains(string(raw), absent) {
+			t.Errorf("a request with no cap and no word still names %s: %s", absent, raw)
+		}
+	}
+}
+
+// an error that quotes a long body stops on a whole character, so the message is still valid UTF-8
+func TestAQuotedErrorBodyNeverSplitsACharacter(t *testing.T) {
+	failure := chatFailure{status: "500 Internal Server Error", detail: strings.Repeat("a", maxErrorQuote-1) + strings.Repeat("é", 10)}
+	if msg := failure.Error(); !utf8.ValidString(msg) || !strings.HasSuffix(msg, ": "+strings.Repeat("a", maxErrorQuote-1)) {
+		t.Errorf("the error ends %q", msg[max(len(msg)-20, 0):])
 	}
 }

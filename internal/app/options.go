@@ -27,6 +27,7 @@ func Options(cfg config.Config, model string, ctxSize int) (tools.Options, agent
 		CtxPinned:        cfg.CtxSize > 0,
 		KeepRecentTokens: agent.KeepRecentTokens(ctxSize),
 		ThinkingLevel:    cfg.ThinkingLevel,
+		ThinkingBudget:   cfg.ThinkingBudget,
 		AssumeYes:        cfg.AssumeYes,
 		Thinking:         thinking,
 		NoThink:          noThink,

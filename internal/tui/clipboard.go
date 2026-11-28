@@ -105,6 +105,9 @@ func (m *model) pastePicture() tea.Cmd {
 func (m *model) pasted(msg pastedMsg) tea.Cmd {
 	switch {
 	case errors.Is(msg.err, errNoPicture):
+		if m.holdPaste(msg.text) {
+			return nil
+		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg.text) // the clipboard holds text: ctrl+v pastes it as the box would
 		m.fitInput()

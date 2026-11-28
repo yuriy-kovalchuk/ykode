@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	ctxSafetyTok   = 256  // the least to leave free when the caller named no margin
-	minResponseTok = 64   // a response budget smaller than this is useless
-	minAnswerTok   = 1024 // what the answer keeps after a thinking phase takes its share
+	ctxSafetyTok   = 256 // the least to leave free when the caller named no margin
+	minResponseTok = 64  // a response budget smaller than this is useless
 )
 
 // inputModes is what the model takes besides text, which decides whether an attachment goes out
@@ -40,9 +39,10 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 	}
 	req.Sampling = a.opts.Thinking
 	level := a.ThinkingLevel()
+	req.ReasoningEffort = a.effort(level)
 	if level == llm.ThinkingOff {
 		req.Sampling = a.opts.NoThink
-		// llama.cpp honours "enable_thinking" and silently ignores "thinking_enabled"
+		// Qwen3.6's template has no effort words, so off also goes as the switch every Qwen template reads
 		req.ChatTemplateKwargs = map[string]any{"enable_thinking": false}
 	}
 	if a.opts.CtxSize > 0 {
@@ -55,7 +55,7 @@ func (a *Agent) request() (llm.ChatRequest, error) {
 	}
 	req.MaxTokens = a.replyRoom()
 	if level != llm.ThinkingOff {
-		req.ThinkingBudget = thinkingWithin(level, req.MaxTokens)
+		req.CapThinking(thinkingWithin(a.opts.ThinkingBudget, req.MaxTokens))
 	}
 	return req, nil
 }
@@ -73,23 +73,25 @@ func (a *Agent) replyRoom() int {
 	return a.opts.MaxTokens
 }
 
-// thinkingWithin is a level's budget cut to what a reply of reply tokens can spare; 0 asks for no cap
-func thinkingWithin(level string, reply int) int {
-	budget, _ := llm.ThinkingBudgetTokens(level)
-	if budget <= 0 || reply <= 0 {
+// thinkingWithin is a cap cut to what a reply of reply tokens can spare; 0 asks for no cap
+func thinkingWithin(budget, reply int) int {
+	if reply <= 0 {
 		return budget
 	}
-	// thinking is billed inside the reply, so it never takes more than the reply can spare
-	budget = min(budget, reply-minAnswerTok)
-	if budget <= 0 {
+	// thinking is billed inside the reply, so even no cap of its own leaves the answer room
+	spare := reply - llm.MinAnswerTokens
+	if spare <= 0 {
 		// a budget of 0 is omitted on the wire, and an omitted budget means no limit at all
-		budget = max(reply/2, 1)
+		spare = max(reply/2, 1)
 	}
-	return budget
+	if budget <= 0 {
+		return spare
+	}
+	return min(budget, spare)
 }
 
-// ThinkingBudget is what the next request would ask a level to think within, after the window's cut
-func (a *Agent) ThinkingBudget(level string) int { return thinkingWithin(level, a.replyRoom()) }
+// ThinkingBudget is the thinking cap the next request would carry, after the window's cut; 0 is none
+func (a *Agent) ThinkingBudget() int { return thinkingWithin(a.opts.ThinkingBudget, a.replyRoom()) }
 
 // reserve is the room held for the reply and template, never over a quarter of the window
 func (a *Agent) reserve() int {

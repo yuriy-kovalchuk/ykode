@@ -32,7 +32,7 @@ var keyGroups = []keyGroup{
 	{"edit", [][2]string{{"ctrl+a ctrl+e", "line start, end"}, {"ctrl+k", "kill the line"},
 		{"ctrl+w", "kill a word"}, {"ctrl+v", "paste a picture"}}},
 	{"scroll", [][2]string{{"↑ ↓ pgup pgdn", "scroll"}, {"ctrl+u ctrl+d", "half a page"},
-		{"end", "back to the end"}}},
+		{"end", "back to the end"}, {"ctrl+r", "commands whole"}}},
 	{"session", [][2]string{{"esc", "stop the run"}, {"ctrl+c", "stop the run, or quit"},
 		{"ctrl+o", "fold the plan"}, {"ctrl+/", "this list"}}},
 }

@@ -50,6 +50,7 @@ type model struct {
 	suggestFor string
 	cfg        config.Config // what this run reads, which /settings shows and changes
 	history    []string
+	pastes     pastes // long pastes, held out of the box and put back when the ask is sent
 	histIdx    int
 	unsent     string // what is in the box while the earlier prompts are being read
 	planFolded bool   // ctrl+o folds the plan to its heading
@@ -179,6 +180,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+	if m.overlaid() && isPaste(msg) {
+		return m, nil // a paste an overlay did not take would land in the box hidden under it
+	}
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		m.useBackground(msg.IsDark())
@@ -254,6 +258,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// overlaid says a screen is drawn over the session, so the typing box under it is out of sight
+func (m *model) overlaid() bool { return m.modal != nil || m.screen != nil || m.picker != nil }
 
 // useBackground keeps the shade the terminal reported, which only auto draws by
 func (m *model) useBackground(dark bool) {

@@ -320,3 +320,20 @@ func TestCtrlUScrollsWithTextInTheBox(t *testing.T) {
 		t.Errorf("ctrl+u edited the prompt, leaving %q", got)
 	}
 }
+
+// the key is on the list ? shows, and pressing it is what turns the whole commands on and off
+func TestCtrlRShowsTheCommandsWhole(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	if !m.log.whole {
+		t.Fatal("ctrl+r did not show the commands whole")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	if m.log.whole {
+		t.Error("a second ctrl+r did not fold them back")
+	}
+	if !strings.Contains(fmt.Sprint(keyGroups), "commands whole") {
+		t.Error("? does not list ctrl+r")
+	}
+}

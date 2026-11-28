@@ -160,7 +160,7 @@ func TestATurnCompletesInASmallWindow(t *testing.T) {
 	if err := a.Ask(context.Background(), "say something"); err != nil {
 		t.Fatalf("a window of 4096 with a margin of 4096 cannot answer: %v", err)
 	}
-	if got := stub.lastRequest(t)["max_tokens"].(float64); got < minAnswerTok {
+	if got := stub.lastRequest(t)["max_tokens"].(float64); got < llm.MinAnswerTokens {
 		t.Errorf("the reply was left %v tokens", got)
 	}
 }
