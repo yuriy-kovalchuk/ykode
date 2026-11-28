@@ -7,6 +7,8 @@ refuses a tag with no section or an empty one rather than publishing notes nobod
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-28
+
 ### Changed
 
 - **The thinking level sets the depth, and the cap is its own setting.** A level now reaches the server
@@ -70,5 +72,6 @@ written in Go as a learning project.
 - **One static binary** for Linux (amd64, arm64) and macOS (arm64), with `SHA256SUMS` and cosign
   signatures on every release.
 
-[Unreleased]: https://github.com/yuriy-kovalchuk/ykode/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yuriy-kovalchuk/ykode/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/yuriy-kovalchuk/ykode/releases/tag/v0.1.1
 [0.1.0]: https://github.com/yuriy-kovalchuk/ykode/releases/tag/v0.1.0
